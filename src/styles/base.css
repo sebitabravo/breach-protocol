@@ -6,13 +6,18 @@
   box-sizing: border-box;
 }
 
+/* Un `display` de clase (.btn, .panel…) no debe ganarle al atributo hidden. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: var(--fs-body);
   line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
@@ -147,7 +152,11 @@ a {
 
 #app[data-screen="menu"] .gl-vignette,
 #app[data-screen="calibrate"] .gl-vignette,
-#app[data-screen="about"] .gl-vignette {
+#app[data-screen="about"] .gl-vignette,
+#app[data-screen="sectors"] .gl-vignette,
+#app[data-screen="briefing"] .gl-vignette,
+#app[data-screen="leaderboard"] .gl-vignette,
+#app[data-screen="result"] .gl-vignette {
   background: linear-gradient(180deg, rgba(4, 10, 15, 0.55) 0%, rgba(4, 10, 15, 0.35) 45%, rgba(4, 10, 15, 0.72) 100%);
 }
 
@@ -178,7 +187,7 @@ a {
   display: flex;
   gap: var(--dist);
   align-items: flex-start;
-  font-family: var(--pixel);
+  font-family: var(--sans);
   letter-spacing: 0.02em;
   line-height: 1.02;
 }
@@ -449,35 +458,36 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text);
 }
 
+/* Switch sobre un checkbox real (role="switch"): `appearance: none` quita el azul del
+   sistema, y el knob es un fondo de gradiente para no depender de pseudo-elementos. */
 .switch {
-  position: relative;
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
   width: 44px;
   height: 24px;
+  margin: 0;
   border: 1px solid var(--border);
-  background: var(--surface-1);
+  border-radius: 999px;
+  background: linear-gradient(var(--muted), var(--muted)) no-repeat 3px 50% / 16px 16px, var(--surface-1);
   cursor: pointer;
-  transition: background var(--t-fast), border-color var(--t-fast);
-}
-
-.switch::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  background: var(--muted);
-  transition: transform var(--t-fast), background var(--t-fast);
+  transition: border-color var(--t-fast);
 }
 
 .switch:checked {
-  border-color: var(--primary-dim);
-  background: rgba(92, 224, 139, 0.14);
+  border-color: var(--primary);
+  background: linear-gradient(var(--primary), var(--primary)) no-repeat calc(100% - 3px) 50% / 16px 16px,
+    rgba(92, 224, 139, 0.16);
 }
 
-.switch:checked::after {
-  transform: translateX(18px);
-  background: var(--primary);
+.switch:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .segmented {
@@ -519,7 +529,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .sheet__head h2 {
-  font-family: var(--pixel);
+  font-family: var(--sans);
   font-size: var(--fs-h2);
   line-height: var(--lh-h2);
   letter-spacing: 0.02em;
@@ -589,4 +599,47 @@ code {
   background: var(--surface-2);
   padding: 1px 4px;
   border: 1px solid var(--border-soft);
+}
+
+.ctx-lost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--dist);
+  background: rgba(8, 15, 20, 0.88);
+  color: var(--text);
+  text-align: center;
+  z-index: 80;
+}
+
+.ctx-lost[hidden] {
+  display: none;
+}
+
+.ctx-lost strong {
+  color: var(--danger);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Movimiento: la preferencia del sistema y el ajuste del jugador apagan animaciones decorativas. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+#app[data-motion="reduce"] *,
+#app[data-motion="reduce"] *::before,
+#app[data-motion="reduce"] *::after {
+  animation: none !important;
+  transition-duration: 1ms !important;
 }

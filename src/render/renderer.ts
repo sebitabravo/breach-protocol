@@ -2,173 +2,43 @@
  * Three.js renderer for SECTOR_01: instanced arena, pooled enemy meshes, a
  * first-person viewmodel, an FX pool and camera smoothing. The simulation
  * (S8) owns all game truth; this module only visualises snapshots and events.
+ * It is a thin facade: arena, viewmodel, camera rig, textures and themes live
+ * in their own modules.
  *
- * Note on MSAA: WebGL only lets a canvas hold one context, so antialias is
- * fixed when the first frame is created. The renderer is therefore created
- * lazily on the first render call, using the AA requirement of the last
- * `setQuality` — antialias on for `high` only.
+ * Note on MSAA: the canvas context is created with `antialias: false`. The
+ * browser fixes that flag at context creation, and `init()` runs before the
+ * first `setQuality`, so a per-preset canvas AA could never take effect. On
+ * medium and high the composer target carries the MSAA samples instead
+ * (docs/adr/0004-bloom-postprocessing.md). `low` renders without AA.
+ *
+ * Draw calls: `info.autoReset` is off and the facade resets it once per frame,
+ * so `calls` covers every pass (shadow map, scene, bloom, output).
  */
 import * as THREE from 'three';
-import { ARENA_BOXES, type ArenaBox, type Material } from '../world/layout';
-import { MAX_ENEMIES, type Snapshot, type WorldEvent } from '../wasm/bridge';
-import { ENEMY_STATE, EVT, WEAPON } from '../wasm/protocol';
-import { createRobotMesh, createWeaponModel } from './entities';
-import { FxPool } from './fx';
+import { arenaBoxes } from '../world/layout';
+import type { MapData } from '../world/map';
+import type { Snapshot, WorldEvent } from '../wasm/bridge';
+import { EVT } from '../wasm/protocol';
+import { ArenaBuild } from './arena';
+import { CameraRig } from './camera';
+import { disposeRobotAssets } from './entities';
+import { EnemyPool } from './enemies';
+import { FxPool, impactColour } from './fx';
+import { PoseInterpolator, type Pose } from './interp';
+import { PRESETS, type QualityName, type QualityPreset } from './presets';
+import { PostFx } from './postfx';
+import { lookFor, PALETTE, type ThemeLook } from './themes';
+import { Viewmodel } from './viewmodel';
 
-export type QualityName = 'low' | 'medium' | 'high';
-
-export interface QualityPreset {
-  name: QualityName;
-  dpr: number;
-  shadows: boolean;
-  particles: number;
-  lights: number;
-}
+export type { QualityName, QualityPreset } from './presets';
 
 export interface Hooks {
   reducedMotion?: boolean;
+  onContextLost?: () => void;
+  onContextRestored?: () => void;
 }
 
-/** Ladder palette: each entry is the albedo fed to the lighting rig so the
- * FINAL sRGB pixel lands on the composition targets (measured from frames):
- * floor ≈ #10171d (clearly darker than walls), walls ≈ #1e2833, cover ≈
- * #2a3844, ceiling ≈ #0c1216. Value steps between surfaces do the reading. */
-const C = {
-  bg: 0x070d12, // sky / background above the walls
-  floor: 0x0e161b, // × grid map (base 0.83) × light → ≈ #10171d
-  wall: 0x242d36, // → ≈ #1e2833
-  cover: 0x32404b, // → ≈ #2a3844, one step above walls
-  crate: 0x2c3944,
-  pillar: 0x2d3a44,
-  trim: 0x415164, // lighter panel/cap accent
-  beam: 0x0b1015, // structural ceiling beams, darker than the ceiling
-  ceiling: 0x0c1216, // enclosed dark roof (unlit basic material → exact)
-  glow: 0x5ce08b, // mint accent (unlit basic material)
-  sun: 0xe6ecf2,
-  fill: 0x9fb0bd,
-  hemiSky: 0xdfe4e8,
-  hemiGround: 0x2a3036,
-  impactWall: 0x96aaba,
-  impactEnemy: 0xff5b6b,
-  death: 0x5ce08b,
-} as const;
-
-const MATERIAL_COLORS: Record<Material, number> = {
-  floor: C.floor,
-  wall: C.wall,
-  cover: C.cover,
-  crate: C.crate,
-  pillar: C.pillar,
-  trim: C.trim,
-  beam: C.beam,
-  ceiling: C.ceiling,
-  glow: C.glow,
-};
-
-const PRESETS: Record<QualityName, QualityPreset> = {
-  low: { name: 'low', dpr: 1, shadows: false, particles: 128, lights: 2 },
-  medium: { name: 'medium', dpr: 1.5, shadows: true, particles: 512, lights: 2 },
-  high: { name: 'high', dpr: 2, shadows: true, particles: 1024, lights: 2 },
-};
-
-/** Shadow map resolution per preset (medium shares the same light, cheaper). */
-function shadowMapSize(name: QualityName): number {
-  return name === 'high' ? 2048 : 1024;
-}
-
-/** Deterministic PRNG (mulberry32) so per-instance wall variation is stable
- * across frames and sessions. */
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const ORBIT_RADIUS = 17;
-const ORBIT_HEIGHT = 8.5;
-const ORBIT_SPEED = 0.12;
 const CAMERA_FOV = 75;
-/** The snapshot carries the player's FEET y (core/src/sim.rs writes
- * `player.pos.y`); the first-person camera needs the eye, so the renderer
- * lifts it by the sim's EYE_HEIGHT (core/src/player.rs). */
-const EYE_HEIGHT = 1.62;
-const BOB_AMPLITUDE = 0.035;
-
-/**
- * Procedural panel grid on a 256×256 canvas: pale panel base with 1 px bright
- * lines so the grid reads without exceeding the +20% luminance budget over the
- * floor albedo. One texture, RepeatWrapping, generated at module load.
- * Base sits at 0.83 sRGB so the white panel lines land ≈ +20% over the final
- * floor pixel (sRGB ratio (1/0.657)^(1/2.2) ≈ 1.21).
- */
-function makeGridTexture(): THREE.CanvasTexture {
-  const size = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    // base at 0.83 sRGB: lines (≈ 1.0) end up ≈ +20% over the floor pixel
-    ctx.fillStyle = '#d4d4d4'; // albedo = material.color × map
-    ctx.fillRect(0, 0, size, size);
-    // one subtly brighter sub-panel per 2×2 panel group
-    ctx.fillStyle = 'rgba(255,255,255,0.10)';
-    ctx.fillRect(0, 0, size / 2, size / 2);
-    // 1 px bright panel lines on a 2×2 panel grid (128 px panels)
-    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0.5, 0);
-    ctx.lineTo(0.5, size);
-    ctx.moveTo(size / 2 + 0.5, 0);
-    ctx.lineTo(size / 2 + 0.5, size);
-    ctx.moveTo(0, 0.5);
-    ctx.lineTo(size, 0.5);
-    ctx.moveTo(0, size / 2 + 0.5);
-    ctx.lineTo(size, size / 2 + 0.5);
-    ctx.stroke();
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.repeat.set(9, 9); // 36 m floor / 4 m texture tile (2×2 panels of 2 m)
-  tex.anisotropy = 4;
-  return tex;
-}
-
-/** Camera-space weapon anchors: hip position, ADS position, muzzle tip. */
-interface WeaponPose {
-  hip: readonly [number, number, number];
-  ads: readonly [number, number, number];
-  muzzle: readonly [number, number, number];
-}
-
-const POSES: Record<number, WeaponPose> = {
-  [WEAPON.sidearm]: {
-    // hip: raised and pulled back so the FULL weapon sits inside the frame
-    // (~40 px bottom margin at 1280×720) instead of clipping through the
-    // bottom edge, while staying left of the ammo readout (scale 0.85 in
-    // updateViewmodel).
-    hip: [0.3, -0.27, -0.7],
-    ads: [0, -0.16, -0.45],
-    muzzle: [0, 0.02, -0.2],
-  },
-  [WEAPON.carbine]: {
-    hip: [0.28, -0.28, -0.7],
-    ads: [0, -0.15, -0.5],
-    muzzle: [0, 0.03, -0.58],
-  },
-};
-
-/** Viewmodel scale: slightly under 1:1 so the weapon reads as a weapon while
- * the whole mesh (grip included) stays inside the frame and clear of the ammo
- * readout from 16:9 up through 19.5:9. */
-const VIEWMODEL_SCALE = 0.85;
 
 export class Renderer {
   private readonly canvas: HTMLCanvasElement;
@@ -177,33 +47,31 @@ export class Renderer {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly hemiLight: THREE.HemisphereLight;
   private readonly dirLight: THREE.DirectionalLight;
+  private readonly fog = new THREE.FogExp2(PALETTE.bg, 0);
   private readonly fx: FxPool;
-  private readonly sidearm: THREE.Group;
-  private readonly carbine: THREE.Group;
+  private readonly rig = new CameraRig();
+  private readonly viewmodel: Viewmodel;
+  private sector: ArenaBuild | null = null;
+  private solids: MapData['solids'] = [];
+  private elapsed = 0;
 
   private renderer: THREE.WebGLRenderer | null = null;
-  private wantAntialias = false; // antialias on for `high` only
+  private postfx: PostFx | null = null;
   private presetValue: QualityPreset = PRESETS.medium;
   private dprValue = 1;
+  private cssWidth = 1;
+  private cssHeight = 1;
   private lastCalls = 0;
   private lastTriangles = 0;
   private disposed = false;
+  private contextLost = false;
 
   // --- camera interpolation state -----------------------------------------
-  private hasPrev = false;
-  private prevPx = 0;
-  private prevPy = 0;
-  private prevPz = 0;
-  private prevYaw = 0;
-  private prevPitch = 0;
-  private prevTick = 0;
-  private bobPhase = 0;
-  private bobAmp = 0;
-  private adsAmount = 0;
+  private readonly interp = new PoseInterpolator();
+  private readonly poseIn: Pose = { px: 0, py: 0, pz: 0, yaw: 0, pitch: 0 };
+  private readonly poseOut: Pose = { px: 0, py: 0, pz: 0, yaw: 0, pitch: 0 };
 
-  // --- enemy pool ----------------------------------------------------------
-  private readonly enemyMeshes: (THREE.Mesh | null)[] = new Array(MAX_ENEMIES).fill(null);
-  private readonly enemyKinds: number[] = new Array(MAX_ENEMIES).fill(-1);
+  private readonly enemies: EnemyPool;
 
   // --- preallocated scratch (never allocate per frame) ---------------------
   private readonly tmpVec = new THREE.Vector3();
@@ -215,9 +83,10 @@ export class Renderer {
     this.canvas = canvas;
     this.hooks = hooks ?? {};
 
-    this.scene.background = new THREE.Color(C.bg);
-    // No fog: the previous blue fog washed the whole arena into one value
-    // band. Contrast now comes from albedo + lighting, verified by probes.
+    this.scene.background = new THREE.Color(PALETTE.bg);
+    // Fog de densidad por tema (FogExp2): en control es casi nulo para no
+    // lavar la escala de valores; en cryo es más denso (vapor).
+    this.scene.fog = this.fog;
 
     this.camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.05, 120);
     this.camera.rotation.order = 'YXZ';
@@ -226,9 +95,9 @@ export class Renderer {
     // lights: hemisphere base + modelling sun + weak fill; shadows on `high`.
     // Moderate physical intensities — the ladder is carried by albedo + light
     // shape, not giant multipliers (the old intensity-9 rig flattened it).
-    this.hemiLight = new THREE.HemisphereLight(C.hemiSky, C.hemiGround, 3.75);
+    this.hemiLight = new THREE.HemisphereLight(PALETTE.hemiSky, PALETTE.hemiGround, 3.75);
     this.scene.add(this.hemiLight);
-    this.dirLight = new THREE.DirectionalLight(C.sun, 3.2);
+    this.dirLight = new THREE.DirectionalLight(PALETTE.sun, 3.2);
     this.dirLight.position.set(8, 14, 6);
     this.dirLight.shadow.camera.left = -24;
     this.dirLight.shadow.camera.right = 24;
@@ -241,7 +110,7 @@ export class Renderer {
     this.dirLight.shadow.normalBias = 0.03;
     this.scene.add(this.dirLight);
     // cheap fill from the opposite side kills the pitch-dark faces
-    const fillLight = new THREE.DirectionalLight(C.fill, 2.2);
+    const fillLight = new THREE.DirectionalLight(PALETTE.fill, 2.2);
     fillLight.position.set(-10, 3.5, -9);
     this.scene.add(fillLight);
     // dedicated viewmodel light, parented to the camera so the gun is always
@@ -252,23 +121,26 @@ export class Renderer {
     vmLight.position.set(0.3, 0.15, 0.25);
     this.camera.add(vmLight);
 
-    this.buildArena();
-
     this.fx = new FxPool(this.scene, this.presetValue.particles);
-    this.sidearm = createWeaponModel(WEAPON.sidearm);
-    this.carbine = createWeaponModel(WEAPON.carbine);
-    this.sidearm.visible = false;
-    this.carbine.visible = false;
-    this.camera.add(this.sidearm, this.carbine);
+    this.viewmodel = new Viewmodel(this.camera);
+    this.enemies = new EnemyPool(this.scene);
 
     this.resize();
+  }
+
+  /** Creates the WebGL context eagerly; throws if the browser refuses. */
+  init(): void {
+    this.ensureRenderer();
+  }
+
+  get isContextLost(): boolean {
+    return this.contextLost;
   }
 
   /** Switch quality preset; `dprCap` clamps the device pixel ratio. */
   setQuality(preset: QualityName, dprCap?: number): void {
     const p = PRESETS[preset] ?? PRESETS.medium;
     this.presetValue = p;
-    this.wantAntialias = p.name === 'high';
     this.dirLight.castShadow = p.shadows;
     const size = shadowMapSize(p.name);
     if (this.dirLight.shadow.mapSize.x !== size) {
@@ -313,28 +185,25 @@ export class Renderer {
     if (w > 0 && h > 0) {
       this.camera.aspect = w / h;
       this.camera.updateProjectionMatrix();
+      this.cssWidth = w;
+      this.cssHeight = h;
     }
     const r = this.renderer;
     if (r) {
       r.setPixelRatio(this.dprValue);
       if (w > 0 && h > 0) r.setSize(w, h, false);
+      this.postfx?.configure(this.presetValue.name, this.dprValue, this.cssWidth, this.cssHeight);
     }
   }
 
   /** Menu/loading camera: slow orbit over the arena. */
   renderOrbit(dt: number): void {
+    if (this.contextLost) return;
     const r = this.ensureRenderer();
-    this.orbitAngle += dt * ORBIT_SPEED;
-    this.camera.position.set(
-      Math.cos(this.orbitAngle) * ORBIT_RADIUS,
-      ORBIT_HEIGHT,
-      Math.sin(this.orbitAngle) * ORBIT_RADIUS,
-    );
-    this.camera.lookAt(0, 1.2, 0);
-    this.camera.updateMatrixWorld();
-    this.hideViewmodel();
-    r.render(this.scene, this.camera);
-    this.captureMetrics(r);
+    this.elapsed += dt;
+    this.rig.orbit(this.camera, dt);
+    this.viewmodel.hide();
+    this.draw(r);
   }
 
   /**
@@ -343,71 +212,44 @@ export class Renderer {
    * and FX from `events`, then render.
    */
   renderGame(state: Snapshot, alpha: number, dt: number, events: readonly WorldEvent[]): void {
+    if (this.contextLost) return;
     const r = this.ensureRenderer();
+    this.elapsed += dt;
 
     // 1. camera interpolation (snap on reset / first frame)
-    const snap = !this.hasPrev || state.tick < this.prevTick;
-    let px = state.px;
-    let py = state.py;
-    let pz = state.pz;
-    let yaw = state.yaw;
-    let pitch = state.pitch;
-    if (snap) {
-      yaw = state.yaw;
-      pitch = state.pitch;
-    } else {
-      const a = Math.min(Math.max(alpha, 0), 1);
-      px = this.prevPx + (state.px - this.prevPx) * a;
-      py = this.prevPy + (state.py - this.prevPy) * a;
-      pz = this.prevPz + (state.pz - this.prevPz) * a;
-      const dy = state.yaw - this.prevYaw;
-      yaw = this.prevYaw + Math.atan2(Math.sin(dy), Math.cos(dy)) * a; // shortest arc
-      pitch = this.prevPitch + (state.pitch - this.prevPitch) * a;
-    }
-    this.prevPx = state.px;
-    this.prevPy = state.py;
-    this.prevPz = state.pz;
-    this.prevYaw = state.yaw;
-    this.prevPitch = state.pitch;
-    this.prevTick = state.tick;
-    this.hasPrev = true;
+    const input = this.poseIn;
+    input.px = state.px;
+    input.py = state.py;
+    input.pz = state.pz;
+    input.yaw = state.yaw;
+    input.pitch = state.pitch;
+    const pose = this.interp.sampleInto(input, state.tick, alpha, this.poseOut);
 
-    // 2. recoil on top of the interpolated view + grounded speed bob
+    // 2. camera: interpolated pose + recoil + grounded bob
     const reducedMotion = this.hooks.reducedMotion === true;
-    let bobY = 0;
-    let roll = 0;
-    if (!reducedMotion && state.grounded) {
-      const target = Math.min(Math.max(state.speed / 6, 0), 1);
-      this.bobAmp += (target - this.bobAmp) * Math.min(dt * 8, 1);
-      this.bobPhase += dt * (4 + state.speed * 1.6);
-      bobY = Math.sin(this.bobPhase) * BOB_AMPLITUDE * this.bobAmp;
-      roll = Math.sin(this.bobPhase * 0.5) * 0.008 * this.bobAmp;
-    } else {
-      this.bobAmp += (0 - this.bobAmp) * Math.min(dt * 8, 1);
-    }
-    this.camera.position.set(px, py + EYE_HEIGHT + bobY, pz);
-    this.camera.rotation.set(pitch + state.recoilPitch, yaw + state.recoilYaw, roll);
-    this.camera.updateMatrixWorld();
+    const bobY = this.rig.firstPerson(this.camera, pose, state, dt, reducedMotion);
 
     // 3. enemies
-    this.updateEnemies(state, reducedMotion);
+    this.enemies.update(state, reducedMotion, this.camera, this.elapsed);
 
     // 4. viewmodel
-    this.updateViewmodel(state, dt, bobY);
+    this.viewmodel.update(state, dt, bobY);
 
     // 5. events -> FX
     this.handleEvents(events, state.weapon);
     this.fx.update(dt);
 
     // 6. render + metrics
-    r.render(this.scene, this.camera);
-    this.captureMetrics(r);
+    this.draw(r);
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.fx.dispose();
+    this.enemies.dispose();
+    this.postfx?.dispose();
+    this.postfx = null;
     const geoms = new Set<THREE.BufferGeometry>();
     const mats = new Set<THREE.Material>();
     this.scene.traverse((obj) => {
@@ -419,26 +261,43 @@ export class Renderer {
     });
     geoms.forEach((g) => g.dispose());
     mats.forEach((m) => m.dispose());
+    disposeRobotAssets();
+    this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
+    this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.renderer?.dispose();
     this.renderer = null;
   }
 
-  // --- internals -----------------------------------------------------------
+  /** Reemplaza la geometría y el look del sector (liberando los anteriores). */
+  setSector(map: MapData): void {
+    this.disposeSector();
+    const look = lookFor(map.theme);
+    this.applyLook(look);
+    this.sector = new ArenaBuild(map, arenaBoxes(map), look);
+    this.scene.add(this.sector.group);
+    this.solids = map.solids;
+  }
 
-  private orbitAngle = 0;
+  // --- internals -----------------------------------------------------------
 
   private ensureRenderer(): THREE.WebGLRenderer {
     if (this.renderer) return this.renderer;
     const r = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: this.wantAntialias, // on for `high` only
+      antialias: false, // MSAA lives on the composer target, see header note
       powerPreference: 'high-performance',
       alpha: false,
     });
     r.toneMapping = THREE.NoToneMapping; // the ladder is authored in raw sRGB
     r.shadowMap.enabled = this.presetValue.shadows;
     r.shadowMap.type = THREE.PCFShadowMap;
+    r.info.autoReset = false; // draw() resets once per frame, not per pass
     this.renderer = r;
+    this.postfx = new PostFx(r, this.scene, this.camera);
+    // three.js ya hace preventDefault en 'webglcontextlost' y reinicia estado en
+    // 'webglcontextrestored'; el shell solo necesita enterarse para pausar.
+    this.canvas.addEventListener('webglcontextlost', this.onContextLost);
+    this.canvas.addEventListener('webglcontextrestored', this.onContextRestored);
     this.resize();
     // debugging/metrics hook: window.__BREACH__.renderer.{calls,triangles}.
     // Merge, never replace: main.ts exposes the GameApp shell here first and
@@ -448,204 +307,52 @@ export class Renderer {
     return r;
   }
 
-  private captureMetrics(r: THREE.WebGLRenderer): void {
+  private onContextLost = (event: Event): void => {
+    event.preventDefault();
+    this.contextLost = true;
+    this.hooks.onContextLost?.();
+  };
+
+  private onContextRestored = (): void => {
+    this.contextLost = false;
+    this.postfx?.rebuild();
+    this.resize();
+    this.hooks.onContextRestored?.();
+  };
+
+  /** One frame: reset the counters once, render through the composer or directly, record metrics. */
+  private draw(r: THREE.WebGLRenderer): void {
+    this.sector?.setTime(this.elapsed);
+    r.info.reset();
+    if (this.postfx) this.postfx.render();
+    else r.render(this.scene, this.camera);
     this.lastCalls = r.info.render.calls;
     this.lastTriangles = r.info.render.triangles;
   }
 
-  /**
-   * Arena from ARENA_BOXES, grouped by material: one InstancedMesh per
-   * material — except the ceiling, which becomes a single downward-facing
-   * plane (invisible from above, so the menu orbit can still look over the
-   * walls) in the dark roof colour. Shadow selectivity: only the cover masses
-   * cast, only floor + cover receive; enemies cast via their own meshes.
-   */
-  private buildArena(): void {
-    const groups = new Map<Material, ArenaBox[]>();
-    for (const box of ARENA_BOXES) {
-      const list = groups.get(box.material);
-      if (list) list.push(box);
-      else groups.set(box.material, [box]);
-    }
-    const unitBox = new THREE.BoxGeometry(1, 1, 1);
-    const matrix = new THREE.Matrix4();
-    const gridTexture = makeGridTexture();
-    for (const [material, boxes] of groups) {
-      if (material === 'ceiling') {
-        // first (only) ceiling box defines the extent; plane at its base
-        const b = boxes[0];
-        const geo = new THREE.PlaneGeometry(b.sx, b.sz);
-        geo.rotateX(Math.PI / 2); // normal points DOWN: visible from below only
-        const mat = new THREE.MeshBasicMaterial({ color: C.ceiling });
-        const plane = new THREE.Mesh(geo, mat);
-        plane.position.set(b.x, b.y - b.sy / 2, b.z);
-        plane.receiveShadow = false;
-        this.scene.add(plane);
-        continue;
-      }
-      const isGlow = material === 'glow' || material === 'beam';
-      let mat: THREE.Material;
-      if (material === 'beam') {
-        // constant value one clear step above the ceiling so the beams read as
-        // structure from below (a lit Lambert bottom face would go black)
-        mat = new THREE.MeshBasicMaterial({ color: 0x171f27 });
-      } else if (isGlow) {
-        mat = new THREE.MeshBasicMaterial({ color: MATERIAL_COLORS[material] });
-      } else if (material === 'floor') {
-        mat = new THREE.MeshLambertMaterial({ color: MATERIAL_COLORS[material], map: gridTexture });
-      } else if (material === 'wall' || material === 'trim') {
-        // white diffuse; the real per-instance colour arrives via instanceColor
-        // (three multiplies diffuse × instanceColor in the shader)
-        mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-      } else {
-        mat = new THREE.MeshLambertMaterial({ color: MATERIAL_COLORS[material] });
-      }
-      const mesh = new THREE.InstancedMesh(unitBox, mat, boxes.length);
-      for (let i = 0; i < boxes.length; i += 1) {
-        const b = boxes[i];
-        matrix.makeScale(b.sx, b.sy, b.sz);
-        matrix.setPosition(b.x, b.y, b.z);
-        mesh.setMatrixAt(i, matrix);
-      }
-      mesh.instanceMatrix.needsUpdate = true;
-      this.jitterPanels(mesh, material, boxes.length);
-      // contact shadows: cover casts + receives, floor receives; enemies cast
-      // through their own meshes (createRobotMesh). Nothing else participates.
-      mesh.castShadow = material === 'cover';
-      mesh.receiveShadow = material === 'floor' || material === 'cover';
-      this.scene.add(mesh);
-    }
-    this.buildLampHalos();
+  private disposeSector(): void {
+    this.sector?.dispose();
+    this.sector = null;
   }
 
-  /** Per-instance value variation (±6/255 per channel, sRGB, seeded) breaks
-   * up the flat wall panels and trims. instanceColor multiplies the (white)
-   * diffuse in linear space, so each entry carries the FULL colour here. */
-  private jitterPanels(mesh: THREE.InstancedMesh, material: Material, count: number): void {
-    if (material !== 'wall' && material !== 'trim') return;
-    const hex = MATERIAL_COLORS[material];
-    const r8 = (hex >> 16) & 0xff;
-    const g8 = (hex >> 8) & 0xff;
-    const b8 = hex & 0xff;
-    const rng = mulberry32(material === 'wall' ? 0x5eed11 : 0x1a2b3c);
-    const jit = (): number => Math.round((rng() * 2 - 1) * 6);
-    const clamp255 = (v: number): number => Math.min(Math.max(v, 0), 255);
-    const tmp = new THREE.Color();
-    for (let i = 0; i < count; i += 1) {
-      tmp.setRGB(
-        clamp255(r8 + jit()) / 255,
-        clamp255(g8 + jit()) / 255,
-        clamp255(b8 + jit()) / 255,
-        THREE.SRGBColorSpace,
-      );
-      mesh.setColorAt(i, tmp);
-    }
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }
-
-  /** One merged additive halo under every ceiling lamp so the strips read as
-   * mounted light fixtures. A single InstancedMesh = one extra draw call. */
-  private buildLampHalos(): void {
-    const lamps = ARENA_BOXES.filter((b) => b.material === 'glow' && b.y > 5);
-    if (lamps.length === 0) return;
-    const geo = new THREE.PlaneGeometry(1.2, 1.2);
-    geo.rotateX(Math.PI / 2); // faces down, like the ceiling plane
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0xbfffd9,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      opacity: 0.16,
-      depthWrite: false,
-    });
-    const mesh = new THREE.InstancedMesh(geo, mat, lamps.length);
-    const matrix = new THREE.Matrix4();
-    for (let i = 0; i < lamps.length; i += 1) {
-      const b = lamps[i];
-      matrix.makeTranslation(b.x, b.y - 0.07, b.z);
-      mesh.setMatrixAt(i, matrix);
-    }
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.frustumCulled = false;
-    mesh.renderOrder = 1;
-    this.scene.add(mesh);
-  }
-
-  /** Lazily build the robot mesh for a slot/kind pair. */
-  private enemyMesh(index: number, kind: number): THREE.Mesh {
-    let mesh = this.enemyMeshes[index];
-    if (!mesh || this.enemyKinds[index] !== kind) {
-      if (mesh) {
-        mesh.removeFromParent();
-        mesh.geometry.dispose();
-        (mesh.material as THREE.Material).dispose();
-      }
-      mesh = createRobotMesh(kind);
-      this.enemyKinds[index] = kind;
-      this.scene.add(mesh);
-      this.enemyMeshes[index] = mesh;
-    }
-    return mesh;
-  }
-
-  private updateEnemies(state: Snapshot, reducedMotion: boolean): void {
-    for (let i = 0; i < MAX_ENEMIES; i += 1) {
-      const e = state.enemy(i);
-      const mesh = this.enemyMesh(i, e.kind);
-      if (e.state === ENEMY_STATE.dead) {
-        mesh.visible = false;
-        continue;
-      }
-      mesh.visible = true;
-      // walk bob from the FSM anim phase (skipped under reduced motion)
-      const bob = reducedMotion ? 0 : Math.sin(e.anim * 7) * 0.03;
-      mesh.position.set(e.x, e.y + bob, e.z);
-      mesh.rotation.set(0, e.yaw, 0);
-      // squash / lunge on windup & strike for readability
-      if (e.state === ENEMY_STATE.aim) mesh.scale.set(1, 0.92, 1);
-      else if (e.state === ENEMY_STATE.strike) mesh.scale.set(1, 1.06, 1);
-      else mesh.scale.set(1, 1, 1);
-    }
-  }
-
-  private hideViewmodel(): void {
-    this.sidearm.visible = false;
-    this.carbine.visible = false;
-  }
-
-  private updateViewmodel(state: Snapshot, dt: number, bobY: number): void {
-    const weapon = state.weapon === WEAPON.carbine ? this.carbine : this.sidearm;
-    this.sidearm.visible = weapon === this.sidearm;
-    this.carbine.visible = weapon === this.carbine;
-
-    const pose = POSES[state.weapon] ?? POSES[WEAPON.sidearm];
-    const targetAds = state.ads > 0.5 ? 1 : 0;
-    this.adsAmount += (targetAds - this.adsAmount) * Math.min(dt * 10, 1);
-
-    const kick = Math.min(Math.max(state.recoilPitch * 0.6, 0), 0.09);
-    const reloadRot = state.reloading ? Math.sin(state.reloadProgress * Math.PI) * 0.8 : 0;
-    weapon.position.set(
-      pose.hip[0] + (pose.ads[0] - pose.hip[0]) * this.adsAmount,
-      pose.hip[1] + (pose.ads[1] - pose.hip[1]) * this.adsAmount + bobY * 0.5,
-      pose.hip[2] + (pose.ads[2] - pose.hip[2]) * this.adsAmount + kick,
-    );
-    weapon.rotation.set(kick * 1.5 + reloadRot, 0, 0);
-    weapon.scale.set(VIEWMODEL_SCALE, VIEWMODEL_SCALE, VIEWMODEL_SCALE);
-  }
-
-  /** Gun tip in world space for the current weapon. */
-  private computeGunTip(weapon: THREE.Group): void {
-    const isCarbine = weapon === this.carbine;
-    const muzzle = isCarbine ? POSES[WEAPON.carbine].muzzle : POSES[WEAPON.sidearm].muzzle;
-    this.muzzleWorld.set(muzzle[0], muzzle[1], muzzle[2]).applyMatrix4(weapon.matrixWorld);
+  /** Luces, niebla y fondo del tema. Los objetos se reusan: sin allocations por cambio. */
+  private applyLook(look: ThemeLook): void {
+    this.scene.background = new THREE.Color(look.background);
+    this.fog.color.setHex(look.fogColor);
+    this.fog.density = look.fogDensity;
+    this.hemiLight.color.setHex(look.hemiSky);
+    this.hemiLight.groundColor.setHex(look.hemiGround);
+    this.hemiLight.intensity = look.hemiIntensity;
+    this.dirLight.color.setHex(look.sun);
+    this.dirLight.intensity = look.sunIntensity;
   }
 
   private handleEvents(events: readonly WorldEvent[], weapon: number): void {
     for (const ev of events) {
       switch (ev.type) {
         case EVT.shot: {
-          const group = weapon === WEAPON.carbine ? this.carbine : this.sidearm;
-          this.computeGunTip(group);
-          this.fx.muzzle(this.muzzleWorld);
+          this.viewmodel.muzzleWorld(weapon, this.muzzleWorld);
+          this.fx.muzzle(this.muzzleWorld, this.viewmodel.flashSize(weapon));
           this.pendingOrigin.copy(this.muzzleWorld);
           this.pendingValid = true;
           break;
@@ -653,20 +360,22 @@ export class Renderer {
         case EVT.wallHit: {
           this.tmpVec.set(ev.a, ev.b, ev.c);
           if (this.pendingValid) this.fx.tracer(this.pendingOrigin, this.tmpVec);
-          this.fx.impact(this.tmpVec, C.impactWall);
+          this.fx.impact(this.tmpVec, impactColour(this.solids, ev.a, ev.b, ev.c));
           this.pendingValid = false;
           break;
         }
         case EVT.enemyHit: {
           this.tmpVec.set(ev.a, ev.b, ev.c);
           if (this.pendingValid) this.fx.tracer(this.pendingOrigin, this.tmpVec);
-          this.fx.impact(this.tmpVec, C.impactEnemy);
+          this.fx.impact(this.tmpVec, PALETTE.impactEnemy);
           this.pendingValid = false;
           break;
         }
         case EVT.enemyDied: {
+          // dos capas: chispas rojas del cuerpo y menta de la energía que se libera
           this.tmpVec.set(ev.a, ev.b, ev.c);
-          this.fx.burst(this.tmpVec, 26, C.death);
+          this.fx.burst(this.tmpVec, 22, PALETTE.impactEnemy);
+          this.fx.burst(this.tmpVec, 16, PALETTE.death);
           break;
         }
         case EVT.enemyShot: {
@@ -680,4 +389,9 @@ export class Renderer {
       }
     }
   }
+}
+
+/** Shadow map resolution per preset (medium shares the same light, cheaper). */
+function shadowMapSize(name: QualityName): number {
+  return name === 'high' ? 2048 : 1024;
 }

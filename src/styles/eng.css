@@ -24,7 +24,7 @@
 }
 
 .eng__title {
-  font-family: var(--pixel);
+  font-family: var(--sans);
   font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -60,7 +60,7 @@
 }
 
 .eng__metric b {
-  font-family: var(--pixel);
+  font-family: var(--sans);
   font-size: 15px;
   font-weight: 500;
   color: var(--text);

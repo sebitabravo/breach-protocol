@@ -16,12 +16,21 @@ import {
   N,
   NODE_BASE,
   NODE_STRIDE,
+  MODE,
+  MUTATOR,
   PROTOCOL_VERSION,
   SNAPSHOT_LEN,
   assertProtocol,
 } from '../../src/wasm/protocol';
 
 describe('wasm snapshot protocol', () => {
+  it('mirrors the daily mutator slot and the mode and mutator ids', () => {
+    // La ranura 49 es la última del encabezado; un cambio de id rompe el desafío en el servidor.
+    expect(H.mutator).toBe(49);
+    expect(MUTATOR).toEqual({ none: 0, swarm: 1, glass: 2, ironhide: 3 });
+    expect(MODE).toEqual({ mission: 0, overflow: 1, daily: 2, practice: 3 });
+  });
+
   it('pins the snapshot size mirrored from core/src/protocol.rs', () => {
     // Rust pins these exact values in snapshot_layout_is_stable; a mismatch is
     // a hard boot error, so both sides must agree bit for bit.

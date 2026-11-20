@@ -1,0 +1,8 @@
+# Artefactos locales: el build de Vercel reconstruye todo desde las fuentes.
+target/
+node_modules/
+dist/
+playwright-report/
+test-results/
+public/bp_core.wasm
+public/bp_core.build.json

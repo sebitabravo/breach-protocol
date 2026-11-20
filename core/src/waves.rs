@@ -1,13 +1,94 @@
 //! Wave director: composition, spawn pacing and intermissions.
 //!
-//! Composition is a pure function of the wave number, so the same seed always
+//! Composition is a pure function of (sector, wave), so the same seed always
 //! produces the same encounter.
 
+use crate::enemy::{KIND_INTERCEPTOR, KIND_SCOUT, KIND_SENTINEL};
 use crate::protocol::MAX_ENEMIES;
 use crate::rng::Rng;
 
 pub const WAVE_TOTAL: u32 = 5;
 pub const MAX_QUEUE: usize = 32;
+
+/// Enemigos vivos a la vez en misión: mantiene la dificultad acotada (SPEC §3.3).
+const MISSION_ALIVE_CAP: usize = 12;
+/// Overflow: cada oleada extra suma un scout y, cada dos oleadas, un especialista.
+const ENDLESS_SPECIALIST_EVERY: u32 = 2;
+
+/// Cuántos enemigos de cada tipo entran en una oleada.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Composition {
+    pub scouts: u32,
+    pub sentinels: u32,
+    pub interceptors: u32,
+}
+
+impl Composition {
+    pub const fn total(self) -> u32 {
+        self.scouts + self.sentinels + self.interceptors
+    }
+
+    /// Recorta hasta `max`: primero scouts, luego especialistas.
+    fn fit(mut self, max: u32) -> Self {
+        let over = self.total().saturating_sub(max);
+        let from_scouts = over.min(self.scouts);
+        self.scouts -= from_scouts;
+        let left = over - from_scouts;
+        let from_sentinels = left.min(self.sentinels);
+        self.sentinels -= from_sentinels;
+        self.interceptors -= (left - from_sentinels).min(self.interceptors);
+        self
+    }
+}
+
+/// Oleada del modo Overflow. Hasta la oleada 5 es la de misión; después crece sin tope de
+/// oleadas y se recorta a `MAX_QUEUE`. El especialista del sector: sentinel (0), interceptor (1),
+/// y en el sector 2 se alternan.
+pub fn endless_composition(sector: u8, wave: u32) -> Composition {
+    let base = mission_composition(sector, wave);
+    let extra = wave.saturating_sub(WAVE_TOTAL);
+    if extra == 0 {
+        return base;
+    }
+    let specialists = extra.div_ceil(ENDLESS_SPECIALIST_EVERY);
+    let mut c = Composition {
+        scouts: base.scouts + extra,
+        ..base
+    };
+    match sector {
+        0 => c.sentinels += specialists,
+        1 => c.interceptors += specialists,
+        _ => {
+            c.sentinels += specialists.div_ceil(2);
+            c.interceptors += specialists / 2;
+        }
+    }
+    c.fit(MAX_QUEUE as u32)
+}
+
+/// Oleada de misión para el sector `sector` (= id del mapa), oleada 1-based.
+/// Sector 0 solo tiene scouts y sentinels; el sector 1 introduce interceptores desde la
+/// oleada 2; el sector 2 mezcla los tres. Oleadas fuera de 1..=5 se acotan.
+pub fn mission_composition(sector: u8, wave: u32) -> Composition {
+    let w = wave.clamp(1, WAVE_TOTAL);
+    match sector {
+        0 => Composition {
+            scouts: 3 + w,
+            sentinels: if w >= 2 { w } else { 0 },
+            interceptors: 0,
+        },
+        1 => Composition {
+            scouts: 3 + w,
+            sentinels: 0,
+            interceptors: if w >= 2 { w / 2 } else { 0 },
+        },
+        _ => Composition {
+            scouts: 2 + w,
+            sentinels: if w >= 2 { w / 2 } else { 0 },
+            interceptors: if w >= 2 { 1 + u32::from(w >= 4) } else { 0 },
+        },
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Waves {
@@ -23,6 +104,7 @@ pub struct Waves {
     pub finished: bool,
     pub spawned: u32,
     pub killed: u32,
+    pub alive_cap: usize,
 }
 
 impl Waves {
@@ -40,31 +122,30 @@ impl Waves {
             finished: false,
             spawned: 0,
             killed: 0,
+            alive_cap: MISSION_ALIVE_CAP,
         }
     }
 
-    pub fn reset(&mut self) {
+    /// `endless` activa el modo Overflow: sin tope de oleadas y hasta `MAX_ENEMIES` vivos.
+    pub fn reset(&mut self, endless: bool) {
         *self = Waves::new();
-    }
-
-    pub fn scouts(wave: u32) -> u32 {
-        3 + wave
-    }
-
-    pub fn sentinels(wave: u32) -> u32 {
-        if wave >= 2 {
-            wave
-        } else {
-            0
+        if endless {
+            self.total = 0;
+            self.alive_cap = MAX_ENEMIES;
         }
+    }
+
+    /// Queda al menos una oleada por jugar. En modo infinito (`total == 0`) siempre hay.
+    pub fn has_next(&self) -> bool {
+        self.total == 0 || self.wave < self.total
     }
 
     pub fn spawn_interval_for(wave: u32) -> f32 {
         (1.65 - 0.16 * (wave.saturating_sub(1)) as f32).max(0.6)
     }
 
-    /// Fills the queue for a wave number (1-based).
-    pub fn begin(&mut self, wave: u32) {
+    /// Llena la cola con la composición dada para la oleada `wave` (1-based).
+    pub fn begin(&mut self, wave: u32, comp: Composition) {
         self.wave = wave;
         self.queue_head = 0;
         self.queue_len = 0;
@@ -72,29 +153,29 @@ impl Waves {
         self.spawn_interval = Self::spawn_interval_for(wave);
         self.running = true;
         self.intermission = 0.0;
+        self.fill(comp);
+    }
 
-        let scouts = Self::scouts(wave);
-        let sentinels = Self::sentinels(wave);
-        // Interleave so a wave never opens with a full volley of ranged units.
-        let mut scout_left = scouts;
-        let mut sentinel_left = sentinels;
-        while scout_left > 0 || sentinel_left > 0 {
-            if scout_left > 0 && self.queue_len < MAX_QUEUE {
-                self.queue[self.queue_len] = crate::enemy::KIND_SCOUT;
-                self.queue_len += 1;
-                scout_left -= 1;
-            }
-            if sentinel_left > 0 && self.queue_len < MAX_QUEUE {
-                self.queue[self.queue_len] = crate::enemy::KIND_SENTINEL;
-                self.queue_len += 1;
-                sentinel_left -= 1;
-            }
-            // Two scouts per sentinel keeps the mix melee-leaning.
-            if scout_left > 0 && self.queue_len < MAX_QUEUE {
-                self.queue[self.queue_len] = crate::enemy::KIND_SCOUT;
-                self.queue_len += 1;
-                scout_left -= 1;
-            }
+    /// Intercala los tipos para que una oleada nunca abra con una salva de tiradores.
+    /// La condición del `while` incluye el tope de la cola: sin él, una composición
+    /// mayor que `MAX_QUEUE` no avanzaba y el bucle no terminaba.
+    fn fill(&mut self, comp: Composition) {
+        let (mut scouts, mut sentinels, mut interceptors) =
+            (comp.scouts, comp.sentinels, comp.interceptors);
+        while (scouts > 0 || sentinels > 0 || interceptors > 0) && self.queue_len < MAX_QUEUE {
+            self.push_one(&mut scouts, KIND_SCOUT);
+            self.push_one(&mut sentinels, KIND_SENTINEL);
+            self.push_one(&mut interceptors, KIND_INTERCEPTOR);
+            // Dos scouts por cada tirador mantienen la mezcla orientada al cuerpo a cuerpo.
+            self.push_one(&mut scouts, KIND_SCOUT);
+        }
+    }
+
+    fn push_one(&mut self, left: &mut u32, kind: u8) {
+        if *left > 0 && self.queue_len < MAX_QUEUE {
+            self.queue[self.queue_len] = kind;
+            self.queue_len += 1;
+            *left -= 1;
         }
     }
 
@@ -102,12 +183,8 @@ impl Waves {
         self.queue_len - self.queue_head
     }
 
-    pub fn total_planned(&self) -> u32 {
-        Self::scouts(self.wave) + Self::sentinels(self.wave)
-    }
-
     pub fn alive_target(&self) -> usize {
-        MAX_ENEMIES.min(12)
+        self.alive_cap.min(MAX_ENEMIES)
     }
 
     /// Picks the safest spawn point: far from the player and inside the arena.
@@ -163,42 +240,155 @@ impl Default for Waves {
     }
 }
 
-/// Queue composition for a wave, used by tests and the HUD legend.
-pub fn composition(wave: u32) -> (u32, u32) {
-    (Waves::scouts(wave), Waves::sentinels(wave))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn wave_composition_grows() {
-        assert_eq!(composition(1), (4, 0));
-        assert_eq!(composition(2), (5, 2));
-        assert_eq!(composition(5), (8, 5));
+    fn kinds_in_queue(w: &Waves) -> Vec<u8> {
+        w.queue[..w.queue_len].to_vec()
+    }
+
+    fn count(kinds: &[u8], kind: u8) -> u32 {
+        kinds.iter().filter(|k| **k == kind).count() as u32
     }
 
     #[test]
-    fn queue_matches_composition() {
-        for wave in 1..=WAVE_TOTAL {
-            let mut w = Waves::new();
-            w.begin(wave);
-            let (s, t) = composition(wave);
-            assert_eq!(w.queue_len, (s + t) as usize, "wave {wave}");
-            let scouts = w.queue[..w.queue_len]
-                .iter()
-                .filter(|k| **k == crate::enemy::KIND_SCOUT)
-                .count();
-            assert_eq!(scouts as u32, s);
+    fn sector_zero_keeps_scouts_and_sentinels_only() {
+        let waves: Vec<Composition> = (1..=WAVE_TOTAL)
+            .map(|w| mission_composition(0, w))
+            .collect();
+        assert_eq!(
+            waves[0],
+            Composition {
+                scouts: 4,
+                sentinels: 0,
+                interceptors: 0
+            }
+        );
+        assert_eq!(
+            waves[1],
+            Composition {
+                scouts: 5,
+                sentinels: 2,
+                interceptors: 0
+            }
+        );
+        assert_eq!(
+            waves[4],
+            Composition {
+                scouts: 8,
+                sentinels: 5,
+                interceptors: 0
+            }
+        );
+    }
+
+    #[test]
+    fn sector_one_introduces_interceptors_from_wave_two() {
+        assert_eq!(mission_composition(1, 1).interceptors, 0);
+        for wave in 2..=WAVE_TOTAL {
+            let c = mission_composition(1, wave);
+            assert!(c.interceptors >= 1, "wave {wave}");
+            assert_eq!(c.sentinels, 0, "wave {wave}");
         }
+    }
+
+    #[test]
+    fn sector_two_mixes_all_three_kinds_from_wave_two() {
+        for wave in 2..=WAVE_TOTAL {
+            let c = mission_composition(2, wave);
+            assert!(
+                c.scouts > 0 && c.sentinels > 0 && c.interceptors > 0,
+                "wave {wave}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_mission_wave_fits_the_queue() {
+        for sector in 0..3 {
+            for wave in 1..=WAVE_TOTAL {
+                let total = mission_composition(sector, wave).total();
+                assert!(total as usize <= MAX_QUEUE, "sector {sector} wave {wave}");
+            }
+        }
+    }
+
+    #[test]
+    fn queue_matches_composition_in_every_sector() {
+        for sector in 0..3 {
+            for wave in 1..=WAVE_TOTAL {
+                let mut w = Waves::new();
+                let c = mission_composition(sector, wave);
+                w.begin(wave, c);
+                let kinds = kinds_in_queue(&w);
+                assert_eq!(
+                    kinds.len(),
+                    c.total() as usize,
+                    "sector {sector} wave {wave}"
+                );
+                assert_eq!(count(&kinds, KIND_SCOUT), c.scouts);
+                assert_eq!(count(&kinds, KIND_SENTINEL), c.sentinels);
+                assert_eq!(count(&kinds, KIND_INTERCEPTOR), c.interceptors);
+            }
+        }
+    }
+
+    #[test]
+    fn endless_waves_match_the_mission_until_wave_five_then_grow_within_the_queue() {
+        for sector in 0..3 {
+            for wave in 1..=WAVE_TOTAL {
+                assert_eq!(
+                    endless_composition(sector, wave),
+                    mission_composition(sector, wave)
+                );
+            }
+            let mut last = 0;
+            for wave in 1..=60 {
+                let c = endless_composition(sector, wave);
+                assert!(c.total() <= MAX_QUEUE as u32, "sector {sector} wave {wave}");
+                assert!(c.total() >= last, "sector {sector} wave {wave} shrank");
+                last = c.total();
+            }
+        }
+        assert_eq!(
+            endless_composition(0, 6).scouts,
+            mission_composition(0, 5).scouts + 1
+        );
+    }
+
+    #[test]
+    fn overflow_alive_cap_is_the_whole_array_and_mission_keeps_twelve() {
+        let mut w = Waves::new();
+        assert_eq!(w.alive_target(), 12);
+        w.reset(true);
+        assert_eq!(w.alive_target(), MAX_ENEMIES);
+        assert!(w.has_next());
+        assert_eq!(w.total, 0);
+    }
+
+    #[test]
+    fn filling_stops_at_queue_capacity() {
+        // Sin el tope en el `while`, esta llamada nunca termina: el test cuelga en vez de fallar.
+        let mut w = Waves::new();
+        w.begin(
+            1,
+            Composition {
+                scouts: 40,
+                sentinels: 0,
+                interceptors: 0,
+            },
+        );
+        assert_eq!(w.queue_len, MAX_QUEUE);
     }
 
     #[test]
     fn wave_one_never_spawns_sentinels() {
         let mut w = Waves::new();
-        w.begin(1);
-        assert!(w.queue[..w.queue_len].iter().all(|k| *k == crate::enemy::KIND_SCOUT));
+        w.begin(1, mission_composition(0, 1));
+        assert!(w.queue[..w.queue_len]
+            .iter()
+            .all(|k| *k == crate::enemy::KIND_SCOUT));
     }
 
     #[test]
@@ -210,7 +400,13 @@ mod tests {
     #[test]
     fn spawn_choice_avoids_the_player() {
         let mut rng = Rng::new(4);
-        let points = [(-14.0, 0.0), (14.0, 0.0), (0.0, 14.0), (0.0, -14.0), (2.0, 2.0)];
+        let points = [
+            (-14.0, 0.0),
+            (14.0, 0.0),
+            (0.0, 14.0),
+            (0.0, -14.0),
+            (2.0, 2.0),
+        ];
         let w = Waves::new();
         let (x, z) = w.pick_spawn(&points, 0.0, 0.0, &mut rng);
         let d = (x * x + z * z).sqrt();
@@ -220,7 +416,7 @@ mod tests {
     #[test]
     fn queued_counts_down() {
         let mut w = Waves::new();
-        w.begin(1);
+        w.begin(1, mission_composition(0, 1));
         let n = w.queued();
         w.queue_head += 2;
         assert_eq!(w.queued(), n - 2);

@@ -2,7 +2,7 @@
 <html lang="es" data-theme="dark">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#080f14" />
     <title>SEBITA: BREACH PROTOCOL</title>
     <meta name="description" content="FPS de supervisión en la web. Rust + WebAssembly + Three.js. Un proyecto de ingeniería de sebita.dev." />
@@ -36,81 +36,162 @@
         </div>
       </section>
 
-      <!-- ============================ HOME ============================ -->
+      <!-- ============================ MENU ============================ -->
       <section id="screen-menu" class="screen screen--menu" aria-label="Menú principal">
-        <header class="topbar">
-          <div class="topbar__brand">
+        <aside class="menu__nav">
+          <div class="wordmark wordmark--lg menu__wordmark">
             <span class="wordmark__slash">//</span>
-            <span class="topbar__name">SEBITA</span>
+            <span class="wordmark__text">SEBITA<span class="wordmark__colon">:</span> BREACH<br />PROTOCOL</span>
           </div>
-          <nav class="topbar__nav" aria-label="Secciones">
-            <button class="navlink" data-goto="about">cómo funciona</button>
-            <button class="navlink" data-goto="calibrate">controles</button>
-            <a class="navlink" href="https://sebita.dev" target="_blank" rel="noreferrer noopener">sebita.dev ↗</a>
+          <p class="menu__tagline">La red cayó. Queda una última conexión.</p>
+          <nav class="menu__list" aria-label="Modos de juego">
+            <button class="navitem navitem--primary" data-action="play">
+              <span class="navitem__label">Jugar</span><span class="navitem__meta" id="menu-play-meta">sector 01</span>
+            </button>
+            <button class="navitem" data-action="mission">
+              <span class="navitem__label">Misión</span><span class="navitem__meta">3 sectores</span>
+            </button>
+            <button class="navitem" data-action="overflow">
+              <span class="navitem__label">Overflow</span><span class="navitem__meta">oleadas sin fin</span>
+            </button>
+            <button class="navitem" data-action="daily">
+              <span class="navitem__label">Protocolo diario</span><span class="navitem__meta" id="menu-daily-meta">incidente UTC</span>
+            </button>
+            <button class="navitem" data-action="practice">
+              <span class="navitem__label">Simulador</span><span class="navitem__meta">tutorial en 3 pasos</span>
+            </button>
+            <button class="navitem" data-goto="leaderboard">
+              <span class="navitem__label">Clasificación</span><span class="navitem__meta">tableros</span>
+            </button>
+            <button class="navitem" data-action="engineering">
+              <span class="navitem__label">Engineering Mode</span><span class="navitem__meta">F3</span>
+            </button>
+            <button class="navitem" data-action="settings">
+              <span class="navitem__label">Ajustes</span><span class="navitem__meta">audio · gráficos · acceso</span>
+            </button>
           </nav>
-          <button class="btn btn--primary btn--sm" data-action="play">Jugar ahora ▸</button>
-        </header>
+        </aside>
 
-        <div class="hero">
-          <div class="hero__copy">
-            <p class="eyebrow">sector 01 · protocolo de brecha</p>
-            <h1 class="hero__title">
-              SEBITA<span class="hero__colon">:</span><br />
-              <span class="hero__title-accent">BREACH</span><br />
-              PROTOCOL
-            </h1>
-            <p class="hero__lede">
-              Un FPS de supervisión en la web. Entrá en la simulación, sobreviví a las oleadas y
-              recuperá el control del sistema.
-            </p>
-            <div class="hero__actions">
-              <button class="btn btn--primary" data-action="play">Jugar ahora ▸</button>
-              <button class="btn btn--ghost" data-action="practice">Entrenamiento</button>
-              <button class="btn btn--ghost" data-action="settings">Ajustes</button>
+        <div class="menu__stage">
+          <div class="panel menu__art">
+            <div class="panel__head">
+              <span class="panel__label" id="menu-sector-code">sector 01 · core room</span>
+              <span class="chip chip--live">simulación</span>
             </div>
-            <ul class="badges">
-              <li class="badge"><span class="badge__dot"></span>60 FPS objetivo</li>
-              <li class="badge"><span class="badge__dot"></span>PC y móvil</li>
-              <li class="badge"><span class="badge__dot"></span>Rust + WASM</li>
-              <li class="badge"><span class="badge__dot"></span>Sin registro</li>
-            </ul>
+            <div class="menu__scene" aria-hidden="true">
+              <span class="menu__sector">SECTOR<br /><b>01</b></span>
+              <span class="menu__monogram">//</span>
+            </div>
+            <dl class="kv">
+              <div><dt>núcleo</dt><dd>rust → wasm</dd></div>
+              <div><dt>render</dt><dd>three.js</dd></div>
+              <div><dt>paso fijo</dt><dd>60 hz</dd></div>
+            </dl>
           </div>
-
-          <aside class="hero__panel">
-            <div class="panel">
-              <div class="panel__head">
-                <span class="panel__label">sector 01 / core room</span>
-                <span class="chip chip--live">simulación</span>
-              </div>
-              <div class="panel__body panel__body--art">
-                <span class="panel__sector">SECTOR<br /><b>01</b></span>
-                <span class="panel__monogram">//</span>
-              </div>
-              <dl class="kv">
-                <div><dt>núcleo</dt><dd>rust → wasm</dd></div>
-                <div><dt>render</dt><dd>three.js</dd></div>
-                <div><dt>paso fijo</dt><dd>60 hz</dd></div>
-              </dl>
-            </div>
-            <div class="panel panel--objective">
-              <div class="panel__head"><span class="panel__label">protocol run</span></div>
-              <ul class="objectives" id="menu-objectives">
-                <li><span class="obj-ico">◇</span>Recuperá los 3 nodos</li>
-                <li><span class="obj-ico">◇</span>Sobreviví 5 oleadas</li>
-                <li><span class="obj-ico">◇</span>Completá la extracción</li>
-              </ul>
-              <p class="panel__foot">3:00 min · dificultad operador</p>
-            </div>
-          </aside>
+          <div class="panel menu__status">
+            <div class="panel__head"><span class="panel__label">estado de la red</span></div>
+            <ul class="menu__stats">
+              <li><span>sectores recuperados</span><b id="menu-cleared">0/3</b></li>
+              <li><span>racha diaria</span><b id="menu-streak">0 días</b></li>
+              <li><span>récord overflow</span><b id="menu-overflow">—</b></li>
+            </ul>
+            <button class="btn btn--ghost btn--block" data-action="tutorial-replay">Repetir tutorial</button>
+          </div>
         </div>
+
         <footer class="menufoot">
           <span>v0.1.0 · build local</span>
           <span id="menu-record">récord: —</span>
-          <span>feito con rust, three.js e café</span>
+          <span class="menufoot__links">
+            <button class="navlink" data-goto="about">cómo funciona</button>
+            <button class="navlink" data-goto="calibrate">controles</button>
+            <a class="navlink" href="https://sebita.dev" target="_blank" rel="noreferrer noopener">sebita.dev ↗</a>
+          </span>
         </footer>
       </section>
 
-      <!-- ========================== CALIBRATE ======================== -->
+      <!-- ============================ SECTORS ========================= -->
+      <section id="screen-sectors" class="screen screen--page" aria-label="Selección de sector">
+        <div class="page">
+          <header class="page__head">
+            <p class="eyebrow">misión · campaña</p>
+            <h2>Selección de sector</h2>
+            <p>Reactivá los subsistemas en orden. Cada sector limpio abre el siguiente.</p>
+          </header>
+          <div class="sector-grid">
+            <article class="sector" data-sector-card="0">
+              <div class="sector__head">
+                <span class="sector__code">SECTOR_01</span>
+                <span class="sector__state" data-state-label="0">disponible</span>
+              </div>
+              <h3 class="sector__title">Control de Acceso</h3>
+              <dl class="sector__stats">
+                <div><dt>mejor puntuación</dt><dd data-sector-score="0">—</dd></div>
+                <div><dt>mejor tiempo</dt><dd data-sector-time="0">—</dd></div>
+              </dl>
+              <p class="sector__lock" data-sector-lock="0" hidden></p>
+              <button class="btn btn--primary btn--block" data-action="brief" data-sector="0">Ver briefing ▸</button>
+            </article>
+            <article class="sector" data-sector-card="1">
+              <div class="sector__head">
+                <span class="sector__code">SECTOR_02</span>
+                <span class="sector__state" data-state-label="1">bloqueado</span>
+              </div>
+              <h3 class="sector__title">Refrigeración</h3>
+              <dl class="sector__stats">
+                <div><dt>mejor puntuación</dt><dd data-sector-score="1">—</dd></div>
+                <div><dt>mejor tiempo</dt><dd data-sector-time="1">—</dd></div>
+              </dl>
+              <p class="sector__lock" data-sector-lock="1" hidden></p>
+              <button class="btn btn--primary btn--block" data-action="brief" data-sector="1">Ver briefing ▸</button>
+            </article>
+            <article class="sector" data-sector-card="2">
+              <div class="sector__head">
+                <span class="sector__code">SECTOR_03</span>
+                <span class="sector__state" data-state-label="2">bloqueado</span>
+              </div>
+              <h3 class="sector__title">Archivo</h3>
+              <dl class="sector__stats">
+                <div><dt>mejor puntuación</dt><dd data-sector-score="2">—</dd></div>
+                <div><dt>mejor tiempo</dt><dd data-sector-time="2">—</dd></div>
+              </dl>
+              <p class="sector__lock" data-sector-lock="2" hidden></p>
+              <button class="btn btn--primary btn--block" data-action="brief" data-sector="2">Ver briefing ▸</button>
+            </article>
+          </div>
+          <footer class="page__foot">
+            <button class="btn btn--ghost" data-goto="menu">← Menú</button>
+          </footer>
+        </div>
+      </section>
+
+      <!-- ============================ BRIEFING ======================== -->
+      <section id="screen-briefing" class="screen screen--page" aria-label="Briefing de misión">
+        <div class="page">
+          <header class="page__head">
+            <p class="eyebrow" id="brief-eyebrow">misión 01</p>
+            <h2 id="brief-title">Reactivación del sector 01</h2>
+            <p id="brief-narrative" class="brief__narrative"></p>
+          </header>
+          <div class="brief-grid">
+            <section class="panel brief__block">
+              <h3 class="panel__label">Objetivos</h3>
+              <ul class="checklist" id="brief-objectives"></ul>
+            </section>
+            <section class="panel brief__block">
+              <h3 class="panel__label">Recompensas</h3>
+              <ul class="checklist" id="brief-rewards"></ul>
+              <p class="brief__unlock"><span class="eyebrow">desbloquea</span> <b id="brief-unlock"></b></p>
+            </section>
+          </div>
+          <footer class="page__foot">
+            <button class="btn btn--ghost" data-goto="sectors">← Volver</button>
+            <button class="btn btn--primary" data-action="start-mission">Iniciar misión ▸</button>
+          </footer>
+        </div>
+      </section>
+
+      <!-- ============================ HOME: CALIBRATE ================= -->
       <section id="screen-calibrate" class="screen screen--calibrate" aria-label="Calibración de controles">
         <div class="sheet">
           <header class="sheet__head">
@@ -135,23 +216,23 @@
                 <span class="field__label">Sensibilidad <b id="calib-sens-val">1.00×</b></span>
                 <input id="calib-sens" type="range" min="0.2" max="3" step="0.05" value="1" />
               </label>
-              <label class="field field--row">
+              <label class="field field--row" for="calib-invert">
                 <span class="field__label">Invertir eje Y</span>
-                <input id="calib-invert" type="checkbox" class="switch" />
+                <input id="calib-invert" type="checkbox" class="switch" role="switch" />
               </label>
-              <label class="field field--row">
+              <label class="field field--row" for="calib-autoreload">
                 <span class="field__label">Auto-recarga</span>
-                <input id="calib-autoreload" type="checkbox" class="switch" checked />
+                <input id="calib-autoreload" type="checkbox" class="switch" role="switch" checked />
               </label>
-              <label class="field field--row">
+              <label class="field field--row" for="calib-aimassist">
                 <span class="field__label">Ayuda de puntería (táctil)</span>
-                <input id="calib-aimassist" type="checkbox" class="switch" checked />
+                <input id="calib-aimassist" type="checkbox" class="switch" role="switch" checked />
               </label>
             </div>
           </div>
           <footer class="sheet__foot">
             <button class="btn btn--ghost" data-goto="menu">Volver</button>
-            <button class="btn btn--primary" data-action="play">Empezar ▸</button>
+            <button class="btn btn--primary" data-action="play">Empezar en el simulador ▸</button>
           </footer>
         </div>
       </section>
@@ -167,7 +248,7 @@
             <article class="card">
               <h3><span class="card__n">01</span> Núcleo en Rust</h3>
               <p>Movimiento, colisiones contra cajas, hitscan, máquinas de estado de los enemigos, oleadas y objetivos se simulan en Rust compilado a WebAssembly. Paso fijo de 60 Hz y RNG con semilla: la misma entrada produce el mismo mundo.</p>
-              <p class="mono-dim">core/ · 66 pruebas · 69 KiB de wasm</p>
+              <p class="mono-dim">core/ · pruebas deterministas · wasm de ~78 KiB</p>
             </article>
             <article class="card">
               <h3><span class="card__n">02</span> Render con Three.js</h3>
@@ -180,19 +261,45 @@
               <p class="mono-dim">bp_snapshot_ptr() + protocol.ts</p>
             </article>
             <article class="card">
-              <h3><span class="card__n">04</span> Accesibilidad</h3>
-              <p>Sensibilidad, eje Y, escala de HUD, diestro/zurdo, auto-recarga, ayuda de puntería, reducción de movimiento y audio opcional. Los menús funcionan con teclado y foco visible.</p>
-              <p class="mono-dim">prefers-reduced-motion respetado</p>
+              <h3><span class="card__n">04</span> Tablero verificable</h3>
+              <p>Cada partida se guarda como registro de entradas. El servidor la re-simula con el mismo núcleo y calcula el puntaje él mismo. Las derrotas de misión no entran al tablero.</p>
+              <p class="mono-dim">docs/api-contract.md</p>
             </article>
           </div>
           <footer class="sheet__foot">
             <button class="btn btn--ghost" data-goto="menu">Volver</button>
-            <button class="btn btn--primary" data-action="play">Jugar ahora ▸</button>
+            <button class="btn btn--primary" data-action="mission">Jugar misión ▸</button>
           </footer>
         </div>
       </section>
 
-      <!-- =========================== FALLBACK ======================== -->
+      <!-- ========================== LEADERBOARD ====================== -->
+      <section id="screen-leaderboard" class="screen screen--page" aria-label="Clasificación">
+        <div class="page">
+          <header class="page__head">
+            <p class="eyebrow">tableros verificados</p>
+            <h2>Clasificación</h2>
+            <p>Puntajes re-simulados por el servidor. Solo cuentan los registros que el tablero acepta.</p>
+          </header>
+          <nav class="board-tabs" role="tablist" aria-label="Tableros">
+            <button class="tab is-active" role="tab" aria-selected="true" data-board="mission:s01">S01 misión</button>
+            <button class="tab" role="tab" aria-selected="false" data-board="mission:s02">S02 misión</button>
+            <button class="tab" role="tab" aria-selected="false" data-board="mission:s03">S03 misión</button>
+            <button class="tab" role="tab" aria-selected="false" data-board="overflow">Overflow</button>
+            <button class="tab" role="tab" aria-selected="false" data-board="daily">Diario de hoy</button>
+          </nav>
+          <div class="panel board" aria-live="polite">
+            <div class="board__head"><span>#</span><span>operador</span><span>puntaje</span><span>fecha</span></div>
+            <ol class="board__rows" id="board-rows"></ol>
+            <p class="board__state" id="board-state">Cargando…</p>
+          </div>
+          <footer class="page__foot">
+            <button class="btn btn--ghost" data-goto="menu">← Menú</button>
+          </footer>
+        </div>
+      </section>
+
+      <!-- ============================ FALLBACK ======================== -->
       <section id="screen-fallback" class="screen screen--fallback" aria-label="Error">
         <div class="boot">
           <h2 class="fallback__title">No pudimos iniciar el protocolo</h2>
@@ -206,34 +313,39 @@
 
       <!-- ============================== HUD ========================== -->
       <div id="hud" class="hud" aria-live="off">
+        <div class="hud__minimap">
+          <canvas id="minimap" width="184" height="184" aria-label="Mapa del sector"></canvas>
+        </div>
+
         <div class="hud__top">
-          <div class="hud__block hud__block--wave">
-            <span class="hud__kicker">oleada</span>
-            <span class="hud__big"><b id="hud-wave">1</b><i>/5</i></span>
-            <div class="bar bar--slim"><i id="hud-wave-bar"></i></div>
+          <div class="hud__block hud__block--sector">
+            <span class="hud__kicker" id="hud-sector-code">SECTOR 01</span>
+            <span class="hud__sector-name" id="hud-sector-name">Control de Acceso</span>
+            <span class="hud__mode" id="hud-mode">misión</span>
+            <div class="hud__wave">
+              <span class="hud__kicker">oleada</span>
+              <span class="hud__big"><b id="hud-wave">1</b><i id="hud-wave-total">/5</i></span>
+              <div class="bar bar--slim"><i id="hud-wave-bar"></i></div>
+            </div>
           </div>
-          <div class="hud__block hud__block--score">
-            <span class="hud__kicker">puntuación</span>
-            <span class="hud__big" id="hud-score">0</span>
-            <span class="hud__sub" id="hud-objective-line">reactivá el terminal de control (0/3)</span>
+
+          <div class="hud__block hud__block--objective">
+            <span class="hud__kicker">objetivo</span>
+            <p class="hud__sub" id="hud-objective-line">reactivá el terminal de control (0/3)</p>
+            <p class="hud__score"><span class="hud__kicker">puntuación</span> <b id="hud-score">0</b></p>
           </div>
+
           <div class="hud__block hud__block--right">
-            <div class="hud__stat"><span class="hud__kicker">tiempo</span><span class="hud__mid" id="hud-time">3:00</span></div>
-            <div class="hud__stat"><span class="hud__kicker">restantes</span><span class="hud__mid" id="hud-remaining">0</span></div>
+            <div class="hud__stat"><span class="hud__kicker" id="hud-time-label">restante</span><span class="hud__mid" id="hud-time">3:00</span></div>
+            <div class="hud__stat"><span class="hud__kicker">enemigos</span><span class="hud__mid" id="hud-remaining">0</span></div>
             <button class="iconbtn" id="btn-pause-hud" aria-label="Pausa">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="4" height="14" fill="currentColor"/><rect x="13" y="5" width="4" height="14" fill="currentColor"/></svg>
             </button>
           </div>
         </div>
 
-        <div class="hud__minimap">
-          <canvas id="minimap" width="184" height="184" aria-label="Mapa del sector"></canvas>
-          <span class="hud__minimap-label">SECTOR 01</span>
-        </div>
-
-        <div class="hud__objective">
-          <span class="hud__kicker">objetivo</span>
-          <p id="hud-objective">Reactivá los nodos de red</p>
+        <div class="hud__objective-track">
+          <span class="hud__kicker">terminales</span>
           <div class="nodes" id="hud-nodes">
             <i class="node"></i><i class="node"></i><i class="node"></i>
           </div>
@@ -247,7 +359,13 @@
           <i class="crosshair__t crosshair__t--d"></i>
           <i class="crosshair__t crosshair__t--l"></i>
           <i class="crosshair__t crosshair__t--r"></i>
-          <span class="hitmarker"></span>
+          <span class="hitmarker" id="hit-marker"></span>
+        </div>
+        <div class="hud__dmgdir" id="hud-dmgdir" aria-hidden="true" hidden><span></span></div>
+
+        <div class="hud__prompt" id="hud-prompt" hidden>
+          <kbd class="hud__key" id="hud-prompt-key">E</kbd>
+          <span id="hud-prompt-text">activar terminal</span>
         </div>
 
         <div class="hud__bottom">
@@ -264,6 +382,11 @@
           </div>
 
           <div class="ammo">
+            <div class="ammo__slots" id="hud-slots" aria-label="Armas">
+              <span class="slot" data-weapon="1">1</span>
+              <span class="slot" data-weapon="2">2</span>
+              <span class="slot" data-weapon="3">3</span>
+            </div>
             <div class="ammo__weapon" id="hud-weapon">PB-01</div>
             <div class="ammo__nums">
               <span class="ammo__mag" id="hud-ammo">12</span>
@@ -281,12 +404,22 @@
           <p>mantené la posición</p>
         </div>
 
+        <aside class="tutorial" id="tutorial" hidden aria-live="polite">
+          <p class="eyebrow">tutorial · paso <span id="tut-index">1</span> de 3</p>
+          <h3 id="tut-title">Moverse</h3>
+          <p id="tut-body">WASD o joystick izquierdo.</p>
+          <div class="tutorial__foot">
+            <span class="tutorial__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <button class="btn btn--ghost btn--sm" data-action="tutorial-skip">Omitir tutorial</button>
+          </div>
+        </aside>
+
         <div class="damage" id="damage-flash" aria-hidden="true"></div>
         <div class="hud__notice" id="hud-notice" hidden></div>
       </div>
 
       <!-- ============================= TOUCH ========================= -->
-      <div class="touch" id="touch-layer" hidden>
+      <div class="touch" id="touch-layer">
         <div class="touch__stick" id="touch-stick"><span class="touch__knob" id="touch-knob"></span></div>
         <button class="tbtn tbtn--fire" data-touch="fire" aria-label="Disparar">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path d="M12 4v5M12 15v5M4 12h5M15 12h5" stroke="currentColor" stroke-width="1.6"/></svg>
@@ -317,7 +450,8 @@
             <div class="pause__panes">
               <div class="pane is-active" data-pane="game">
                 <button class="btn btn--primary btn--block" data-action="resume">Continuar ▸</button>
-                <button class="btn btn--ghost btn--block" data-action="restart">Reiniciar misión</button>
+                <button class="btn btn--ghost btn--block" data-action="restart">Reiniciar</button>
+                <button class="btn btn--ghost btn--block" data-action="tutorial-replay">Repetir tutorial</button>
                 <button class="btn btn--ghost btn--block" data-action="engineering">Engineering Mode</button>
                 <button class="btn btn--ghost btn--block" data-action="menu">Salir al menú</button>
               </div>
@@ -330,7 +464,7 @@
                   <div><dt>espacio</dt><dd>saltar</dd></div>
                   <div><dt>shift</dt><dd>correr</dd></div>
                   <div><dt>E</dt><dd>interactuar</dd></div>
-                  <div><dt>1 / 2</dt><dd>cambiar arma</dd></div>
+                  <div><dt>1 / 2 / 3</dt><dd>cambiar arma</dd></div>
                   <div><dt>esc</dt><dd>pausa</dd></div>
                   <div><dt>F3</dt><dd>engineering mode</dd></div>
                 </dl>
@@ -346,22 +480,22 @@
                     <option value="high">Alta</option>
                   </select>
                 </label>
-                <label class="field field--row"><span class="field__label">Reducir movimiento</span><input id="set-motion" class="switch" type="checkbox" /></label>
-                <label class="field field--row"><span class="field__label">Mostrar telemetría</span><input id="set-telemetry" class="switch" type="checkbox" /></label>
+                <label class="field field--row" for="set-motion"><span class="field__label">Reducir movimiento</span><input id="set-motion" class="switch" role="switch" type="checkbox" /></label>
+                <label class="field field--row" for="set-telemetry"><span class="field__label">Mostrar telemetría</span><input id="set-telemetry" class="switch" role="switch" type="checkbox" /></label>
                 <p class="mono-dim" id="gfx-detail">—</p>
               </div>
               <div class="pane" data-pane="audio">
-                <label class="field field--row"><span class="field__label">Audio</span><input id="set-audio" class="switch" type="checkbox" checked /></label>
+                <label class="field field--row" for="set-audio"><span class="field__label">Audio</span><input id="set-audio" class="switch" role="switch" type="checkbox" checked /></label>
                 <label class="field" for="set-volume"><span class="field__label">Volumen <b id="set-volume-val">70%</b></span><input id="set-volume" type="range" min="0" max="1" step="0.05" value="0.7" /></label>
                 <p class="mono-dim">Todo el audio se sintetiza con Web Audio API: sin archivos que descargar.</p>
               </div>
               <div class="pane" data-pane="access">
                 <label class="field" for="set-sens"><span class="field__label">Sensibilidad <b id="set-sens-val">1.00×</b></span><input id="set-sens" type="range" min="0.2" max="3" step="0.05" value="1" /></label>
-                <label class="field field--row"><span class="field__label">Invertir eje Y</span><input id="set-invert" class="switch" type="checkbox" /></label>
+                <label class="field field--row" for="set-invert"><span class="field__label">Invertir eje Y</span><input id="set-invert" class="switch" role="switch" type="checkbox" /></label>
                 <label class="field" for="set-hud"><span class="field__label">Escala de HUD <b id="set-hud-val">100%</b></span><input id="set-hud" type="range" min="0.8" max="1.4" step="0.05" value="1" /></label>
-                <label class="field field--row"><span class="field__label">Mano dominante: zurdo</span><input id="set-handed" class="switch" type="checkbox" /></label>
-                <label class="field field--row"><span class="field__label">Auto-recarga</span><input id="set-autoreload" class="switch" type="checkbox" checked /></label>
-                <label class="field field--row"><span class="field__label">Ayuda de puntería táctil</span><input id="set-aimassist" class="switch" type="checkbox" checked /></label>
+                <label class="field field--row" for="set-handed"><span class="field__label">Mano dominante: zurdo</span><input id="set-handed" class="switch" role="switch" type="checkbox" /></label>
+                <label class="field field--row" for="set-autoreload"><span class="field__label">Auto-recarga</span><input id="set-autoreload" class="switch" role="switch" type="checkbox" checked /></label>
+                <label class="field field--row" for="set-aimassist"><span class="field__label">Ayuda de puntería táctil</span><input id="set-aimassist" class="switch" role="switch" type="checkbox" checked /></label>
                 <button class="btn btn--ghost btn--block" data-action="reset-settings">Restablecer ajustes</button>
               </div>
             </div>
@@ -370,8 +504,8 @@
       </section>
 
       <!-- ============================ RESULT ========================= -->
-      <section id="screen-result" class="screen screen--overlay" aria-label="Resultados">
-        <div class="sheet sheet--result">
+      <section id="screen-result" class="screen screen--page" aria-label="Resultados">
+        <div class="page page--result">
           <header class="result__head">
             <div>
               <p class="eyebrow" id="result-eyebrow">protocolo completado</p>
@@ -380,25 +514,44 @@
             <div class="grade" id="result-grade">S</div>
           </header>
           <div class="result__grid">
-            <div class="result__score">
-              <span class="hud__kicker">puntuación</span>
+            <div class="panel result__score">
+              <span class="hud__kicker">puntuación total</span>
               <strong id="result-score">0</strong>
               <span class="result__record" id="result-record" hidden>nuevo récord</span>
+              <p class="result__unlock" id="result-unlock" hidden></p>
             </div>
-            <dl class="result__stats">
+            <dl class="panel result__stats">
               <div><dt>bajas</dt><dd id="result-kills">0</dd></div>
               <div><dt>precisión</dt><dd id="result-accuracy">0%</dd></div>
-              <div><dt>nodos</dt><dd id="result-nodes">0/3</dd></div>
+              <div><dt>terminales</dt><dd id="result-nodes">0/3</dd></div>
               <div><dt>tiempo</dt><dd id="result-time">0:00</dd></div>
               <div><dt>daño recibido</dt><dd id="result-damage">0</dd></div>
               <div><dt>control</dt><dd id="result-input">mouse</dd></div>
             </dl>
           </div>
           <div class="result__timebar"><i id="result-timebar"></i></div>
-          <footer class="sheet__foot">
+
+          <section class="panel board-submit" id="result-board" data-state="idle" aria-live="polite">
+            <div class="board-submit__head">
+              <span class="panel__label">tablero</span>
+              <span class="board-submit__where" id="board-where">—</span>
+            </div>
+            <p class="board-submit__text" id="board-text">Enviá la partida para verificarla en el servidor.</p>
+            <div class="board-submit__rank" id="board-rank" hidden></div>
+            <div class="board-submit__form" id="board-form">
+              <label class="field" for="board-name">
+                <span class="field__label">Operador <span class="mono-dim">1–16 caracteres</span></span>
+                <input id="board-name" class="input" type="text" maxlength="16" autocomplete="nickname" spellcheck="false" />
+              </label>
+              <button class="btn btn--primary" data-action="submit-board" id="board-send">Enviar al tablero</button>
+            </div>
+          </section>
+
+          <footer class="page__foot">
             <button class="btn btn--ghost" data-action="menu">Menú</button>
             <button class="btn btn--ghost" data-action="engineering">Ver ingeniería</button>
-            <button class="btn btn--primary" data-action="play">Reintentar ▸</button>
+            <button class="btn btn--ghost" data-action="restart">Repetir</button>
+            <button class="btn btn--primary" data-action="next-sector" id="result-next" hidden>Siguiente sector ▸</button>
           </footer>
         </div>
       </section>
@@ -429,6 +582,10 @@
       </aside>
 
       <div id="toast" class="toast" hidden></div>
+      <div id="context-lost" class="ctx-lost" role="alert" hidden>
+        <strong>Gráficos interrumpidos</strong>
+        <span>El navegador soltó el contexto WebGL. Esperando recuperación…</span>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

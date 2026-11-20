@@ -1,7 +1,7 @@
-//! Static collision world. The layout itself lives in TypeScript (`src/world/layout.ts`)
-//! and is uploaded once, so the renderer and the simulation always agree on geometry.
+//! Static collision world. Sector geometry lives in `maps.rs`; the renderer reads
+//! it back through the ABI so the simulation and the view never disagree.
 
-use crate::math::{v3, Aabb, V3, EPS};
+use crate::math::{v3, Aabb, EPS, V3};
 
 pub const MAX_BOXES: usize = 512;
 pub const FLOATS_PER_BOX: usize = 7;
@@ -13,7 +13,10 @@ pub struct BoxCollider {
     pub kind: u8,
 }
 
-pub const EMPTY_BOX: BoxCollider = BoxCollider { aabb: crate::math::EMPTY_AABB, kind: 0 };
+pub const EMPTY_BOX: BoxCollider = BoxCollider {
+    aabb: crate::math::EMPTY_AABB,
+    kind: 0,
+};
 
 pub struct Arena {
     pub boxes: [BoxCollider; MAX_BOXES],
@@ -38,36 +41,41 @@ impl Arena {
 
     /// `data` is `[min_x, min_y, min_z, max_x, max_y, max_z, kind]` per box.
     pub fn load(&mut self, data: &[f32]) -> usize {
+        self.load_boxes(
+            data.as_chunks::<FLOATS_PER_BOX>()
+                .0
+                .iter()
+                .map(|c| (v3(c[0], c[1], c[2]), v3(c[3], c[4], c[5]), c[6] as u8)),
+        )
+    }
+
+    /// Carga la geometría de un sector definido en `maps.rs`.
+    pub fn load_solids(&mut self, solids: &[crate::maps::Solid]) -> usize {
+        self.load_boxes(solids.iter().map(|s| {
+            (
+                V3::new(s.min[0], s.min[1], s.min[2]),
+                V3::new(s.max[0], s.max[1], s.max[2]),
+                s.kind,
+            )
+        }))
+    }
+
+    fn load_boxes(&mut self, boxes: impl Iterator<Item = (V3, V3, u8)>) -> usize {
         self.clear();
         let mut bounds_min = v3(f32::MAX, f32::MAX, f32::MAX);
         let mut bounds_max = v3(f32::MIN, f32::MIN, f32::MIN);
-        for chunk in data.chunks_exact(FLOATS_PER_BOX) {
+        for (min, max, kind) in boxes {
             if self.len >= MAX_BOXES {
                 break;
             }
-            let aabb = Aabb::from_min_max(
-                v3(chunk[0], chunk[1], chunk[2]),
-                v3(chunk[3], chunk[4], chunk[5]),
-            );
-            if aabb.min.x < bounds_min.x {
-                bounds_min.x = aabb.min.x;
-            }
-            if aabb.min.y < bounds_min.y {
-                bounds_min.y = aabb.min.y;
-            }
-            if aabb.min.z < bounds_min.z {
-                bounds_min.z = aabb.min.z;
-            }
-            if aabb.max.x > bounds_max.x {
-                bounds_max.x = aabb.max.x;
-            }
-            if aabb.max.y > bounds_max.y {
-                bounds_max.y = aabb.max.y;
-            }
-            if aabb.max.z > bounds_max.z {
-                bounds_max.z = aabb.max.z;
-            }
-            self.boxes[self.len] = BoxCollider { aabb, kind: chunk[6] as u8 };
+            let aabb = Aabb::from_min_max(min, max);
+            bounds_min.x = bounds_min.x.min(aabb.min.x);
+            bounds_min.y = bounds_min.y.min(aabb.min.y);
+            bounds_min.z = bounds_min.z.min(aabb.min.z);
+            bounds_max.x = bounds_max.x.max(aabb.max.x);
+            bounds_max.y = bounds_max.y.max(aabb.max.y);
+            bounds_max.z = bounds_max.z.max(aabb.max.z);
+            self.boxes[self.len] = BoxCollider { aabb, kind };
             self.len += 1;
         }
         if self.len > 0 {
@@ -195,8 +203,12 @@ impl Arena {
         // Hard safety net: never leave the arena envelope even if a future
         // layout has a gap the collider solver cannot see.
         let pad = 0.5;
-        pos.x = pos.x.clamp(self.bounds.min.x + pad, self.bounds.max.x - pad);
-        pos.z = pos.z.clamp(self.bounds.min.z + pad, self.bounds.max.z - pad);
+        pos.x = pos
+            .x
+            .clamp(self.bounds.min.x + pad, self.bounds.max.x - pad);
+        pos.z = pos
+            .z
+            .clamp(self.bounds.min.z + pad, self.bounds.max.z - pad);
         grounded
     }
 }
@@ -262,7 +274,9 @@ mod tests {
     #[test]
     fn lands_on_top_of_crate() {
         let mut a = Arena::new();
-        a.load(&[-18.0, -1.0, -18.0, 18.0, 0.0, 18.0, 1.0, -1.5, 0.0, -1.5, 1.5, 1.2, 1.5, 2.0]);
+        a.load(&[
+            -18.0, -1.0, -18.0, 18.0, 0.0, 18.0, 1.0, -1.5, 0.0, -1.5, 1.5, 1.2, 1.5, 2.0,
+        ]);
         let mut p = v3(0.0, 3.0, 0.0);
         let mut v = v3(0.0, 0.0, 0.0);
         for _ in 0..240 {
@@ -271,7 +285,10 @@ mod tests {
                 break;
             }
         }
-        assert!((p.y - 1.2).abs() < 1e-3, "expected to rest on crate top: {p:?}");
+        assert!(
+            (p.y - 1.2).abs() < 1e-3,
+            "expected to rest on crate top: {p:?}"
+        );
     }
 
     #[test]

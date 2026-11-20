@@ -17,21 +17,24 @@ import {
   SNAPSHOT_LEN,
   assertProtocol,
 } from './protocol';
+import { parseMapData, type MapData } from '../world/map';
 
 export interface WasmExports {
   memory: WebAssembly.Memory;
   bp_init(seed: number): number;
-  bp_reset(seed: number): void;
-  bp_tick(dt: number, inputPtr: number): number;
+  bp_start(mode: number, map: number, seed: number, flags: number): number;
+  bp_tick_fixed(inputPtr: number): number;
   bp_snapshot_ptr(): number;
   bp_snapshot_len(): number;
   bp_input_len(): number;
-  bp_set_arena(ptr: number, count: number): number;
-  bp_set_nodes(ptr: number, count: number): void;
-  bp_set_spawns(ptr: number, count: number): void;
-  bp_set_player_start(x: number, z: number, yaw: number): void;
-  bp_set_aim_assist(flag: number): void;
-  bp_set_practice(flag: number): void;
+  bp_map_data_ptr(): number;
+  bp_map_data_len(): number;
+  bp_load_map(id: number): number;
+  bp_log_encode(): number;
+  bp_log_ptr(): number;
+  bp_log_truncated(): number;
+  bp_replay_hash(ptr: number, len: number): bigint;
+  bp_golden_hash(ticks: number): bigint;
   bp_note_dropped(n: number): void;
   bp_alloc(len: number): number;
   bp_free(ptr: number, len: number): void;
@@ -225,6 +228,9 @@ export class Snapshot {
     };
   }
 
+  /** Eventos sobrescritos en el ring antes de que el shell los leyera. */
+  lostEvents = 0;
+
   /** Copies the event ring entries newer than `lastSeq`. */
   readEvents(lastSeq: number, out: WorldEvent[]): number {
     out.length = 0;
@@ -245,8 +251,32 @@ export class Snapshot {
       });
     }
     out.sort((a, b) => a.seq - b.seq);
+    if (out.length > 0 && out[0].seq > lastSeq + 1) this.lostEvents += out[0].seq - lastSeq - 1;
     return out.length;
   }
+}
+
+const LOAD_TIMEOUT_MS = 15_000;
+
+export interface StartOptions {
+  mode: number;
+  map: number;
+  seed: number;
+  aimAssist: boolean;
+  autoReload: boolean;
+  /** Habilita el arma 3 (SG-08). */
+  shotgun?: boolean;
+}
+
+/** FNV-1a de 64 bits sobre los bits del snapshot; igual a `replay::hash_snapshot`. */
+export function hashSnapshot(snapshot: Float32Array): bigint {
+  const bytes = new Uint8Array(snapshot.buffer, snapshot.byteOffset, snapshot.byteLength);
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+  }
+  return hash;
 }
 
 export class Engine {
@@ -259,14 +289,17 @@ export class Engine {
   ) {}
 
   static async load(url: string): Promise<Engine> {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(LOAD_TIMEOUT_MS) });
     if (!response.ok) {
       throw new Error(`no se pudo descargar el núcleo: ${response.status}`);
     }
-    const bytes = await response.arrayBuffer();
-    const { instance } = await WebAssembly.instantiate(bytes, {});
+    return Engine.fromBytes(await response.arrayBuffer());
+  }
+
+  static async fromBytes(bytes: ArrayBuffer | Uint8Array): Promise<Engine> {
+    const { instance } = await WebAssembly.instantiate(bytes as BufferSource, {});
     const exports = instance.exports as unknown as WasmExports;
-    if (typeof exports.bp_tick !== 'function' || !(exports.memory instanceof WebAssembly.Memory)) {
+    if (typeof exports.bp_tick_fixed !== 'function' || !(exports.memory instanceof WebAssembly.Memory)) {
       throw new Error('el módulo wasm no expone el ABI esperado');
     }
     const version = exports.bp_init(0x5eb17a);
@@ -289,67 +322,66 @@ export class Engine {
     return new Engine(exports, inputPtr, snapshot, memory.buffer, bytes.byteLength);
   }
 
-  /** Uploads the static collision set. Call once after `layout` is known. */
-  setArena(boxes: Float32Array): number {
-    const bytes = boxes.byteLength;
-    const ptr = this.exports.bp_alloc(bytes);
-    if (ptr === 0) throw new Error('wasm out of memory while uploading the arena');
-    new Float32Array(this.exports.memory.buffer, ptr, boxes.length).set(boxes);
-    const loaded = this.exports.bp_set_arena(ptr, boxes.length);
-    this.exports.bp_free(ptr, bytes);
+  /** Carga un sector sin iniciar partida y devuelve sus datos (geometría, terminales, spawns). */
+  loadMap(id: number): MapData {
+    if (this.exports.bp_load_map(id) !== 1) throw new Error(`mapa inexistente: ${id}`);
     this.refresh();
-    return loaded;
+    return this.mapData();
   }
 
-  setNodes(nodes: Float32Array): void {
-    this.upload(nodes, (ptr, count) => this.exports.bp_set_nodes(ptr, count));
+  mapData(): MapData {
+    const ptr = this.exports.bp_map_data_ptr();
+    const len = this.exports.bp_map_data_len();
+    // Copia: la memoria wasm puede crecer y dejar el typed array huérfano.
+    return parseMapData(new Float32Array(this.exports.memory.buffer, ptr, len).slice());
   }
 
-  setSpawns(spawns: Float32Array): void {
-    this.upload(spawns, (ptr, count) => this.exports.bp_set_spawns(ptr, count));
-  }
-
-  private upload(data: Float32Array, call: (ptr: number, count: number) => void): void {
-    const bytes = data.byteLength;
-    const ptr = this.exports.bp_alloc(bytes);
-    if (ptr === 0) throw new Error('wasm out of memory');
-    new Float32Array(this.exports.memory.buffer, ptr, data.length).set(data);
-    call(ptr, data.length);
-    this.exports.bp_free(ptr, bytes);
+  /** Inicia una partida y arma el grabador de entradas. Devuelve falso si modo o mapa no existen. */
+  start(options: StartOptions): boolean {
+    const flags = (options.aimAssist ? 1 : 0) | (options.autoReload ? 2 : 0) | (options.shotgun ? 4 : 0);
+    const ok = this.exports.bp_start(options.mode, options.map, options.seed >>> 0, flags) === 1;
     this.refresh();
-  }
-
-  setPlayerStart(x: number, z: number, yaw: number): void {
-    this.exports.bp_set_player_start(x, z, yaw);
-    this.refresh();
-  }
-
-  setAimAssist(enabled: boolean): void {
-    this.exports.bp_set_aim_assist(enabled ? 1 : 0);
-    this.refresh();
-  }
-
-  setPractice(enabled: boolean): void {
-    this.exports.bp_set_practice(enabled ? 1 : 0);
-    this.refresh();
-  }
-
-  reset(seed: number): void {
-    this.exports.bp_reset(seed >>> 0);
-    this.refresh();
+    return ok;
   }
 
   noteDropped(count: number): void {
     if (count > 0) this.exports.bp_note_dropped(count);
   }
 
-  /** Writes one input frame and advances the simulation by `dt` seconds. */
-  tick(dt: number, input: Float32Array): number {
+  /** Escribe un frame de entrada y avanza un paso fijo (1/60 s) del núcleo. */
+  tick(input: Float32Array): number {
     const buffer = new Float32Array(this.exports.memory.buffer, this.inputPtr, INPUT_LEN);
     buffer.set(input.subarray(0, INPUT_LEN));
-    const tick = this.exports.bp_tick(dt, this.inputPtr);
+    const tick = this.exports.bp_tick_fixed(this.inputPtr);
     this.refresh();
     return tick;
+  }
+
+  /** Registro de entradas de la partida actual, listo para enviar al servidor. */
+  encodeLog(): Uint8Array {
+    const len = this.exports.bp_log_encode();
+    const ptr = this.exports.bp_log_ptr();
+    return new Uint8Array(this.exports.memory.buffer, ptr, len).slice();
+  }
+
+  /** Verdadero si la partida superó el techo de ticks verificables. */
+  get logTruncated(): boolean {
+    return this.exports.bp_log_truncated() === 1;
+  }
+
+  /** Re-simula un registro dentro del propio wasm y devuelve el hash del estado final (0n si es inválido). */
+  replayHash(log: Uint8Array): bigint {
+    const ptr = this.exports.bp_alloc(log.length);
+    if (ptr === 0) throw new Error('wasm sin memoria para el registro');
+    new Uint8Array(this.exports.memory.buffer, ptr, log.length).set(log);
+    const hash = this.exports.bp_replay_hash(ptr, log.length);
+    this.exports.bp_free(ptr, log.length);
+    this.refresh();
+    return BigInt.asUintN(64, hash);
+  }
+
+  goldenHash(ticks: number): bigint {
+    return BigInt.asUintN(64, this.exports.bp_golden_hash(ticks));
   }
 
   get state(): Snapshot {

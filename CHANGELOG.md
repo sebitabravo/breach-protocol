@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.2.0 — 2026-11-20
+
+### Agregado
+
+- Tres sectores en Rust (`core/src/maps.rs`) con tests de invariantes y alcanzabilidad:
+  Control de Acceso, Refrigeración y Archivo (pasarela elevada con terminal).
+- Enemigo Interceptor (flanqueo, telegrafía visible en el snapshot, embestida) y arma
+  SG-08 Scatter (8 perdigones, caída por distancia).
+- Modos Overflow (infinito), Protocolo diario (semilla = fecha UTC, mutadores) y
+  Simulador con tutorial de 3 acciones.
+- Registro de inputs cuantizados y re-simulación (`core/src/replay.rs`); ABI de paso
+  fijo (`bp_start`, `bp_tick_fixed`). Tests de determinismo nativo vs wasm con hashes
+  fijados.
+- API de clasificación en Rust para Vercel (`api/`, `server/`) con Upstash y
+  verificación por replay; cliente en `src/net/`. Ver ADR 0003 y `docs/api-contract.md`.
+- Pasada de arte procedural: texturas, temas por sector, bloom (media/alta), robots y
+  viewmodels reconocibles, decoración de mundo.
+- Menú, selección de sector, briefing, resultados con tablero, clasificación, progreso
+  versionado en `localStorage`, HUD según mockups, marcadores de impacto y dirección
+  de daño, tipografía `--sans` y componente switch.
+- Recuperación de pérdida de contexto WebGL y `pointerlockerror` sin pausar.
+- CI: runners fijados a ubuntu-24.04, caché de Rust, `fmt`, `clippy -D warnings`,
+  workflow de la API, artefactos del e2e al fallar.
+
+### Corregido
+
+- Esc en Ajustes abiertos desde el menú ya no entra a una partida inexistente.
+- `startMatch` guardaba mal el modo: reiniciar el Simulador arrancaba un run con tiempo.
+- Teclas mantenidas durante una pausa quedaban muertas al reanudar (auto-repeat).
+- Interpolación de cámara: avanzaba a 60 Hz en vez de interpolar entre ticks.
+- Chispas y trazadores se congelaban (buffers sin `needsUpdate`).
+- Fuga de geometría y material del visor de los robots al cambiar de tipo.
+- Una partida reiniciada divergía de una nueva: quedaba estado viejo del ring de
+  eventos (hallado al comparar la partida en vivo con su replay).
+- `hits` contaba por perdigón y la precisión podía superar 1.
+- Una composición de oleada mayor que la cola hacía girar `Waves::begin` para siempre.
+- Disparos por eventos de mouse de compatibilidad en táctil; modo táctil de una sola vía.
+- La fórmula trascendente pasa por `libm`: `f32::sin` difiere 1 ulp entre nativo y wasm.
+
+### Conocido
+
+- El tutorial en portrait 320×640 se superpone con el HUD.
+- Pointer lock: ruta feliz sin verificación automática.
+- El servidor no se probó contra Vercel/Upstash reales.
+
 ## 0.1.0 — 2026-11-20
 
 Vertical slice jugable de SEBITA: BREACH PROTOCOL.

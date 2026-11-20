@@ -8,6 +8,7 @@
  */
 import { I, INPUT_LEN } from '../wasm/protocol';
 import type { Settings } from '../core/settings';
+import { KeyboardState, shouldPreventDefault } from './keyboard';
 
 const MOUSE_RAD_PER_PX = 0.0021;
 const TOUCH_RAD_PER_PX = 0.0034;
@@ -17,8 +18,19 @@ export interface InputHooks {
   onPause(): void;
   onEngineering(): void;
   onPointerLockLost(): void;
+  onPointerLockError(): void;
+  isPlaying(): boolean;
   onTouchDetected(): void;
+  onMouseDetected(): void;
   getWeapon(): number;
+  unlockedWeapons(): readonly number[];
+}
+
+/** Siguiente arma desbloqueada en orden de ids; si la actual está bloqueada, vuelve a la primera. */
+export function nextWeapon(current: number, unlocked: readonly number[]): number {
+  if (unlocked.length === 0) return 0;
+  const index = unlocked.indexOf(current);
+  return unlocked[(index + 1) % unlocked.length];
 }
 
 type PointerKind = 'stick' | 'look';
@@ -34,7 +46,7 @@ interface TrackedPointer {
 export class InputManager {
   readonly buffer = new Float32Array(INPUT_LEN);
 
-  private keys = new Set<string>();
+  private kb = new KeyboardState();
   private lookX = 0;
   private lookY = 0;
   private fireHeld = false;
@@ -92,11 +104,8 @@ export class InputManager {
     document.addEventListener('pointerlockerror', this.onPointerLockError);
     this.canvas.addEventListener('pointerdown', this.onCanvasPointerDown);
     this.canvas.addEventListener('contextmenu', this.preventDefault);
-    this.canvas.addEventListener('mousedown', this.onMouseDown);
-    this.canvas.addEventListener('mouseup', this.onMouseUp);
     this.canvas.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('pointermove', this.onWindowPointerMove, { passive: true });
-    window.addEventListener('mouseup', this.onMouseUp);
     document.getElementById('touch-layer')?.addEventListener('pointerdown', this.onTouchLayerDown);
     window.addEventListener('pointerup', this.onWindowPointerUp);
     window.addEventListener('pointercancel', this.onWindowPointerUp);
@@ -104,6 +113,7 @@ export class InputManager {
     this.stick?.addEventListener('pointermove', this.onStickMove);
     this.stick?.addEventListener('pointerup', this.onStickUp);
     this.stick?.addEventListener('pointercancel', this.onStickUp);
+    this.stick?.addEventListener('lostpointercapture', this.onStickUp);
   }
 
   detach(): void {
@@ -116,11 +126,8 @@ export class InputManager {
     document.removeEventListener('pointerlockerror', this.onPointerLockError);
     this.canvas.removeEventListener('pointerdown', this.onCanvasPointerDown);
     this.canvas.removeEventListener('contextmenu', this.preventDefault);
-    this.canvas.removeEventListener('mousedown', this.onMouseDown);
-    this.canvas.removeEventListener('mouseup', this.onMouseUp);
     this.canvas.removeEventListener('mousemove', this.onMouseMove);
     window.removeEventListener('pointermove', this.onWindowPointerMove);
-    window.removeEventListener('mouseup', this.onMouseUp);
     document.getElementById('touch-layer')?.removeEventListener('pointerdown', this.onTouchLayerDown);
     window.removeEventListener('pointerup', this.onWindowPointerUp);
     window.removeEventListener('pointercancel', this.onWindowPointerUp);
@@ -128,6 +135,7 @@ export class InputManager {
     this.stick?.removeEventListener('pointermove', this.onStickMove);
     this.stick?.removeEventListener('pointerup', this.onStickUp);
     this.stick?.removeEventListener('pointercancel', this.onStickUp);
+    this.stick?.removeEventListener('lostpointercapture', this.onStickUp);
   }
 
   // --------------------------------------------------------------- frame api
@@ -137,9 +145,11 @@ export class InputManager {
     this.frameLookX = this.lookX;
     this.frameLookY = this.lookY;
     this.frameFirePressed = this.firePressed;
-    this.frameJumpPressed = this.jumpPressed;
-    this.frameReloadPressed = this.reloadPressed;
-    this.frameSwitch = this.switchTo;
+    this.frameJumpPressed = this.jumpPressed || this.kb.consumeJump();
+    this.frameReloadPressed = this.reloadPressed || this.kb.consumeReload();
+    const keyboardSwitch = this.kb.consumeSwitch();
+    const requested = this.switchTo || keyboardSwitch;
+    this.frameSwitch = this.hooks.unlockedWeapons().includes(requested) ? requested : 0;
     this.lookX = 0;
     this.lookY = 0;
     this.firePressed = false;
@@ -147,7 +157,7 @@ export class InputManager {
     this.reloadPressed = false;
     this.switchTo = 0;
 
-    const keys = this.keys;
+    const keys = this.kb;
     let mx = 0;
     let mz = 0;
     if (keys.has('KeyW') || keys.has('ArrowUp')) mz += 1;
@@ -175,16 +185,16 @@ export class InputManager {
     target[I.fireHeld] = this.fireHeld || this.touchFire ? 1 : 0;
     target[I.firePressed] = first && this.frameFirePressed ? 1 : 0;
     target[I.jump] = first && this.frameJumpPressed ? 1 : 0;
-    target[I.interact] = this.keys.has('KeyE') || this.touchInteract ? 1 : 0;
+    target[I.interact] = this.kb.has('KeyE') || this.touchInteract ? 1 : 0;
     target[I.reload] = first && this.frameReloadPressed ? 1 : 0;
-    target[I.run] = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 1 : 0;
+    target[I.run] = this.kb.has('ShiftLeft') || this.kb.has('ShiftRight') ? 1 : 0;
     target[I.switch] = first ? this.frameSwitch : 0;
     target[I.ads] = this.adsHeld ? 1 : 0;
   }
 
   /** Clears every held state: used on pause, blur and orientation change. */
   reset(): void {
-    this.keys.clear();
+    this.kb.clear();
     this.pointers.clear();
     this.lookX = 0;
     this.lookY = 0;
@@ -228,46 +238,30 @@ export class InputManager {
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
-    if (event.repeat) {
-      return;
-    }
     const code = event.code;
     if (code === 'Escape') {
-      this.hooks.onPause();
+      if (!event.repeat) this.hooks.onPause();
       return;
     }
     if (code === 'F3') {
       event.preventDefault();
-      this.hooks.onEngineering();
+      if (!event.repeat) this.hooks.onEngineering();
       return;
     }
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(code)) {
-      if (document.activeElement === document.body || code !== 'Tab') event.preventDefault();
+    const target = event.target as HTMLElement | null;
+    const formTarget = target?.closest?.('input, select, textarea, button') != null;
+    if (shouldPreventDefault(code, { playing: this.hooks.isPlaying(), formTarget })) {
+      event.preventDefault();
     }
-    this.keys.add(code);
-    if (code === 'Space') this.jumpPressed = true;
-    if (code === 'KeyR') this.reloadPressed = true;
-    if (code === 'Digit1') this.switchTo = 1;
-    if (code === 'Digit2') this.switchTo = 2;
+    this.kb.keyDown(code, event.repeat);
   };
 
   private onKeyUp = (event: KeyboardEvent): void => {
-    this.keys.delete(event.code);
+    this.kb.keyUp(event.code);
   };
 
   private onBlur = (): void => {
     this.reset();
-  };
-
-  private onMouseDown = (event: MouseEvent): void => {
-    if (event.button !== 0) return;
-    this.fireHeld = true;
-    this.firePressed = true;
-  };
-
-  private onMouseUp = (event: MouseEvent): void => {
-    if (event.button !== 0) return;
-    this.fireHeld = false;
   };
 
   private onMouseMove = (event: MouseEvent): void => {
@@ -288,19 +282,27 @@ export class InputManager {
 
   private onPointerLockError = (): void => {
     this.pointerLocked = false;
-    this.hooks.onPointerLockLost();
+    this.hooks.onPointerLockError();
   };
 
+  /** El modo sigue al último puntero real; los eventos de mouse de compatibilidad ya no disparan. */
   private markTouch(event: PointerEvent): void {
     if (event.pointerType === 'touch' && !this.usingTouch) {
       this.usingTouch = true;
       this.hooks.onTouchDetected();
+    } else if (event.pointerType === 'mouse' && this.usingTouch) {
+      this.usingTouch = false;
+      this.hooks.onMouseDetected();
     }
   }
 
   private onCanvasPointerDown = (event: PointerEvent): void => {
     this.markTouch(event);
     if (event.pointerType === 'mouse') {
+      if (event.button === 0) {
+        this.fireHeld = true;
+        this.firePressed = true;
+      }
       if (!this.pointerLocked) {
         void this.requestPointerLock();
       }
@@ -352,6 +354,7 @@ export class InputManager {
   };
 
   private onWindowPointerUp = (event: PointerEvent): void => {
+    if (event.pointerType === 'mouse' && event.button === 0) this.fireHeld = false;
     const tracked = this.pointers.get(event.pointerId);
     if (!tracked) return;
     if (tracked.kind === 'stick') {
@@ -414,7 +417,7 @@ export class InputManager {
         this.touchInteract = true;
         break;
       case 'switch':
-        this.switchTo = this.hooks.getWeapon() === 1 ? 2 : 1;
+        this.switchTo = nextWeapon(this.hooks.getWeapon(), this.hooks.unlockedWeapons());
         break;
       case 'ads':
         this.adsHeld = true;

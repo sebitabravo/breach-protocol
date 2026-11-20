@@ -24,7 +24,10 @@ const REGEN_PER_SEC: f32 = 4.0;
 
 const RECOIL_RECOVER: f32 = 6.5;
 
-#[derive(Clone, Copy, Debug)]
+/// Escala fija de la mirada cuantizada: unidades por radián.
+pub const LOOK_UNITS_PER_RAD: f32 = 4096.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Input {
     pub move_x: f32,
     pub move_z: f32,
@@ -38,6 +41,33 @@ pub struct Input {
     pub run: bool,
     pub switch: u8,
     pub ads: bool,
+}
+
+impl Input {
+    /// Redondea movimiento a i8 y mirada a i16: el registro guarda exactamente
+    /// lo que la simulación consumió, así el replay reproduce bit a bit.
+    pub fn quantized(mut self) -> Input {
+        self.move_x = quantize_axis(self.move_x) as f32 / 127.0;
+        self.move_z = quantize_axis(self.move_z) as f32 / 127.0;
+        self.look_dx = quantize_look(self.look_dx) as f32 / LOOK_UNITS_PER_RAD;
+        self.look_dy = quantize_look(self.look_dy) as f32 / LOOK_UNITS_PER_RAD;
+        self.switch = self.switch.min(3);
+        self
+    }
+}
+
+pub fn quantize_axis(v: f32) -> i8 {
+    if v.is_nan() {
+        return 0;
+    }
+    (v.clamp(-1.0, 1.0) * 127.0).round() as i8
+}
+
+pub fn quantize_look(v: f32) -> i16 {
+    if v.is_nan() {
+        return 0;
+    }
+    (v * LOOK_UNITS_PER_RAD).clamp(-32767.0, 32767.0).round() as i16
 }
 
 impl Default for Input {
@@ -133,7 +163,11 @@ impl Player {
 
     pub fn spread(&self) -> f32 {
         let def = weapons::def(self.weapon);
-        let base = if self.ads > 0.5 { def.ads_spread } else { def.spread };
+        let base = if self.ads > 0.5 {
+            def.ads_spread
+        } else {
+            def.spread
+        };
         // Moving destabilises the shot a little, airborne more so.
         let move_penalty = clamp(self.vel.len_xz() / RUN_SPEED, 0.0, 1.0) * 0.012;
         let air_penalty = if self.grounded { 0.0 } else { 0.02 };
@@ -229,7 +263,7 @@ impl Player {
         );
 
         // Recoil decay, frame-rate independent.
-        let decay = (-RECOIL_RECOVER * dt).exp();
+        let decay = crate::math::exp(-RECOIL_RECOVER * dt);
         self.recoil_pitch *= decay;
         self.recoil_yaw *= decay;
         if self.recoil_pitch.abs() < 1e-4 {
@@ -309,7 +343,10 @@ mod tests {
     fn walks_forward_along_negative_z() {
         let arena = flat_arena();
         let mut p = Player::new(v3(0.0, 0.0, 0.0), 0.0);
-        let input = Input { move_z: 1.0, ..Default::default() };
+        let input = Input {
+            move_z: 1.0,
+            ..Default::default()
+        };
         for _ in 0..60 {
             p.tick(1.0 / 60.0, &input, &arena);
         }
@@ -322,7 +359,10 @@ mod tests {
     fn strafe_right_moves_positive_x() {
         let arena = flat_arena();
         let mut p = Player::new(v3(0.0, 0.0, 0.0), 0.0);
-        let input = Input { move_x: 1.0, ..Default::default() };
+        let input = Input {
+            move_x: 1.0,
+            ..Default::default()
+        };
         for _ in 0..30 {
             p.tick(1.0 / 60.0, &input, &arena);
         }
@@ -334,8 +374,15 @@ mod tests {
         let arena = flat_arena();
         let mut walker = Player::new(v3(0.0, 0.0, 0.0), 0.0);
         let mut runner = Player::new(v3(0.0, 0.0, 0.0), 0.0);
-        let input = Input { move_z: 1.0, ..Default::default() };
-        let run_input = Input { move_z: 1.0, run: true, ..Default::default() };
+        let input = Input {
+            move_z: 1.0,
+            ..Default::default()
+        };
+        let run_input = Input {
+            move_z: 1.0,
+            run: true,
+            ..Default::default()
+        };
         for _ in 0..90 {
             walker.tick(1.0 / 60.0, &input, &arena);
             runner.tick(1.0 / 60.0, &run_input, &arena);
@@ -347,7 +394,10 @@ mod tests {
     fn jump_leaves_ground_and_lands() {
         let arena = flat_arena();
         let mut p = Player::new(v3(0.0, 0.0, 0.0), 0.0);
-        let jump = Input { jump: true, ..Default::default() };
+        let jump = Input {
+            jump: true,
+            ..Default::default()
+        };
         p.tick(1.0 / 60.0, &jump, &arena);
         assert!(!p.grounded);
         let idle = Input::default();
@@ -366,14 +416,22 @@ mod tests {
         let arena = flat_arena();
         let mut a = Player::new(v3(0.0, 0.0, 0.0), 0.0);
         let mut b = Player::new(v3(0.0, 0.0, 0.0), 0.0);
-        let input = Input { move_z: 1.0, ..Default::default() };
+        let input = Input {
+            move_z: 1.0,
+            ..Default::default()
+        };
         for _ in 0..60 {
             a.tick(1.0 / 60.0, &input, &arena);
         }
         for _ in 0..30 {
             b.tick(2.0 / 60.0, &input, &arena);
         }
-        assert!((a.pos.z - b.pos.z).abs() < 0.8, "{} vs {}", a.pos.z, b.pos.z);
+        assert!(
+            (a.pos.z - b.pos.z).abs() < 0.8,
+            "{} vs {}",
+            a.pos.z,
+            b.pos.z
+        );
     }
 
     #[test]
@@ -393,7 +451,11 @@ mod tests {
         for _ in 0..120 {
             p.tick(1.0 / 60.0, &idle, &arena);
         }
-        assert!((p.hp - 50.0).abs() < 1e-3, "regenerated too early: {}", p.hp);
+        assert!(
+            (p.hp - 50.0).abs() < 1e-3,
+            "regenerated too early: {}",
+            p.hp
+        );
         for _ in 0..(60 * 8) {
             p.tick(1.0 / 60.0, &idle, &arena);
         }
@@ -413,7 +475,10 @@ mod tests {
             p.tick(1.0 / 60.0, &idle, &arena);
         }
         assert_eq!(p.ammo, weapons::SIDEARM.mag);
-        assert_eq!(p.reserve, weapons::SIDEARM.reserve - (weapons::SIDEARM.mag - 2));
+        assert_eq!(
+            p.reserve,
+            weapons::SIDEARM.reserve - (weapons::SIDEARM.mag - 2)
+        );
     }
 
     #[test]

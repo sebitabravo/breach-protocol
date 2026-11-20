@@ -1,15 +1,34 @@
 /**
- * HUD: reads the simulation snapshot and writes DOM only when a value actually
- * changed. The minimap is a separate 2D canvas redrawn every other frame.
+ * HUD: lee el snapshot de la simulación y escribe el DOM solo cuando un valor
+ * cambió. El minimapa es un canvas 2D aparte, redibujado cada dos frames.
  */
 import type { Snapshot } from '../wasm/bridge';
-import { ENEMY_STATE, PHASE, WEAPON_LABEL } from '../wasm/protocol';
-import { ARENA_BOXES, NODES } from '../world/layout';
+import { ENEMY_STATE, PHASE, WEAPON } from '../wasm/protocol';
+import type { MapData, Mutator } from '../world/map';
+import { MUTATOR_LABEL } from '../world/map';
+import type { Mode } from '../core/screens';
+import type { FeedKind } from '../core/events';
+import { byId } from './dom';
 
-function byId<T extends HTMLElement>(id: string): T {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`missing HUD element #${id}`);
-  return el as T;
+export const WEAPON_SHORT: Record<number, string> = {
+  [WEAPON.sidearm]: 'PB-01',
+  [WEAPON.carbine]: 'AR-04',
+  [WEAPON.shotgun]: 'SG-08',
+};
+
+/** Infinito en el modo Overflow (la simulación reporta `waveTotal` 0). */
+const INFINITE = '∞';
+const RESERVE_UNLIMITED = 999;
+const HIT_FLASH_MS = 160;
+const DAMAGE_DIR_MS = 900;
+
+export interface MatchView {
+  mode: Mode;
+  sectorCode: string;
+  sectorName: string;
+  dateKey: string;
+  mutator: Mutator;
+  unlockedWeapons: readonly number[];
 }
 
 function thousands(value: number): string {
@@ -24,33 +43,52 @@ function clock(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function modeLabel(view: MatchView): string {
+  switch (view.mode) {
+    case 'run':
+      return 'misión';
+    case 'overflow':
+      return 'overflow · ARGOS inunda el sector';
+    case 'daily':
+      return `protocolo diario · ${view.dateKey} · ${MUTATOR_LABEL[view.mutator]}`;
+    case 'practice':
+      return 'simulador';
+  }
+}
+
 interface FeedEntry {
-  text: string;
-  kind: 'good' | 'danger' | 'plain';
   born: number;
   el: HTMLElement;
 }
 
 export class Hud {
   private wave = byId('hud-wave');
+  private waveTotal = byId('hud-wave-total');
   private waveBar = byId('hud-wave-bar');
+  private sectorCode = byId('hud-sector-code');
+  private sectorName = byId('hud-sector-name');
+  private mode = byId('hud-mode');
   private score = byId('hud-score');
   private objectiveLine = byId('hud-objective-line');
+  private timeLabel = byId('hud-time-label');
   private time = byId('hud-time');
   private remaining = byId('hud-remaining');
-  private objective = byId('hud-objective');
   private nodes = Array.from(document.querySelectorAll<HTMLElement>('#hud-nodes .node'));
   private hp = byId('hud-hp');
   private hpBar = byId('hud-hp-bar');
   private ammo = byId('hud-ammo');
   private reserve = byId('hud-reserve');
   private weaponName = byId('hud-weapon');
+  private slots = Array.from(document.querySelectorAll<HTMLElement>('#hud-slots .slot'));
   private reloadBar = byId('hud-reload-bar');
   private reloadHint = byId('hud-reload-hint');
   private ammoBlock = document.querySelector<HTMLElement>('.ammo');
+  private prompt = byId('hud-prompt');
+  private promptText = byId('hud-prompt-text');
   private crosshair = byId('crosshair');
-  private hitmarker = document.querySelector<HTMLElement>('.hitmarker');
-  private damage = byId('damage-flash');
+  private hitMarker = byId('hit-marker');
+  private damageFlash = byId('damage-flash');
+  private damageDir = byId('hud-dmgdir');
   private extraction = byId('hud-extraction');
   private extractionTime = byId('hud-extraction-time');
   private feed = byId('hud-feed');
@@ -63,6 +101,10 @@ export class Hud {
   private cache = new Map<string, string | number | boolean>();
   private entries: FeedEntry[] = [];
   private frame = 0;
+  private map: MapData | null = null;
+  private view: MatchView | null = null;
+  private hitTimer = 0;
+  private dirTimer = 0;
 
   private set(key: string, value: string | number | boolean, apply: () => void): void {
     if (this.cache.get(key) === value) return;
@@ -70,47 +112,64 @@ export class Hud {
     apply();
   }
 
+  /** Configura etiquetas, sector y armas disponibles para la partida que empieza. */
+  setMatch(view: MatchView): void {
+    this.view = view;
+    this.cache.clear();
+    this.sectorCode.textContent = view.sectorCode;
+    this.sectorName.textContent = view.sectorName;
+    this.mode.textContent = modeLabel(view);
+    this.timeLabel.textContent = view.mode === 'run' || view.mode === 'daily' ? 'restante' : 'transcurrido';
+    for (const slot of this.slots) {
+      const weapon = Number(slot.dataset.weapon);
+      slot.classList.toggle('is-locked', !view.unlockedWeapons.includes(weapon));
+    }
+  }
+
+  setMap(map: MapData): void {
+    this.map = map;
+  }
+
   reset(): void {
     this.cache.clear();
     for (const entry of this.entries) entry.el.remove();
     this.entries = [];
+    this.hideDamageDirection();
+    this.hitMarker.classList.remove('is-hot', 'is-kill');
   }
 
-  update(state: Snapshot, dt: number, usingTouch: boolean): void {
+  update(state: Snapshot, usingTouch: boolean): void {
     this.frame += 1;
+    const infinite = state.waveTotal === 0;
+    const timed = this.view?.mode === 'run' || this.view?.mode === 'daily';
 
     this.set('wave', state.wave, () => {
       this.wave.textContent = String(state.wave);
     });
-    this.set('waveBar', state.wave, () => {
-      this.waveBar.style.width = `${Math.min(100, (state.wave / Math.max(1, state.waveTotal)) * 100)}%`;
+    this.set('waveTotal', infinite ? INFINITE : state.waveTotal, () => {
+      this.waveTotal.textContent = infinite ? `/${INFINITE}` : `/${state.waveTotal}`;
+    });
+    this.set('waveBar', infinite ? 'inf' : state.wave / Math.max(1, state.waveTotal), () => {
+      const ratio = infinite ? 1 : Math.min(1, state.wave / Math.max(1, state.waveTotal));
+      this.waveBar.style.width = `${Math.round(ratio * 100)}%`;
     });
     this.set('score', Math.round(state.score), () => {
       this.score.textContent = thousands(state.score);
     });
-    this.set('time', clock(state.timeLeft), () => {
-      this.time.textContent = clock(state.timeLeft);
+    const shownTime = timed ? state.timeLeft : state.timeElapsed;
+    this.set('time', clock(shownTime), () => {
+      this.time.textContent = clock(shownTime);
     });
     this.set('remaining', state.enemiesRemaining, () => {
       this.remaining.textContent = String(state.enemiesRemaining);
     });
 
-    const nodesText =
-      state.phase === PHASE.extraction
-        ? 'extracción en curso'
-        : `reactivá el terminal de control (${state.nodesActive}/3)`;
-    this.set('objLine', nodesText, () => {
-      this.objectiveLine.textContent = nodesText;
-    });
-
     const objectiveText =
       state.phase === PHASE.extraction
-        ? 'Sostené la posición hasta la extracción'
-        : state.nodesActive >= 3
-          ? 'Núcleo recuperado'
-          : 'Reactivá los nodos de red';
-    this.set('objective', objectiveText, () => {
-      this.objective.textContent = objectiveText;
+        ? 'sostené la posición hasta la extracción'
+        : `reactivá el terminal de control (${state.nodesActive}/3)`;
+    this.set('objLine', objectiveText, () => {
+      this.objectiveLine.textContent = objectiveText;
     });
 
     for (let i = 0; i < this.nodes.length; i += 1) {
@@ -140,11 +199,15 @@ export class Hud {
       this.ammo.textContent = String(ammo);
       this.ammoBlock?.classList.toggle('is-low', ammo <= Math.max(1, state.mag * 0.2));
     });
-    this.set('reserve', Math.round(state.reserve), () => {
-      this.reserve.textContent = String(Math.round(state.reserve));
+    const reserve = Math.round(state.reserve);
+    this.set('reserve', reserve, () => {
+      this.reserve.textContent = reserve >= RESERVE_UNLIMITED ? INFINITE : String(reserve);
     });
     this.set('weapon', state.weapon, () => {
-      this.weaponName.textContent = WEAPON_LABEL[state.weapon] ?? 'PB-01';
+      this.weaponName.textContent = WEAPON_SHORT[state.weapon] ?? WEAPON_SHORT[WEAPON.sidearm];
+      for (const slot of this.slots) {
+        slot.classList.toggle('is-active', Number(slot.dataset.weapon) === state.weapon);
+      }
     });
     this.set('reload', Math.round(state.reloadProgress * 100), () => {
       this.reloadBar.style.width = `${Math.round(state.reloadProgress * 100)}%`;
@@ -165,14 +228,9 @@ export class Hud {
       this.crosshair.style.setProperty('--gap', `${gap}px`);
     });
 
-    const showHit = state.hitAge < 0.14;
-    this.set('hit', showHit, () => {
-      this.hitmarker?.classList.toggle('is-hot', showHit);
-    });
-
     const damageAlpha = Math.max(0, 1 - state.damageAge / 0.6) * 0.9;
     this.set('damage', Math.round(damageAlpha * 20), () => {
-      this.damage.style.opacity = String(damageAlpha.toFixed(2));
+      this.damageFlash.style.opacity = String(damageAlpha.toFixed(2));
     });
 
     const extracting = state.phase === PHASE.extraction;
@@ -185,34 +243,65 @@ export class Hud {
       });
     }
 
-    this.set('regen', state.damageAge > 7 && state.hp < state.hpMax, () => {
-      this.buffRegen.hidden = !(state.damageAge > 7 && state.hp < state.hpMax);
+    const regen = state.damageAge > 7 && state.hp < state.hpMax;
+    this.set('regen', regen, () => {
+      this.buffRegen.hidden = !regen;
     });
-    this.set('assist', state.aimAssist && usingTouch, () => {
-      this.buffAssist.hidden = !(state.aimAssist && usingTouch);
+    const assist = state.aimAssist && usingTouch;
+    this.set('assist', assist, () => {
+      this.buffAssist.hidden = !assist;
     });
 
     const canInteract = state.interacting >= 0;
     this.set('interactAvailable', canInteract, () => {
       this.interactBtn?.classList.toggle('is-available', canInteract);
+      this.prompt.hidden = !canInteract;
     });
+    if (canInteract) {
+      const text = `${usingTouch ? 'tocá' : 'mantené'} para activar el terminal ${state.interacting + 1}`;
+      this.set('promptText', text, () => {
+        this.promptText.textContent = text;
+      });
+    }
 
-    this.tickFeed(dt);
+    this.tickFeed();
     if (this.frame % 2 === 0) this.drawMinimap(state);
   }
 
-  pushFeed(text: string, kind: FeedEntry['kind'] = 'plain'): void {
+  pushFeed(text: string, kind: FeedKind = 'plain'): void {
     const el = document.createElement('div');
     el.className = `feedline${kind === 'plain' ? '' : ` feedline--${kind}`}`;
     el.textContent = text;
     this.feed.appendChild(el);
-    this.entries.push({ text, kind, born: performance.now(), el });
+    this.entries.push({ born: performance.now(), el });
     while (this.entries.length > 4) {
       this.entries.shift()?.el.remove();
     }
   }
 
-  private tickFeed(_dt: number): void {
+  /** Marca de impacto; `kill` cambia el color a peligro. Ligada a EVT.enemyHit / EVT.enemyDied. */
+  flashHit(kill: boolean): void {
+    this.hitMarker.classList.toggle('is-kill', kill);
+    this.hitMarker.classList.add('is-hot');
+    window.clearTimeout(this.hitTimer);
+    this.hitTimer = window.setTimeout(() => this.hitMarker.classList.remove('is-hot'), HIT_FLASH_MS);
+  }
+
+  /** Indica de dónde llega el daño: 0 = al frente, +π/2 = derecha, ±π = atrás. */
+  showDamageFrom(bearing: number): void {
+    const degrees = (bearing * 180) / Math.PI;
+    const arrow = this.damageDir.firstElementChild as HTMLElement | null;
+    if (arrow) arrow.style.transform = `rotate(${degrees.toFixed(1)}deg)`;
+    this.damageDir.hidden = false;
+    window.clearTimeout(this.dirTimer);
+    this.dirTimer = window.setTimeout(() => this.hideDamageDirection(), DAMAGE_DIR_MS);
+  }
+
+  private hideDamageDirection(): void {
+    this.damageDir.hidden = true;
+  }
+
+  private tickFeed(): void {
     const now = performance.now();
     while (this.entries.length > 0 && now - this.entries[0].born > 3600) {
       this.entries.shift()?.el.remove();
@@ -235,18 +324,19 @@ export class Hud {
     ctx.translate(-state.px * scale, -state.pz * scale);
 
     ctx.fillStyle = 'rgba(46,63,79,0.85)';
-    for (const box of ARENA_BOXES) {
-      if (box.material === 'glow' || box.material === 'floor') continue;
+    for (const solid of this.map?.solids ?? []) {
+      if (solid.kind === 1) continue;
       ctx.fillRect(
-        (box.x - box.sx / 2) * scale,
-        (box.z - box.sz / 2) * scale,
-        Math.max(1, box.sx * scale),
-        Math.max(1, box.sz * scale),
+        solid.min[0] * scale,
+        solid.min[2] * scale,
+        Math.max(1, (solid.max[0] - solid.min[0]) * scale),
+        Math.max(1, (solid.max[2] - solid.min[2]) * scale),
       );
     }
 
-    for (let i = 0; i < NODES.length; i += 1) {
-      const node = NODES[i];
+    const nodes = this.map?.nodes ?? [];
+    for (let i = 0; i < nodes.length; i += 1) {
+      const node = nodes[i];
       const live = state.node(i);
       ctx.fillStyle = live.active ? '#5ce08b' : 'rgba(150,170,186,0.75)';
       ctx.fillRect(node.x * scale - 2, node.z * scale - 2, 4, 4);
@@ -262,7 +352,6 @@ export class Hud {
     }
     ctx.restore();
 
-    // Player marker + view cone, drawn after restore so it stays upright-ish.
     ctx.save();
     ctx.translate(size / 2, size / 2);
     ctx.fillStyle = 'rgba(92,224,139,0.16)';

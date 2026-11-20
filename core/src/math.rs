@@ -133,8 +133,28 @@ pub fn clamp(v: f32, lo: f32, hi: f32) -> f32 {
     }
 }
 
-pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
+// Todas las funciones trascendentes pasan por `libm` (Rust puro): `f32::sin`
+// delega en el libm del sistema y difiere por 1 ulp entre nativo y wasm32, lo
+// que rompería los replays verificados en el servidor.
+
+#[inline]
+pub fn sin(x: f32) -> f32 {
+    libm::sinf(x)
+}
+
+#[inline]
+pub fn cos(x: f32) -> f32 {
+    libm::cosf(x)
+}
+
+#[inline]
+pub fn exp(x: f32) -> f32 {
+    libm::expf(x)
+}
+
+#[inline]
+pub fn atan2(y: f32, x: f32) -> f32 {
+    libm::atan2f(y, x)
 }
 
 /// Frame-rate independent approach: closes `delta` units towards the target.
@@ -144,11 +164,6 @@ pub fn approach(cur: f32, target: f32, delta: f32) -> f32 {
     } else {
         (cur - delta).max(target)
     }
-}
-
-/// Exponential smoothing that stays stable for any `dt`.
-pub fn damp(cur: f32, target: f32, lambda: f32, dt: f32) -> f32 {
-    lerp(cur, target, 1.0 - (-lambda * dt).exp())
 }
 
 /// Wraps an angle into `(-PI, PI]`.
@@ -165,18 +180,18 @@ pub fn wrap_pi(mut a: f32) -> f32 {
 
 /// Forward unit vector for a first-person camera (Three.js `YXZ` order).
 pub fn dir_from_yaw_pitch(yaw: f32, pitch: f32) -> V3 {
-    let cp = pitch.cos();
-    v3(-yaw.sin() * cp, pitch.sin(), -yaw.cos() * cp)
+    let cp = cos(pitch);
+    v3(-sin(yaw) * cp, sin(pitch), -cos(yaw) * cp)
 }
 
 /// Ground-plane forward vector (ignores pitch).
 pub fn forward_from_yaw(yaw: f32) -> V3 {
-    v3(-yaw.sin(), 0.0, -yaw.cos())
+    v3(-sin(yaw), 0.0, -cos(yaw))
 }
 
 /// Ground-plane right vector (ignores pitch).
 pub fn right_from_yaw(yaw: f32) -> V3 {
-    v3(yaw.cos(), 0.0, -yaw.sin())
+    v3(cos(yaw), 0.0, -sin(yaw))
 }
 
 /// Axis-aligned box, the only collider primitive the slice needs.
@@ -186,12 +201,18 @@ pub struct Aabb {
     pub max: V3,
 }
 
-pub const EMPTY_AABB: Aabb = Aabb { min: V3::ZERO, max: V3::ZERO };
+pub const EMPTY_AABB: Aabb = Aabb {
+    min: V3::ZERO,
+    max: V3::ZERO,
+};
 
 impl Aabb {
     pub fn from_center_size(center: V3, size: V3) -> Aabb {
         let h = size * 0.5;
-        Aabb { min: center - h, max: center + h }
+        Aabb {
+            min: center - h,
+            max: center + h,
+        }
     }
 
     pub fn from_min_max(min: V3, max: V3) -> Aabb {
@@ -215,7 +236,10 @@ impl Aabb {
     }
 
     pub fn expand(&self, m: f32) -> Aabb {
-        Aabb { min: self.min - v3(m, m, m), max: self.max + v3(m, m, m) }
+        Aabb {
+            min: self.min - v3(m, m, m),
+            max: self.max + v3(m, m, m),
+        }
     }
 
     pub fn overlaps(&self, o: &Aabb) -> bool {
@@ -343,5 +367,16 @@ mod tests {
     fn wrap_pi_bounds() {
         assert!((wrap_pi(7.0) - (7.0 - core::f32::consts::TAU)).abs() < 1e-4);
         assert!((wrap_pi(-7.0) + (7.0 - core::f32::consts::TAU)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn transcendental_wrappers_are_libm_bit_for_bit() {
+        for k in -40..40 {
+            let x = k as f32 * 0.37;
+            assert_eq!(sin(x).to_bits(), libm::sinf(x).to_bits());
+            assert_eq!(cos(x).to_bits(), libm::cosf(x).to_bits());
+            assert_eq!(exp(-x.abs()).to_bits(), libm::expf(-x.abs()).to_bits());
+            assert_eq!(atan2(x, 1.5).to_bits(), libm::atan2f(x, 1.5).to_bits());
+        }
     }
 }

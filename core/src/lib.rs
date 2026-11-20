@@ -6,31 +6,41 @@
 //!
 //! Contract (see `src/wasm/protocol.ts`):
 //!   bp_init(seed)                      -> protocol version
-//!   bp_reset(seed)                     -> starts a new match
-//!   bp_tick(dt, input_ptr)             -> tick count
+//!   bp_start(mode, map, seed, flags)   -> 1 on success; also arms the input recorder
+//!   bp_tick_fixed(input_ptr)           -> tick count (fixed step, host never picks dt)
 //!   bp_snapshot_ptr() / bp_snapshot_len()
-//!   bp_set_arena(ptr, count)           -> boxes loaded
-//!   bp_set_nodes(ptr, count)
-//!   bp_set_spawns(ptr, count)
-//!   bp_set_player_start(x, z, yaw)
-//!   bp_set_aim_assist(flag)
-//!   bp_set_practice(flag)
+//!   bp_map_data_ptr() / bp_map_data_len() / bp_load_map(id)
+//!   bp_log_encode() / bp_log_ptr() / bp_log_truncated()
+//!   bp_replay_hash(ptr, len) / bp_golden_hash(ticks)
 //!   bp_note_dropped(n)
 //!   bp_alloc(len) / bp_free(ptr, len)
 
-#![allow(clippy::missing_safety_doc)]
-
 mod arena;
+mod daily;
 mod enemy;
+mod maps;
 mod math;
 mod player;
 mod protocol;
+mod replay;
 mod rng;
+#[cfg(test)]
+mod scenarios;
 mod sim;
 mod waves;
 mod weapons;
 
-pub use sim::Game;
+// Superficie pública para el crate de API (`bp_core`). Solo se añaden reexportaciones.
+pub use daily::{daily_config, is_valid_date};
+pub use maps::MAP_COUNT;
+pub use player::Input;
+pub use protocol::phase;
+pub use protocol::phase::{EXTRACTION, LOSE, PLAYING, WIN};
+pub use replay::{decode, run, run_bytes, Header, Log, Outcome, ReplayError, MAX_TICKS};
+pub use sim::{
+    Game, FLAG_AIM_ASSIST, FLAG_AUTO_RELOAD, FLAG_SHOTGUN, MODE_DAILY, MODE_MISSION, MODE_OVERFLOW,
+    MODE_PRACTICE, OVERFLOW_SCORE_VERSION, SCORE_VERSION,
+};
 
 use core::ptr;
 use std::alloc::{alloc, dealloc, Layout};
@@ -61,40 +71,51 @@ pub extern "C" fn bp_init(seed: u32) -> u32 {
     protocol::PROTOCOL_VERSION
 }
 
+/// Inicia una partida: `flags` bit0 = aim assist, bit1 = recarga automática.
+/// Devuelve 1 si el modo y el mapa son válidos. Activa el registro de entradas.
 #[no_mangle]
-pub extern "C" fn bp_reset(seed: u32) {
-    game().reset(seed);
+pub extern "C" fn bp_start(mode: u32, map: u32, seed: u32, flags: u32) -> u32 {
+    let g = game();
+    g.enable_recording();
+    let ok = g.start(mode as u8, map as u8, seed, flags as u8);
+    g.write_snapshot();
+    ok as u32
 }
 
+/// Un tick de paso fijo (`sim::FIXED_DT`). El host no elige `dt`: así el registro
+/// de entradas basta para reproducir la partida en el servidor.
+///
+/// # Safety
+/// `input_ptr` debe ser nulo o apuntar a `INPUT_LEN` `f32` legibles.
 #[no_mangle]
-pub extern "C" fn bp_tick(dt: f32, input_ptr: *const f32) -> u32 {
+pub unsafe extern "C" fn bp_tick_fixed(input_ptr: *const f32) -> u32 {
     let g = game();
-    let input = read_input(input_ptr);
-    g.tick(dt, input);
+    let input = unsafe { read_input(input_ptr) };
+    g.step(input);
     g.tick
 }
 
-fn read_input(ptr: *const f32) -> player::Input {
+/// # Safety
+/// `ptr` debe ser nulo o apuntar a `protocol::INPUT_LEN` `f32` legibles.
+unsafe fn read_input(ptr: *const f32) -> player::Input {
     use protocol::*;
     if ptr.is_null() {
         return player::Input::default();
     }
-    unsafe {
-        let s = core::slice::from_raw_parts(ptr, INPUT_LEN);
-        player::Input {
-            move_x: s[I_MOVE_X],
-            move_z: s[I_MOVE_Z],
-            look_dx: s[I_LOOK_DX],
-            look_dy: s[I_LOOK_DY],
-            fire_held: s[I_FIRE_HELD] > 0.5,
-            fire_pressed: s[I_FIRE_PRESSED] > 0.5,
-            jump: s[I_JUMP] > 0.5,
-            interact: s[I_INTERACT] > 0.5,
-            reload: s[I_RELOAD] > 0.5,
-            run: s[I_RUN] > 0.5,
-            switch: s[I_SWITCH] as u8,
-            ads: s[I_ADS] > 0.5,
-        }
+    let s = unsafe { core::slice::from_raw_parts(ptr, INPUT_LEN) };
+    player::Input {
+        move_x: s[I_MOVE_X],
+        move_z: s[I_MOVE_Z],
+        look_dx: s[I_LOOK_DX],
+        look_dy: s[I_LOOK_DY],
+        fire_held: s[I_FIRE_HELD] > 0.5,
+        fire_pressed: s[I_FIRE_PRESSED] > 0.5,
+        jump: s[I_JUMP] > 0.5,
+        interact: s[I_INTERACT] > 0.5,
+        reload: s[I_RELOAD] > 0.5,
+        run: s[I_RUN] > 0.5,
+        switch: s[I_SWITCH] as u8,
+        ads: s[I_ADS] > 0.5,
     }
 }
 
@@ -113,53 +134,78 @@ pub extern "C" fn bp_input_len() -> usize {
     protocol::INPUT_LEN
 }
 
+/// Tabla del mapa cargado (ver `Game::build_map_data`).
 #[no_mangle]
-pub extern "C" fn bp_set_arena(ptr: *const f32, count: usize) -> usize {
-    if ptr.is_null() || count == 0 {
+pub extern "C" fn bp_map_data_ptr() -> *const f32 {
+    game().map_data.as_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn bp_map_data_len() -> usize {
+    game().map_data.len()
+}
+
+/// Carga un mapa sin iniciar partida (menú y vista previa). Devuelve 1 si existe.
+#[no_mangle]
+pub extern "C" fn bp_load_map(id: u32) -> u32 {
+    let g = game();
+    let ok = g.load_map(id as u8);
+    g.write_snapshot();
+    ok as u32
+}
+
+/// Codifica el registro de entradas de la partida actual y devuelve su longitud.
+#[no_mangle]
+pub extern "C" fn bp_log_encode() -> usize {
+    game().encode_log()
+}
+
+#[no_mangle]
+pub extern "C" fn bp_log_ptr() -> *const u8 {
+    game().log_out.as_ptr()
+}
+
+/// 1 si la partida superó el techo de ticks verificables.
+#[no_mangle]
+pub extern "C" fn bp_log_truncated() -> u32 {
+    game().log_truncated() as u32
+}
+
+/// Re-simula un registro y devuelve el hash del estado final (0 si es inválido).
+/// Sirve de prueba cruzada nativo/wasm.
+///
+/// # Safety
+/// `ptr` debe ser nulo o apuntar a `len` bytes legibles.
+#[no_mangle]
+pub unsafe extern "C" fn bp_replay_hash(ptr: *const u8, len: usize) -> u64 {
+    if ptr.is_null() {
         return 0;
     }
-    let data = unsafe { core::slice::from_raw_parts(ptr, count) };
-    let g = game();
-    g.arena.load(data);
-    g.write_snapshot();
-    g.arena.len
+    let bytes = core::slice::from_raw_parts(ptr, len);
+    replay::run_bytes(bytes).map_or(0, |o| o.hash)
 }
 
+/// Mapa y mutador del desafío de la fecha `yyyymmdd`, empaquetados como `map | mutator << 8`.
+/// Devuelve 0 si la fecha no es válida (el mutador 0 nunca aplica al diario).
 #[no_mangle]
-pub extern "C" fn bp_set_nodes(ptr: *const f32, count: usize) {
-    if ptr.is_null() || count == 0 {
-        return;
+pub extern "C" fn bp_daily_config(date: u32) -> u32 {
+    if !daily::is_valid_date(date) {
+        return 0;
     }
-    let data = unsafe { core::slice::from_raw_parts(ptr, count) };
-    let g = game();
-    g.set_nodes(data);
-    g.write_snapshot();
+    let (map, mutator) = daily::daily_config(date);
+    map as u32 | (mutator as u32) << 8
 }
 
+/// Hash de la partida dorada: la misma constante la fija un test nativo.
 #[no_mangle]
-pub extern "C" fn bp_set_spawns(ptr: *const f32, count: usize) {
-    if ptr.is_null() || count == 0 {
-        return;
-    }
-    let data = unsafe { core::slice::from_raw_parts(ptr, count) };
-    let g = game();
-    g.set_spawns(data);
+pub extern "C" fn bp_golden_hash(ticks: u32) -> u64 {
+    replay::golden_hash(ticks)
 }
 
+/// Hash de un escenario fijado (ver `replay::scenario_hash`). Lo comparan los tests de wasm.
 #[no_mangle]
-pub extern "C" fn bp_set_player_start(x: f32, z: f32, yaw: f32) {
-    let g = game();
-    g.set_player_start(x, z, yaw);
-}
-
-#[no_mangle]
-pub extern "C" fn bp_set_aim_assist(flag: u32) {
-    game().aim_assist = flag != 0;
-}
-
-#[no_mangle]
-pub extern "C" fn bp_set_practice(flag: u32) {
-    game().set_practice(flag != 0);
+pub extern "C" fn bp_scenario_hash(id: u32, ticks: u32) -> u64 {
+    replay::scenario_hash(id, ticks)
 }
 
 #[no_mangle]
@@ -178,6 +224,8 @@ pub extern "C" fn bp_alloc(len: usize) -> *mut u8 {
     }
 }
 
+/// # Safety
+/// `p` debe venir de `bp_alloc(len)` con el mismo `len`, y no usarse después.
 #[no_mangle]
 pub unsafe extern "C" fn bp_free(p: *mut u8, len: usize) {
     if p.is_null() || len == 0 {
