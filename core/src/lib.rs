@@ -26,11 +26,15 @@ mod maps;
 mod math;
 mod player;
 mod protocol;
+mod replay;
 mod rng;
+#[cfg(test)]
+mod scenarios;
 mod sim;
 mod waves;
 mod weapons;
 
+pub use replay::{decode, run, run_bytes, Log, Outcome, ReplayError};
 pub use sim::Game;
 
 use core::ptr;
@@ -62,16 +66,24 @@ pub extern "C" fn bp_init(seed: u32) -> u32 {
     protocol::PROTOCOL_VERSION
 }
 
+/// Inicia una partida: `flags` bit0 = aim assist, bit1 = recarga automática.
+/// Devuelve 1 si el modo y el mapa son válidos. Activa el registro de entradas.
 #[no_mangle]
-pub extern "C" fn bp_reset(seed: u32) {
-    game().reset(seed);
+pub extern "C" fn bp_start(mode: u32, map: u32, seed: u32, flags: u32) -> u32 {
+    let g = game();
+    g.enable_recording();
+    let ok = g.start(mode as u8, map as u8, seed, flags as u8);
+    g.write_snapshot();
+    ok as u32
 }
 
+/// Un tick de paso fijo (`sim::FIXED_DT`). El host no elige `dt`: así el registro
+/// de entradas basta para reproducir la partida en el servidor.
 #[no_mangle]
-pub extern "C" fn bp_tick(dt: f32, input_ptr: *const f32) -> u32 {
+pub extern "C" fn bp_tick_fixed(input_ptr: *const f32) -> u32 {
     let g = game();
     let input = read_input(input_ptr);
-    g.tick(dt, input);
+    g.step(input);
     g.tick
 }
 
@@ -114,53 +126,58 @@ pub extern "C" fn bp_input_len() -> usize {
     protocol::INPUT_LEN
 }
 
+/// Tabla del mapa cargado (ver `Game::build_map_data`).
 #[no_mangle]
-pub extern "C" fn bp_set_arena(ptr: *const f32, count: usize) -> usize {
-    if ptr.is_null() || count == 0 {
+pub extern "C" fn bp_map_data_ptr() -> *const f32 {
+    game().map_data.as_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn bp_map_data_len() -> usize {
+    game().map_data.len()
+}
+
+/// Carga un mapa sin iniciar partida (menú y vista previa). Devuelve 1 si existe.
+#[no_mangle]
+pub extern "C" fn bp_load_map(id: u32) -> u32 {
+    let g = game();
+    let ok = g.load_map(id as u8);
+    g.write_snapshot();
+    ok as u32
+}
+
+/// Codifica el registro de entradas de la partida actual y devuelve su longitud.
+#[no_mangle]
+pub extern "C" fn bp_log_encode() -> usize {
+    game().encode_log()
+}
+
+#[no_mangle]
+pub extern "C" fn bp_log_ptr() -> *const u8 {
+    game().log_out.as_ptr()
+}
+
+/// 1 si la partida superó el techo de ticks verificables.
+#[no_mangle]
+pub extern "C" fn bp_log_truncated() -> u32 {
+    game().recorder.as_ref().is_some_and(|r| r.truncated()) as u32
+}
+
+/// Re-simula un registro y devuelve el hash del estado final (0 si es inválido).
+/// Sirve de prueba cruzada nativo/wasm.
+#[no_mangle]
+pub unsafe extern "C" fn bp_replay_hash(ptr: *const u8, len: usize) -> u64 {
+    if ptr.is_null() {
         return 0;
     }
-    let data = unsafe { core::slice::from_raw_parts(ptr, count) };
-    let g = game();
-    g.arena.load(data);
-    g.write_snapshot();
-    g.arena.len
+    let bytes = core::slice::from_raw_parts(ptr, len);
+    replay::run_bytes(bytes).map_or(0, |o| o.hash)
 }
 
+/// Hash de la partida dorada: la misma constante la fija un test nativo.
 #[no_mangle]
-pub extern "C" fn bp_set_nodes(ptr: *const f32, count: usize) {
-    if ptr.is_null() || count == 0 {
-        return;
-    }
-    let data = unsafe { core::slice::from_raw_parts(ptr, count) };
-    let g = game();
-    g.set_nodes(data);
-    g.write_snapshot();
-}
-
-#[no_mangle]
-pub extern "C" fn bp_set_spawns(ptr: *const f32, count: usize) {
-    if ptr.is_null() || count == 0 {
-        return;
-    }
-    let data = unsafe { core::slice::from_raw_parts(ptr, count) };
-    let g = game();
-    g.set_spawns(data);
-}
-
-#[no_mangle]
-pub extern "C" fn bp_set_player_start(x: f32, z: f32, yaw: f32) {
-    let g = game();
-    g.set_player_start(x, z, yaw);
-}
-
-#[no_mangle]
-pub extern "C" fn bp_set_aim_assist(flag: u32) {
-    game().aim_assist = flag != 0;
-}
-
-#[no_mangle]
-pub extern "C" fn bp_set_practice(flag: u32) {
-    game().set_practice(flag != 0);
+pub extern "C" fn bp_golden_hash(ticks: u32) -> u64 {
+    replay::golden_hash(ticks)
 }
 
 #[no_mangle]

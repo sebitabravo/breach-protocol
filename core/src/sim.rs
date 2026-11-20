@@ -19,11 +19,30 @@ pub const NODE_CHANNEL: f32 = 1.2;
 pub const NODE_CANCEL_DAMAGE: f32 = 15.0;
 pub const MAX_SPAWNS: usize = 24;
 
+/// Paso fijo canónico. El cliente y el servidor avanzan siempre con este valor,
+/// de modo que un registro de entradas basta para reproducir una partida.
+pub const FIXED_DT: f32 = 1.0 / 60.0;
+
+pub const MODE_MISSION: u8 = 0;
+pub const MODE_OVERFLOW: u8 = 1;
+pub const MODE_DAILY: u8 = 2;
+pub const MODE_PRACTICE: u8 = 3;
+
+/// Versión de la fórmula de puntaje; el servidor la guarda junto a cada marca.
+pub const SCORE_VERSION: u8 = 1;
+
+pub const FLAG_AIM_ASSIST: u8 = 1;
+pub const FLAG_AUTO_RELOAD: u8 = 2;
+
+/// Alcance vertical (m) dentro del cual una terminal responde al jugador.
+const NODE_VERTICAL_REACH: f32 = 1.2;
+
 const AIM_ASSIST_EXPAND: f32 = 0.22;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Node {
     pub x: f32,
+    pub y: f32,
     pub z: f32,
     pub progress: f32,
     pub active: bool,
@@ -31,8 +50,13 @@ pub struct Node {
 
 impl Node {
     pub const fn new(x: f32, z: f32) -> Node {
+        Node::at(x, 0.0, z)
+    }
+
+    pub const fn at(x: f32, y: f32, z: f32) -> Node {
         Node {
             x,
+            y,
             z,
             progress: 0.0,
             active: false,
@@ -70,7 +94,15 @@ pub struct Game {
     pub player_start_yaw: f32,
     pub aim_assist: bool,
     pub practice: bool,
+    pub auto_reload: bool,
+    pub map_id: u8,
+    pub mode: u8,
     pub input: Input,
+    pub recorder: Option<crate::replay::Recorder>,
+    pub log_flags: u8,
+    /// Búfer de salida hacia el host: registro codificado y tabla del mapa.
+    pub log_out: Vec<u8>,
+    pub map_data: Vec<f32>,
 }
 
 impl Game {
@@ -109,8 +141,16 @@ impl Game {
             player_start_yaw: 0.0,
             aim_assist: false,
             practice: false,
+            auto_reload: true,
+            map_id: 0,
+            mode: MODE_MISSION,
             input: Input::default(),
+            recorder: None,
+            log_flags: 0,
+            log_out: Vec::new(),
+            map_data: Vec::new(),
         };
+        g.load_map(0);
         g.player = Player::new(g.player_start, g.player_start_yaw);
         g.write_snapshot();
         g
@@ -139,6 +179,108 @@ impl Game {
         self.practice = enabled;
     }
 
+    /// Carga geometría, terminales, puntos de aparición y salida del sector `id`.
+    pub fn load_map(&mut self, id: u8) -> bool {
+        let Some(map) = crate::maps::get(id) else {
+            return false;
+        };
+        self.arena.load_solids(map.solids);
+        for (i, n) in map.nodes.iter().enumerate().take(MAX_NODES) {
+            self.nodes[i] = Node::at(n[0], n[1], n[2]);
+        }
+        self.spawn_count = 0;
+        for sp in map.spawns.iter().take(MAX_SPAWNS) {
+            self.spawns[self.spawn_count] = (sp[0], sp[1]);
+            self.spawn_count += 1;
+        }
+        self.set_player_start(map.start[0], map.start[1], map.start[2]);
+        self.map_id = id;
+        self.build_map_data(map);
+        true
+    }
+
+    /// Inicia una partida completa. Es el único punto de entrada que reproduce el servidor.
+    pub fn start(&mut self, mode: u8, map: u8, seed: u32, flags: u8) -> bool {
+        if mode > MODE_PRACTICE || !self.load_map(map) {
+            return false;
+        }
+        self.mode = mode;
+        self.practice = mode == MODE_PRACTICE;
+        self.aim_assist = flags & FLAG_AIM_ASSIST != 0;
+        self.auto_reload = flags & FLAG_AUTO_RELOAD != 0;
+        self.log_flags = flags & (FLAG_AIM_ASSIST | FLAG_AUTO_RELOAD);
+        if let Some(rec) = self.recorder.as_mut() {
+            *rec = crate::replay::Recorder::new();
+        }
+        self.reset(seed);
+        true
+    }
+
+    /// Tabla plana para el host: 16 floats de cabecera, luego sólidos (7), terminales (3), spawns (2).
+    fn build_map_data(&mut self, map: &crate::maps::MapDef) {
+        let d = &mut self.map_data;
+        d.clear();
+        d.extend_from_slice(&[
+            map.theme as f32,
+            map.solids.len() as f32,
+            map.nodes.len() as f32,
+            map.spawns.len() as f32,
+            map.start[0],
+            map.start[1],
+            map.start[2],
+            map.half_x,
+            map.half_z,
+            map.id as f32,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ]);
+        for s in map.solids {
+            d.extend_from_slice(&[s.min[0], s.min[1], s.min[2], s.max[0], s.max[1], s.max[2]]);
+            d.push(s.kind as f32);
+        }
+        for n in map.nodes {
+            d.extend_from_slice(n);
+        }
+        for sp in map.spawns {
+            d.extend_from_slice(sp);
+        }
+    }
+
+    pub fn enable_recording(&mut self) {
+        self.recorder = Some(crate::replay::Recorder::new());
+    }
+
+    /// Codifica el registro actual en `log_out` y devuelve su longitud.
+    pub fn encode_log(&mut self) -> usize {
+        let header = crate::replay::Header {
+            mode: self.mode,
+            map: self.map_id,
+            flags: self.log_flags,
+            seed: self.seed,
+            ticks: self.recorder.as_ref().map_or(0, |r| r.ticks()),
+        };
+        self.log_out = match &self.recorder {
+            Some(r) => r.encode(&header),
+            None => Vec::new(),
+        };
+        self.log_out.len()
+    }
+
+    /// Avanza un tick con el paso fijo y entradas cuantizadas (lo que registra el replay).
+    pub fn step(&mut self, input: Input) {
+        let input = input.quantized();
+        if self.phase == phase::PLAYING || self.phase == phase::EXTRACTION {
+            if let Some(rec) = self.recorder.as_mut() {
+                rec.push(&input);
+            }
+        }
+        self.tick(FIXED_DT, input);
+    }
+
     pub fn set_player_start(&mut self, x: f32, z: f32, yaw: f32) {
         self.player_start = v3(x, 0.0, z);
         self.player_start_yaw = yaw;
@@ -152,9 +294,8 @@ impl Game {
         for e in self.enemies.iter_mut() {
             *e = EMPTY_ENEMY;
         }
-        for (i, n) in self.nodes.iter_mut().enumerate() {
-            *n = Node::new(n.x, n.z);
-            let _ = i;
+        for n in self.nodes.iter_mut() {
+            *n = Node::at(n.x, n.y, n.z);
         }
         self.waves.reset();
         self.tick = 0;
@@ -220,6 +361,11 @@ impl Game {
             + 500.0 * accuracy
             - 2.0 * self.damage_taken;
         raw.max(0.0)
+    }
+
+    /// Puntaje entero que guarda el ranking; lo calcula el servidor al re-simular.
+    pub fn final_score(&self) -> u32 {
+        self.compute_score().round() as u32
     }
 
     pub fn accuracy(&self) -> f32 {
@@ -311,7 +457,7 @@ impl Game {
         self.player
             .add_recoil(def.recoil_pitch, self.rng.signed(def.recoil_yaw));
 
-        if self.player.ammo == 0 && self.player.reserve > 0 {
+        if self.auto_reload && self.player.ammo == 0 && self.player.reserve > 0 {
             if self.player.start_reload() {
                 self.push_event(ev::RELOAD_START, self.player.weapon as f32, 0.0, 0.0, 0.0);
             }
@@ -493,7 +639,8 @@ impl Game {
             let dx = self.player.pos.x - n.x;
             let dz = self.player.pos.z - n.z;
             let dist = (dx * dx + dz * dz).sqrt();
-            if dist > NODE_RADIUS {
+            let off_level = (self.player.pos.y - n.y).abs() > NODE_VERTICAL_REACH;
+            if dist > NODE_RADIUS || off_level {
                 self.nodes[i].progress = (n.progress - dt * 2.0).max(0.0);
                 continue;
             }
@@ -505,7 +652,7 @@ impl Game {
                 if self.nodes[i].progress >= 1.0 {
                     self.nodes[i].active = true;
                     self.nodes_active += 1;
-                    self.push_event(ev::NODE_ACTIVATED, i as f32, n.x, 0.0, n.z);
+                    self.push_event(ev::NODE_ACTIVATED, i as f32, n.x, n.y, n.z);
                 }
             } else {
                 self.nodes[i].progress = (n.progress - dt * 1.5).max(0.0);

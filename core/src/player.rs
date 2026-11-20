@@ -24,7 +24,10 @@ const REGEN_PER_SEC: f32 = 4.0;
 
 const RECOIL_RECOVER: f32 = 6.5;
 
-#[derive(Clone, Copy, Debug)]
+/// Escala fija de la mirada cuantizada: unidades por radián.
+pub const LOOK_UNITS_PER_RAD: f32 = 4096.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Input {
     pub move_x: f32,
     pub move_z: f32,
@@ -38,6 +41,33 @@ pub struct Input {
     pub run: bool,
     pub switch: u8,
     pub ads: bool,
+}
+
+impl Input {
+    /// Redondea movimiento a i8 y mirada a i16: el registro guarda exactamente
+    /// lo que la simulación consumió, así el replay reproduce bit a bit.
+    pub fn quantized(mut self) -> Input {
+        self.move_x = quantize_axis(self.move_x) as f32 / 127.0;
+        self.move_z = quantize_axis(self.move_z) as f32 / 127.0;
+        self.look_dx = quantize_look(self.look_dx) as f32 / LOOK_UNITS_PER_RAD;
+        self.look_dy = quantize_look(self.look_dy) as f32 / LOOK_UNITS_PER_RAD;
+        self.switch = self.switch.min(2);
+        self
+    }
+}
+
+pub fn quantize_axis(v: f32) -> i8 {
+    if v.is_nan() {
+        return 0;
+    }
+    (v.clamp(-1.0, 1.0) * 127.0).round() as i8
+}
+
+pub fn quantize_look(v: f32) -> i16 {
+    if v.is_nan() {
+        return 0;
+    }
+    (v * LOOK_UNITS_PER_RAD).clamp(-32767.0, 32767.0).round() as i16
 }
 
 impl Default for Input {
