@@ -4,7 +4,7 @@
  */
 import type { Snapshot } from '../wasm/bridge';
 import { ENEMY_STATE, PHASE, WEAPON_LABEL } from '../wasm/protocol';
-import { ARENA_BOXES, NODES } from '../world/layout';
+import type { MapData } from '../world/map';
 
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -201,6 +201,12 @@ export class Hud {
     if (this.frame % 2 === 0) this.drawMinimap(state);
   }
 
+  private map: MapData | null = null;
+
+  setMap(map: MapData): void {
+    this.map = map;
+  }
+
   pushFeed(text: string, kind: FeedEntry['kind'] = 'plain'): void {
     const el = document.createElement('div');
     el.className = `feedline${kind === 'plain' ? '' : ` feedline--${kind}`}`;
@@ -235,18 +241,19 @@ export class Hud {
     ctx.translate(-state.px * scale, -state.pz * scale);
 
     ctx.fillStyle = 'rgba(46,63,79,0.85)';
-    for (const box of ARENA_BOXES) {
-      if (box.material === 'glow' || box.material === 'floor') continue;
+    for (const solid of this.map?.solids ?? []) {
+      if (solid.kind === 1) continue;
       ctx.fillRect(
-        (box.x - box.sx / 2) * scale,
-        (box.z - box.sz / 2) * scale,
-        Math.max(1, box.sx * scale),
-        Math.max(1, box.sz * scale),
+        solid.min[0] * scale,
+        solid.min[2] * scale,
+        Math.max(1, (solid.max[0] - solid.min[0]) * scale),
+        Math.max(1, (solid.max[2] - solid.min[2]) * scale),
       );
     }
 
-    for (let i = 0; i < NODES.length; i += 1) {
-      const node = NODES[i];
+    const nodes = this.map?.nodes ?? [];
+    for (let i = 0; i < nodes.length; i += 1) {
+      const node = nodes[i];
       const live = state.node(i);
       ctx.fillStyle = live.active ? '#5ce08b' : 'rgba(150,170,186,0.75)';
       ctx.fillRect(node.x * scale - 2, node.z * scale - 2, 4, 4);

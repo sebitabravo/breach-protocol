@@ -148,3 +148,6 @@ export function assertProtocol(version: number): void {
     );
   }
 }
+
+/** Modos de juego; deben coincidir con `core/src/sim.rs`. */
+export const MODE = { mission: 0, overflow: 1, daily: 2, practice: 3 } as const;

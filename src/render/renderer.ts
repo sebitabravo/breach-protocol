@@ -10,7 +10,8 @@
  */
 import { PoseInterpolator } from './interp';
 import * as THREE from 'three';
-import { ARENA_BOXES, type ArenaBox, type Material } from '../world/layout';
+import { arenaBoxes, type ArenaBox, type Material } from '../world/layout';
+import type { MapData } from '../world/map';
 import { MAX_ENEMIES, type Snapshot, type WorldEvent } from '../wasm/bridge';
 import { ENEMY_STATE, EVT, WEAPON } from '../wasm/protocol';
 import { createRobotMesh, createWeaponModel, disposeRobotAssets } from './entities';
@@ -66,6 +67,8 @@ const MATERIAL_COLORS: Record<Material, number> = {
   beam: C.beam,
   ceiling: C.ceiling,
   glow: C.glow,
+  rack: 0x1d2630,
+  deck: 0x3b4a56,
 };
 
 const PRESETS: Record<QualityName, QualityPreset> = {
@@ -181,6 +184,8 @@ export class Renderer {
   private readonly hemiLight: THREE.HemisphereLight;
   private readonly dirLight: THREE.DirectionalLight;
   private readonly fx: FxPool;
+  private sector: THREE.Group | null = null;
+  private sectorTexture: THREE.Texture | null = null;
   private readonly sidearm: THREE.Group;
   private readonly carbine: THREE.Group;
 
@@ -249,8 +254,6 @@ export class Renderer {
     const vmLight = new THREE.PointLight(0xdfeaf2, 2.2, 2.2, 2);
     vmLight.position.set(0.3, 0.15, 0.25);
     this.camera.add(vmLight);
-
-    this.buildArena();
 
     this.fx = new FxPool(this.scene, this.presetValue.particles);
     this.sidearm = createWeaponModel(WEAPON.sidearm);
@@ -469,9 +472,36 @@ export class Renderer {
    * walls) in the dark roof colour. Shadow selectivity: only the cover masses
    * cast, only floor + cover receive; enemies cast via their own meshes.
    */
-  private buildArena(): void {
+  /** Reemplaza la geometría del sector (liberando la anterior). */
+  setSector(map: MapData): void {
+    this.disposeSector();
+    this.sector = new THREE.Group();
+    this.scene.add(this.sector);
+    this.buildArena(arenaBoxes(map), this.sector);
+  }
+
+  private disposeSector(): void {
+    if (!this.sector) return;
+    const geoms = new Set<THREE.BufferGeometry>();
+    const mats = new Set<THREE.Material>();
+    this.sector.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.geometry) geoms.add(mesh.geometry);
+      const mat = mesh.material;
+      if (Array.isArray(mat)) mat.forEach((m) => mats.add(m));
+      else if (mat) mats.add(mat);
+    });
+    geoms.forEach((g) => g.dispose());
+    mats.forEach((m) => m.dispose());
+    this.sectorTexture?.dispose();
+    this.sectorTexture = null;
+    this.sector.removeFromParent();
+    this.sector = null;
+  }
+
+  private buildArena(boxes: ArenaBox[], group: THREE.Group): void {
     const groups = new Map<Material, ArenaBox[]>();
-    for (const box of ARENA_BOXES) {
+    for (const box of boxes) {
       const list = groups.get(box.material);
       if (list) list.push(box);
       else groups.set(box.material, [box]);
@@ -479,6 +509,7 @@ export class Renderer {
     const unitBox = new THREE.BoxGeometry(1, 1, 1);
     const matrix = new THREE.Matrix4();
     const gridTexture = makeGridTexture();
+    this.sectorTexture = gridTexture;
     for (const [material, boxes] of groups) {
       if (material === 'ceiling') {
         // first (only) ceiling box defines the extent; plane at its base
@@ -489,7 +520,7 @@ export class Renderer {
         const plane = new THREE.Mesh(geo, mat);
         plane.position.set(b.x, b.y - b.sy / 2, b.z);
         plane.receiveShadow = false;
-        this.scene.add(plane);
+        group.add(plane);
         continue;
       }
       const isGlow = material === 'glow' || material === 'beam';
@@ -502,7 +533,7 @@ export class Renderer {
         mat = new THREE.MeshBasicMaterial({ color: MATERIAL_COLORS[material] });
       } else if (material === 'floor') {
         mat = new THREE.MeshLambertMaterial({ color: MATERIAL_COLORS[material], map: gridTexture });
-      } else if (material === 'wall' || material === 'trim') {
+      } else if (material === 'wall' || material === 'trim' || material === 'rack' || material === 'deck') {
         // white diffuse; the real per-instance colour arrives via instanceColor
         // (three multiplies diffuse × instanceColor in the shader)
         mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
@@ -522,9 +553,9 @@ export class Renderer {
       // through their own meshes (createRobotMesh). Nothing else participates.
       mesh.castShadow = material === 'cover';
       mesh.receiveShadow = material === 'floor' || material === 'cover';
-      this.scene.add(mesh);
+      group.add(mesh);
     }
-    this.buildLampHalos();
+    this.buildLampHalos(boxes, group);
   }
 
   /** Per-instance value variation (±6/255 per channel, sRGB, seeded) breaks
@@ -554,8 +585,8 @@ export class Renderer {
 
   /** One merged additive halo under every ceiling lamp so the strips read as
    * mounted light fixtures. A single InstancedMesh = one extra draw call. */
-  private buildLampHalos(): void {
-    const lamps = ARENA_BOXES.filter((b) => b.material === 'glow' && b.y > 5);
+  private buildLampHalos(boxes: ArenaBox[], group: THREE.Group): void {
+    const lamps = boxes.filter((b) => b.material === 'glow' && b.y > 5);
     if (lamps.length === 0) return;
     const geo = new THREE.PlaneGeometry(1.2, 1.2);
     geo.rotateX(Math.PI / 2); // faces down, like the ceiling plane
@@ -576,7 +607,7 @@ export class Renderer {
     mesh.instanceMatrix.needsUpdate = true;
     mesh.frustumCulled = false;
     mesh.renderOrder = 1;
-    this.scene.add(mesh);
+    group.add(mesh);
   }
 
   /** Lazily build the robot mesh for a slot/kind pair. */

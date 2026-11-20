@@ -1,17 +1,10 @@
 /**
- * SECTOR_01 — the layout is the single source of truth for both consumers:
- * the collision boxes uploaded to Rust and the meshes built by the renderer.
+ * Geometría visual de cada sector. La colisión viene del núcleo (`MapData`);
+ * acá se agregan las cajas solo-visuales (techo, luminarias, vigas, paneles).
  */
-export type Material =
-  | 'floor'
-  | 'wall'
-  | 'cover'
-  | 'crate'
-  | 'pillar'
-  | 'trim'
-  | 'beam'
-  | 'ceiling'
-  | 'glow';
+import { materialOfKind, type MapData, type Material } from './map';
+
+export type { Material } from './map';
 
 export interface ArenaBox {
   /** Centre of the box, in metres. */
@@ -26,14 +19,6 @@ export interface ArenaBox {
   solid?: boolean;
 }
 
-export interface NodeDef {
-  x: number;
-  z: number;
-  label: string;
-}
-
-const W = 17; // inner face of the perimeter walls
-const H = 6; // wall height
 
 /**
  * Ceiling-mounted lamp segments hanging just under the ceiling plane (y≈6):
@@ -77,150 +62,75 @@ function capEdge(x: number, z: number, sx: number, sz: number, topY: number): Ar
   return { x, y: topY + 0.04, z, sx: sx + 0.08, sy: 0.08, sz: sz + 0.08, material: 'trim', solid: false };
 }
 
-export const ARENA_BOXES: ArenaBox[] = [
-  // --- ground -------------------------------------------------------------
-  { x: 0, y: -0.5, z: 0, sx: 36, sy: 1, sz: 36, material: 'floor', solid: true },
 
-  // --- perimeter ----------------------------------------------------------
-  { x: 0, y: H / 2, z: -(W + 0.5), sx: 36, sy: H, sz: 1, material: 'wall', solid: true },
-  { x: 0, y: H / 2, z: W + 0.5, sx: 36, sy: H, sz: 1, material: 'wall', solid: true },
-  { x: -(W + 0.5), y: H / 2, z: 0, sx: 1, sy: H, sz: 36, material: 'wall', solid: true },
-  { x: W + 0.5, y: H / 2, z: 0, sx: 1, sy: H, sz: 36, material: 'wall', solid: true },
-
-  // --- ceiling: dark enclosed roof at y≈6, rendered by the renderer as a
-  // downward-facing grid plane (single-sided, so the menu orbit can still
-  // look over the walls from above). Visual-only: never a collider.
-  { x: 0, y: H, z: 0, sx: 36, sy: 0.2, sz: 36, material: 'ceiling', solid: false },
-
-  // --- core ---------------------------------------------------------------
-  { x: 0, y: H / 2, z: 0, sx: 4, sy: H, sz: 4, material: 'pillar', solid: true },
-  capEdge(0, 0, 4, 4, H),
-
-  // --- four cover masses --------------------------------------------------
-  { x: -7, y: 1, z: -7, sx: 4, sy: 2, sz: 2.4, material: 'cover', solid: true },
-  { x: 7, y: 1, z: -7, sx: 2.4, sy: 2, sz: 4, material: 'cover', solid: true },
-  { x: -7, y: 1, z: 7, sx: 2.4, sy: 2, sz: 4, material: 'cover', solid: true },
-  { x: 7, y: 1, z: 7, sx: 4, sy: 2, sz: 2.4, material: 'cover', solid: true },
-  // lighter cap edges so each mass reads as a built panel
-  capEdge(-7, -7, 4, 2.4, 2),
-  capEdge(7, -7, 2.4, 4, 2),
-  capEdge(-7, 7, 2.4, 4, 2),
-  capEdge(7, 7, 4, 2.4, 2),
-
-  // --- jumpable crates (0.7 m < 0.83 m jump apex) -------------------------
-  { x: -4, y: 0.35, z: 10.5, sx: 1.6, sy: 0.7, sz: 1.6, material: 'crate', solid: true },
-  { x: 4, y: 0.35, z: 10.5, sx: 1.6, sy: 0.7, sz: 1.6, material: 'crate', solid: true },
-  { x: -4, y: 0.35, z: -10.5, sx: 1.6, sy: 0.7, sz: 1.6, material: 'crate', solid: true },
-  { x: 4, y: 0.35, z: -10.5, sx: 1.6, sy: 0.7, sz: 1.6, material: 'crate', solid: true },
-
-  // --- side corridors with a wide doorway at z = 0 ------------------------
-  { x: -13, y: 1.6, z: -9, sx: 0.8, sy: 3.2, sz: 6, material: 'wall', solid: true },
-  { x: -13, y: 1.6, z: 9, sx: 0.8, sy: 3.2, sz: 6, material: 'wall', solid: true },
-  { x: 13, y: 1.6, z: -9, sx: 0.8, sy: 3.2, sz: 6, material: 'wall', solid: true },
-  { x: 13, y: 1.6, z: 9, sx: 0.8, sy: 3.2, sz: 6, material: 'wall', solid: true },
-
-  // --- terminal plinths ---------------------------------------------------
-  { x: -12, y: 0.6, z: 0, sx: 1.3, sy: 1.2, sz: 1.3, material: 'trim', solid: true },
-  { x: 12, y: 0.6, z: 0, sx: 1.3, sy: 1.2, sz: 1.3, material: 'trim', solid: true },
-  { x: 0, y: 0.6, z: -12, sx: 1.3, sy: 1.2, sz: 1.3, material: 'trim', solid: true },
-
-  // --- visual detail: ceiling-mounted light strips, pillar trim -------------
-  // Industrial lamp strips hang under the ceiling plane (y≈5.85) so the arena
-  // reads as an enclosed interior: four rows, two along x, two along z.
-  ...ceilingLamps(5.85, -6, 'x'),
-  ...ceilingLamps(5.85, 6, 'x'),
-  ...ceilingLamps(5.85, -6, 'z'),
-  ...ceilingLamps(5.85, 6, 'z'),
-  // structural beams so the lamps read as mounted on a roof, not pasted in
-  ...ceilingBeams(5.62),
-  { x: -1.95, y: 2.4, z: 0, sx: 0.06, sy: 3.2, sz: 0.3, material: 'glow', solid: false },
-  { x: 1.95, y: 2.4, z: 0, sx: 0.06, sy: 3.2, sz: 0.3, material: 'glow', solid: false },
-
-  // four mint edge guide strips on the floor running to the terminals: one
-  // each toward the west/east nodes, two parallel rails toward the north node
-  { x: -7.7, y: 0.01, z: 0, sx: 6.8, sy: 0.02, sz: 0.14, material: 'glow', solid: false },
-  { x: 7.7, y: 0.01, z: 0, sx: 6.8, sy: 0.02, sz: 0.14, material: 'glow', solid: false },
-  { x: -0.35, y: 0.01, z: -7.7, sx: 0.14, sy: 0.02, sz: 6.8, material: 'glow', solid: false },
-  { x: 0.35, y: 0.01, z: -7.7, sx: 0.14, sy: 0.02, sz: 6.8, material: 'glow', solid: false },
-
-  // inset wall panelling for silhouette variety
-  { x: -8, y: 1.5, z: -16.7, sx: 5, sy: 3, sz: 0.25, material: 'trim', solid: false },
-  { x: 8, y: 1.5, z: 16.7, sx: 5, sy: 3, sz: 0.25, material: 'trim', solid: false },
-  { x: -16.7, y: 1.5, z: 8, sx: 0.25, sy: 3, sz: 5, material: 'trim', solid: false },
-  { x: 16.7, y: 1.5, z: -8, sx: 0.25, sy: 3, sz: 5, material: 'trim', solid: false },
-];
-
-export const NODES: NodeDef[] = [
-  { x: -12, z: 0, label: 'nodo oeste' },
-  { x: 12, z: 0, label: 'nodo este' },
-  { x: 0, z: -12, label: 'nodo norte' },
-];
-
-/** Eight perimeter spawn points; every point is ≥ 9 m from PLAYER_START
- * (0, 13) — the closest is (9, 14.5) at ≈ 9.12 m — and clear of solid boxes. */
-export const SPAWNS: ReadonlyArray<readonly [number, number]> = [
-  [9, 14.5],
-  [14.2, 2],
-  [-14.2, 2],
-  [0, -14.5],
-  [10, 10],
-  [-10, 10],
-  [10, -10],
-  [-10, -10],
-];
-
-export const PLAYER_START = { x: 0, z: 13, yaw: 0 };
-
-export const ARENA_HALF = W;
-
-/** `[minX, minY, minZ, maxX, maxY, maxZ, kind]` per solid box. */
-export function colliderData(): Float32Array {
-  const solid = ARENA_BOXES.filter((b) => b.solid !== false);
-  const out = new Float32Array(solid.length * 7);
-  solid.forEach((b, i) => {
-    const o = i * 7;
-    out[o] = b.x - b.sx / 2;
-    out[o + 1] = b.y - b.sy / 2;
-    out[o + 2] = b.z - b.sz / 2;
-    out[o + 3] = b.x + b.sx / 2;
-    out[o + 4] = b.y + b.sy / 2;
-    out[o + 5] = b.z + b.sz / 2;
-    out[o + 6] = materialKind(b.material);
-  });
-  return out;
+function solidBox(s: MapData['solids'][number]): ArenaBox {
+  return {
+    x: (s.min[0] + s.max[0]) / 2,
+    y: (s.min[1] + s.max[1]) / 2,
+    z: (s.min[2] + s.max[2]) / 2,
+    sx: s.max[0] - s.min[0],
+    sy: s.max[1] - s.min[1],
+    sz: s.max[2] - s.min[2],
+    material: materialOfKind(s.kind),
+    solid: true,
+  };
 }
 
-function materialKind(m: Material): number {
-  switch (m) {
-    case 'floor':
-      return 1;
-    case 'wall':
-      return 0;
-    case 'crate':
-      return 2;
-    case 'pillar':
-      return 3;
-    case 'trim':
-      return 4;
-    default:
-      return 0;
+/** Alto de los muros perimetrales del sector. */
+export function wallHeight(map: MapData): number {
+  return Math.max(...map.solids.filter((s) => s.kind === 0).map((s) => s.max[1]));
+}
+
+/** SECTOR_01: decoración original (techo con vigas, luminarias, guías de piso, paneles). */
+function sector01Decor(h: number): ArenaBox[] {
+  return [
+    { x: 0, y: h, z: 0, sx: 36, sy: 0.2, sz: 36, material: 'ceiling', solid: false },
+    capEdge(0, 0, 4, 4, h),
+    capEdge(-7, -7, 4, 2.4, 2),
+    capEdge(7, -7, 2.4, 4, 2),
+    capEdge(-7, 7, 2.4, 4, 2),
+    capEdge(7, 7, 4, 2.4, 2),
+    ...ceilingLamps(5.85, -6, 'x'),
+    ...ceilingLamps(5.85, 6, 'x'),
+    ...ceilingLamps(5.85, -6, 'z'),
+    ...ceilingLamps(5.85, 6, 'z'),
+    ...ceilingBeams(5.62),
+    { x: -1.95, y: 2.4, z: 0, sx: 0.06, sy: 3.2, sz: 0.3, material: 'glow', solid: false },
+    { x: 1.95, y: 2.4, z: 0, sx: 0.06, sy: 3.2, sz: 0.3, material: 'glow', solid: false },
+    { x: -7.7, y: 0.01, z: 0, sx: 6.8, sy: 0.02, sz: 0.14, material: 'glow', solid: false },
+    { x: 7.7, y: 0.01, z: 0, sx: 6.8, sy: 0.02, sz: 0.14, material: 'glow', solid: false },
+    { x: -0.35, y: 0.01, z: -7.7, sx: 0.14, sy: 0.02, sz: 6.8, material: 'glow', solid: false },
+    { x: 0.35, y: 0.01, z: -7.7, sx: 0.14, sy: 0.02, sz: 6.8, material: 'glow', solid: false },
+    { x: -8, y: 1.5, z: -16.7, sx: 5, sy: 3, sz: 0.25, material: 'trim', solid: false },
+    { x: 8, y: 1.5, z: 16.7, sx: 5, sy: 3, sz: 0.25, material: 'trim', solid: false },
+    { x: -16.7, y: 1.5, z: 8, sx: 0.25, sy: 3, sz: 5, material: 'trim', solid: false },
+    { x: 16.7, y: 1.5, z: -8, sx: 0.25, sy: 3, sz: 5, material: 'trim', solid: false },
+  ];
+}
+
+/** Decoración común a los demás sectores: techo, filas de luminarias y tapas de cobertura. */
+function genericDecor(map: MapData, h: number): ArenaBox[] {
+  const out: ArenaBox[] = [
+    { x: 0, y: h, z: 0, sx: map.halfX * 2, sy: 0.2, sz: map.halfZ * 2, material: 'ceiling', solid: false },
+  ];
+  const rows = map.halfZ > 20 ? [-12, -4, 4, 12] : [-map.halfZ / 2, map.halfZ / 2];
+  for (const z of rows) {
+    for (let x = -map.halfX + 3; x <= map.halfX - 3; x += 3.5) {
+      out.push({ x, y: h - 0.15, z, sx: 1.6, sy: 0.06, sz: 0.12, material: 'glow', solid: false });
+    }
   }
-}
-
-export function nodeData(): Float32Array {
-  const out = new Float32Array(NODES.length * 2);
-  NODES.forEach((n, i) => {
-    out[i * 2] = n.x;
-    out[i * 2 + 1] = n.z;
-  });
+  for (const s of map.solids) {
+    if (s.kind === 5 || s.kind === 3 || s.kind === 6) {
+      const sol = solidBox(s);
+      if (sol.sy < h - 0.1) out.push(capEdge(sol.x, sol.z, sol.sx, sol.sz, s.max[1]));
+    }
+  }
   return out;
 }
 
-export function spawnData(): Float32Array {
-  const out = new Float32Array(SPAWNS.length * 2);
-  SPAWNS.forEach((s, i) => {
-    out[i * 2] = s[0];
-    out[i * 2 + 1] = s[1];
-  });
-  return out;
+/** Todas las cajas que dibuja el renderer para un sector: colisión del núcleo + decoración. */
+export function arenaBoxes(map: MapData): ArenaBox[] {
+  const h = wallHeight(map);
+  const decor = map.id === 0 ? sector01Decor(h) : genericDecor(map, h);
+  return [...map.solids.map(solidBox), ...decor];
 }

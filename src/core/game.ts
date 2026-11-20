@@ -6,7 +6,7 @@
  * snapshot, and decides which screen is visible.
  */
 import { Engine, type Snapshot, type WorldEvent } from '../wasm/bridge';
-import { EVT, H, PHASE, WEAPON } from '../wasm/protocol';
+import { EVT, H, MODE, PHASE, WEAPON } from '../wasm/protocol';
 import { Renderer } from '../render/renderer';
 import { InputManager, type InputHooks } from '../input/input';
 import { AudioManager } from '../audio/audio';
@@ -22,7 +22,7 @@ import {
   type Settings,
 } from './settings';
 import { bestScore, grade, saveScore, type RunResult } from './scores';
-import { PLAYER_START, colliderData, nodeData, spawnData } from '../world/layout';
+import type { MapData } from '../world/map';
 import {
   escapeAction,
   pauseSubtitle,
@@ -55,6 +55,7 @@ export class GameApp {
   private input: InputManager | null = null;
   private audio = new AudioManager();
   private hud: Hud | null = null;
+  private map: MapData | null = null;
   private eng: Engineering | null = null;
 
   private settings: Settings = loadSettings();
@@ -114,11 +115,9 @@ export class GameApp {
       setCheck('webgl2', 'ok');
       progress(72);
 
-      const loaded = this.engine.setArena(colliderData());
-      if (loaded === 0) throw new Error('arena vacía');
-      this.engine.setNodes(nodeData());
-      this.engine.setSpawns(spawnData());
-      this.engine.setPlayerStart(PLAYER_START.x, PLAYER_START.z, PLAYER_START.yaw);
+      this.map = this.engine.loadMap(0);
+      if (this.map.solids.length === 0) throw new Error('arena vacía');
+      this.renderer.setSector(this.map);
       setCheck('arena', 'ok');
       this.loadMs = performance.now() - startedAt;
       progress(92);
@@ -126,6 +125,7 @@ export class GameApp {
       this.input = new InputManager(this.canvas, this.inputHooks(), this.settings);
       this.input.attach();
       this.hud = new Hud();
+      this.hud.setMap(this.map);
       this.eng = new Engineering();
 
       this.applySettings();
@@ -203,7 +203,7 @@ export class GameApp {
 
   // ------------------------------------------------------------- match flow
 
-  private async startMatch(mode: Mode): Promise<void> {
+  private async startMatch(mode: Mode, mapId = 0): Promise<void> {
     if (!this.engine || !this.renderer || !this.input) return;
     this.audio.unlock();
     this.audio.resume();
@@ -211,10 +211,19 @@ export class GameApp {
     this.mode = mode;
     this.pauseOrigin = 'game';
 
-    this.engine.setPractice(mode === 'practice');
-    this.engine.setAimAssist(this.settings.aimAssistTouch && this.input.usingTouch);
-    this.engine.setPlayerStart(PLAYER_START.x, PLAYER_START.z, PLAYER_START.yaw);
-    this.engine.reset((Math.random() * 0xffffffff) >>> 0);
+    const started = this.engine.start({
+      mode: mode === 'practice' ? MODE.practice : MODE.mission,
+      map: mapId,
+      seed: (Math.random() * 0xffffffff) >>> 0,
+      aimAssist: this.settings.aimAssistTouch && this.input.usingTouch,
+      autoReload: this.settings.autoReload,
+    });
+    if (!started) throw new Error(`no se pudo iniciar el sector ${mapId}`);
+    if (this.map?.id !== mapId) {
+      this.map = this.engine.mapData();
+      this.renderer.setSector(this.map);
+      this.hud?.setMap(this.map);
+    }
 
     this.lastSeq = 0;
     this.events.length = 0;
@@ -330,7 +339,7 @@ export class GameApp {
         this.input.beginFrame();
         for (let i = 0; i < step.steps; i += 1) {
           this.input.writeTo(this.input.buffer, i === 0);
-          this.engine.tick(this.loop.fixedDt, this.input.buffer);
+          this.engine.tick(this.input.buffer);
         }
       }
 
@@ -637,7 +646,6 @@ export class GameApp {
     this.audio.setEnabled(this.settings.audioEnabled);
     this.audio.setVolume(this.settings.volume);
     this.input?.updateSettings(this.settings);
-    this.engine?.setAimAssist(this.settings.aimAssistTouch && (this.input?.usingTouch ?? false));
 
     if (this.renderer) {
       this.quality.setManual(this.settings.quality as Quality);

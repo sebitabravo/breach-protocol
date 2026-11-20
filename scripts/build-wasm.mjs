@@ -42,7 +42,20 @@ const magic = binary.subarray(0, 4).toString('hex');
 if (magic !== '0061736d') fail('artifact is not a WebAssembly module');
 
 const text = binary.toString('latin1');
-const required = ['bp_init', 'bp_reset', 'bp_tick', 'bp_snapshot_ptr', 'bp_set_arena', 'bp_alloc', 'bp_free', 'memory'];
+const required = [
+  'bp_init',
+  'bp_start',
+  'bp_tick_fixed',
+  'bp_snapshot_ptr',
+  'bp_map_data_ptr',
+  'bp_load_map',
+  'bp_log_encode',
+  'bp_replay_hash',
+  'bp_golden_hash',
+  'bp_alloc',
+  'bp_free',
+  'memory',
+];
 const missing = required.filter((name) => !text.includes(name));
 if (missing.length > 0) fail(`artifact is missing exports: ${missing.join(', ')}`);
 
