@@ -1,0 +1,77 @@
+/**
+ * Resolución-inspired design tokens for the game shell.
+ *
+ * The palette follows the product mockups attached to the brief (dark blue-black
+ * surfaces plus one mint accent). ADR-0002 records why that wins over the
+ * monochrome variant in SPEC.md §5.2: the mockups are the newer human direction.
+ */
+:root {
+  --bg: #080f14;
+  --surface-1: #101820;
+  --surface-2: #19242e;
+  --surface-3: #223240;
+  --border: #2e3f4f;
+  --border-soft: #1d2a35;
+  --text: #e4edf6;
+  --muted: #96aaba;
+  --subtle: #6b8293;
+  --primary: #5ce08b;
+  --primary-600: #34c79a;
+  --primary-dim: #1d4b3c;
+  --accent: #4de3c6;
+  --danger: #ff5b6b;
+  --warning: #ffce6b;
+
+  --dist: 8px;
+  --dist-2: 16px;
+  --dist-3: 24px;
+  --dist-4: 32px;
+  --dist-5: 48px;
+
+  /* Technical mono stacks — no bundled webfonts, so name only faces that
+     actually ship on macOS / Windows / Linux; the wordmark's pixel feel
+     comes from weight + letter-spacing, not a custom family. */
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --pixel: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --fs-h1: 48px;
+  --lh-h1: 56px;
+  --fs-h2: 32px;
+  --lh-h2: 40px;
+  --fs-h3: 24px;
+  --lh-h3: 32px;
+  --fs-h4: 18px;
+  --lh-h4: 24px;
+  --fs-body: 16px;
+  --lh-body: 24px;
+  --fs-small: 14px;
+  --lh-small: 20px;
+  --fs-caption: 12px;
+  --lh-caption: 16px;
+
+  --t-fast: 120ms steps(3, end);
+  --t-base: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --radius: 2px;
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --hud-scale: 1;
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f7f9;
+  --surface-1: #ffffff;
+  --surface-2: #eef2f5;
+  --surface-3: #e2e9ee;
+  --border: #c3d0d9;
+  --border-soft: #dbe4ea;
+  --text: #0b141b;
+  --muted: #4a5c68;
+  --subtle: #6a7c88;
+  --primary: #0f9d63;
+  --primary-600: #0b8050;
+  --primary-dim: #cdeadf;
+  --accent: #0b8f7d;
+  --danger: #c92f3f;
+}

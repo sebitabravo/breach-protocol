@@ -1,0 +1,620 @@
+#hud {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: none;
+  pointer-events: none;
+  zoom: var(--hud-scale);
+  font-variant-numeric: tabular-nums;
+  /* No `touch-action: none` here: only the canvas and the touch zones need it. */
+}
+
+/* Decorative legibility scrims (S9): darken only the top 22.5% (behind the
+   top row + minimap) and the bottom 22.5% (behind vitals/ammo). The middle
+   55% of the frame stays untouched so the arena keeps its contrast. Painted
+   behind the HUD text (z-index: -1) and purely decorative. */
+#hud::before,
+#hud::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+#hud::before {
+  top: 0;
+  height: 22.5%;
+  background: linear-gradient(
+    to bottom,
+    rgba(6, 10, 14, 0.82) 0%,
+    rgba(6, 10, 14, 0.55) 55%,
+    transparent 100%
+  );
+}
+
+#hud::after {
+  bottom: 0;
+  height: 22.5%;
+  background: linear-gradient(
+    to top,
+    rgba(6, 10, 14, 0.82) 0%,
+    rgba(6, 10, 14, 0.55) 55%,
+    transparent 100%
+  );
+}
+
+/* ------------------------------------------------------------------ top row */
+.hud__top {
+  position: absolute;
+  top: calc(var(--dist-2) + var(--safe-t));
+  left: calc(190px + var(--safe-l));
+  right: calc(var(--dist-3) + var(--safe-r));
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--dist-3);
+}
+
+.hud__block {
+  display: grid;
+  gap: 2px;
+}
+
+.hud__kicker {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+
+.hud__kicker--danger {
+  color: var(--danger);
+}
+
+.hud__big {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--pixel);
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.hud__big i {
+  font-style: normal;
+  font-size: 15px;
+  color: var(--subtle);
+}
+
+.hud__mid {
+  font-family: var(--pixel);
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.hud__block--wave {
+  min-width: 110px;
+}
+
+.hud__block--wave .bar {
+  width: 96px;
+  margin-top: 4px;
+}
+
+.hud__block--score {
+  text-align: center;
+  margin: 0 auto;
+}
+
+.hud__block--score .hud__big {
+  justify-content: center;
+  font-size: 34px;
+}
+
+.hud__sub {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-transform: lowercase;
+}
+
+.hud__block--right {
+  display: flex;
+  align-items: flex-start;
+}
+
+/* Explicit rhythm: 16 px between stats, 12 px to the pause button. */
+.hud__stat + .hud__stat {
+  margin-left: var(--dist-2);
+}
+
+.hud__block--right .iconbtn {
+  margin-left: 12px;
+}
+
+/* Touch layers carry their own pause button (touch.css .tbtn--pause), so the
+   HUD copy only crowds the TIEMPO/RESTANTES stats — hide it there. */
+#app.is-touch #btn-pause-hud {
+  display: none;
+}
+
+.hud__stat {
+  display: grid;
+  gap: 1px;
+  text-align: right;
+  min-width: 56px;
+}
+
+/* ------------------------------------------------------------------ minimap */
+.hud__minimap {
+  position: absolute;
+  top: calc(var(--dist-2) + var(--safe-t));
+  left: calc(var(--dist-2) + var(--safe-l));
+  width: 160px;
+  height: 160px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: rgba(8, 15, 20, 0.72);
+  overflow: hidden;
+}
+
+.hud__minimap canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.hud__minimap-label {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ objective */
+.hud__objective {
+  position: absolute;
+  top: calc(var(--dist-2) + 172px + var(--safe-t));
+  left: calc(var(--dist-2) + var(--safe-l));
+  width: 160px;
+  padding: var(--dist) 0 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.hud__objective p {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--text);
+  margin: 4px 0 var(--dist);
+}
+
+.nodes {
+  display: flex;
+  gap: 6px;
+}
+
+.node {
+  flex: 1;
+  height: 4px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+}
+
+.node.is-charging {
+  background: linear-gradient(90deg, var(--primary) var(--p, 0%), var(--surface-3) var(--p, 0%));
+}
+
+.node.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+/* ------------------------------------------------------------------ feed */
+.hud__feed {
+  position: absolute;
+  top: calc(112px + var(--safe-t));
+  right: calc(var(--dist-3) + var(--safe-r));
+  display: grid;
+  gap: 3px;
+  justify-items: end;
+  max-width: 240px;
+}
+
+.feedline {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: rgba(8, 15, 20, 0.55);
+  padding: 2px 6px;
+  border-left: 2px solid var(--primary-dim);
+  animation: feedin 180ms steps(4, end);
+}
+
+.feedline--danger {
+  border-left-color: var(--danger);
+  color: #ffc9ce;
+}
+
+.feedline--good {
+  border-left-color: var(--primary);
+  color: var(--primary);
+}
+
+@keyframes feedin {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+}
+
+/* ------------------------------------------------------------------ crosshair */
+.crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+  --gap: 6px;
+}
+
+.crosshair__dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 2px;
+  background: var(--primary);
+  transform: translate(-50%, -50%);
+}
+
+.crosshair__t {
+  position: absolute;
+  background: var(--primary);
+  opacity: 0.9;
+}
+
+.crosshair__t--u,
+.crosshair__t--d {
+  left: 50%;
+  width: 2px;
+  height: 7px;
+  transform: translateX(-50%);
+}
+
+.crosshair__t--l,
+.crosshair__t--r {
+  top: 50%;
+  height: 2px;
+  width: 7px;
+  transform: translateY(-50%);
+}
+
+.crosshair__t--u {
+  top: calc(50% - var(--gap) - 7px);
+}
+
+.crosshair__t--d {
+  bottom: calc(50% - var(--gap) - 7px);
+}
+
+.crosshair__t--l {
+  left: calc(50% - var(--gap) - 7px);
+}
+
+.crosshair__t--r {
+  right: calc(50% - var(--gap) - 7px);
+}
+
+.hitmarker {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background:
+    linear-gradient(45deg, transparent 46%, var(--text) 46% 54%, transparent 54%) center / 12px 12px no-repeat,
+    linear-gradient(-45deg, transparent 46%, var(--text) 46% 54%, transparent 54%) center / 12px 12px no-repeat;
+}
+
+.hitmarker.is-hot {
+  animation: hit 160ms steps(2, end);
+}
+
+@keyframes hit {
+  0% {
+    opacity: 1;
+    transform: scale(1.5);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ------------------------------------------------------------------ bottom row */
+.hud__bottom {
+  position: absolute;
+  left: calc(var(--dist-3) + var(--safe-l));
+  right: calc(var(--dist-3) + var(--safe-r));
+  bottom: calc(var(--dist-2) + var(--safe-b));
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--dist-3);
+}
+
+.vitals {
+  min-width: 220px;
+}
+
+.vitals__row {
+  display: flex;
+  align-items: center;
+  gap: var(--dist);
+  margin-bottom: 4px;
+}
+
+.vitals__icon {
+  width: 22px;
+  height: 22px;
+  color: var(--primary);
+}
+
+.vitals__num {
+  font-family: var(--pixel);
+  font-size: 26px;
+  line-height: 1;
+}
+
+.vitals .bar {
+  width: 220px;
+  height: 12px;
+}
+
+.vitals__buffs {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.buff {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(77, 227, 198, 0.3);
+  padding: 0 4px;
+}
+
+.ammo {
+  text-align: right;
+  min-width: 170px;
+}
+
+.ammo__weapon {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+
+.ammo__nums {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+  font-family: var(--pixel);
+  line-height: 1;
+}
+
+.ammo__mag {
+  font-size: 34px;
+}
+
+.ammo__sep {
+  color: var(--subtle);
+  font-size: 16px;
+}
+
+.ammo__res {
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.ammo.is-low .ammo__mag {
+  color: var(--danger);
+}
+
+.ammo .bar {
+  margin-top: 4px;
+  width: 170px;
+  margin-left: auto;
+}
+
+.ammo .bar > i {
+  background: var(--primary);
+}
+
+.ammo__hint {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--subtle);
+  min-height: 14px;
+  margin-top: 4px;
+}
+
+/* ------------------------------------------------------------------ extraction */
+.hud__extraction {
+  position: absolute;
+  top: calc(var(--dist-4) + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  padding: var(--dist) var(--dist-3);
+  border: 1px solid rgba(255, 91, 107, 0.45);
+  background: rgba(40, 10, 14, 0.55);
+}
+
+.hud__extraction strong {
+  display: block;
+  font-family: var(--pixel);
+  font-size: 30px;
+  color: var(--danger);
+  line-height: 1.1;
+}
+
+.hud__extraction p {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ damage */
+.damage {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 100% at 50% 50%, transparent 40%, rgba(255, 91, 107, 0.55) 100%);
+  transition: opacity 240ms ease-out;
+}
+
+.hud__notice {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: var(--dist) var(--dist-3);
+  border: 1px solid var(--border);
+  background: rgba(8, 15, 20, 0.9);
+  font-size: var(--fs-small);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------ responsive */
+@media (max-width: 900px) {
+  .hud__minimap {
+    width: 108px;
+    height: 108px;
+  }
+
+  .hud__objective {
+    top: calc(var(--dist-2) + 118px + var(--safe-t));
+    width: 150px;
+  }
+
+  .hud__top {
+    left: calc(128px + var(--safe-l));
+    right: calc(var(--dist-2) + var(--safe-r));
+    gap: var(--dist);
+    row-gap: var(--dist);
+    flex-wrap: wrap;
+  }
+
+  /* Narrow screens: the right stats wrap onto their own right-aligned row
+     below the wave/score blocks instead of overflowing the viewport. */
+  .hud__block--right {
+    margin-left: auto;
+  }
+
+  /* Keep the centred score clear of the touch-layer pause button (44 px at
+     the top-right, see touch.css .tbtn--pause). */
+  .hud__top {
+    padding-right: 56px;
+  }
+
+  /* Drop the kill feed below the wrapped stats row so they cannot collide. */
+  .hud__feed {
+    top: 192px;
+  }
+
+  .hud__block--score .hud__big {
+    font-size: 22px;
+  }
+
+  .hud__big {
+    font-size: 20px;
+  }
+
+  .vitals {
+    min-width: 140px;
+  }
+
+  .vitals .bar {
+    width: 140px;
+  }
+
+  .vitals__num {
+    font-size: 20px;
+  }
+
+  .ammo {
+    min-width: 120px;
+  }
+
+  .ammo__mag {
+    font-size: 24px;
+  }
+
+  .ammo .bar {
+    width: 120px;
+  }
+
+  .hud__sub {
+    display: none;
+  }
+}
+
+/* Phone portrait: the top row can't fit wave + score + stats side by side, so
+   score joins the wave on row 1 and the stats take their own full-width row. */
+@media (max-width: 480px) {
+  .hud__block--wave {
+    min-width: 72px;
+  }
+
+  .hud__block--wave .bar {
+    width: 72px;
+  }
+
+  .hud__block--score {
+    margin: 0 0 0 auto;
+  }
+
+  .hud__block--right {
+    flex-basis: 100%;
+    justify-content: flex-end;
+    margin-left: 0;
+  }
+
+  .hud__feed {
+    top: 136px;
+  }
+}
+
+@media (max-height: 460px) {
+  .hud__minimap {
+    width: 76px;
+    height: 76px;
+  }
+
+  .hud__minimap-label,
+  .hud__objective {
+    display: none;
+  }
+
+  .hud__top {
+    left: calc(90px + var(--safe-l));
+  }
+
+  .vitals .bar,
+  .ammo .bar {
+    width: 110px;
+  }
+}

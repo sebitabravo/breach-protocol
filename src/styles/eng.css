@@ -1,0 +1,96 @@
+/* ============================ engineering mode ============================ */
+.eng {
+  position: absolute;
+  right: calc(var(--dist-2) + var(--safe-r));
+  bottom: calc(var(--dist-2) + var(--safe-b));
+  width: min(380px, calc(100vw - 24px));
+  z-index: 40;
+  border: 1px solid var(--border);
+  background: rgba(9, 15, 20, 0.94);
+  backdrop-filter: blur(4px);
+  font-size: 11px;
+}
+
+.eng[hidden] {
+  display: none;
+}
+
+.eng__head {
+  display: flex;
+  align-items: center;
+  gap: var(--dist);
+  padding: var(--dist);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.eng__title {
+  font-family: var(--pixel);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.eng__head .iconbtn {
+  margin-left: auto;
+}
+
+.eng__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border-soft);
+}
+
+.eng__metric {
+  display: grid;
+  gap: 1px;
+  padding: 6px;
+  background: var(--surface-1);
+}
+
+.eng__metric span {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eng__metric b {
+  font-family: var(--pixel);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.eng__metric i {
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+
+.eng__graph {
+  display: block;
+  width: 100%;
+  height: 72px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.eng__note {
+  padding: 6px var(--dist);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--subtle);
+  border-top: 1px solid var(--border-soft);
+}
+
+@media (max-width: 760px) {
+  .eng__grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

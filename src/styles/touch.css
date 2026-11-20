@@ -1,0 +1,218 @@
+/**
+ * Touch controls. Everything here is driven by Pointer Events with per-pointer
+ * capture, so a finger can hold the stick while another one aims and a third
+ * fires, which is the whole point of the layout.
+ */
+.touch {
+  position: absolute;
+  inset: 0;
+  z-index: 14;
+  pointer-events: none;
+  display: none;
+}
+
+#app.is-touch[data-screen="playing"] .touch {
+  display: block;
+}
+
+/* The play surface must claim gestures; the rest of the UI keeps normal scrolling. */
+#app.is-touch[data-screen="playing"] #gl {
+  touch-action: none;
+}
+
+.touch__stick {
+  position: absolute;
+  left: calc(20px + var(--safe-l));
+  bottom: calc(84px + var(--safe-b));
+  width: 132px;
+  height: 132px;
+  border: 1px solid rgba(46, 63, 79, 0.85);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(25, 36, 46, 0.55), rgba(8, 15, 20, 0.25));
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.touch__knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  border-radius: 50%;
+  border: 1px solid rgba(92, 224, 139, 0.5);
+  background: rgba(92, 224, 139, 0.16);
+  transition: transform 60ms linear;
+}
+
+.tbtn {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border: 1px solid rgba(46, 63, 79, 0.9);
+  border-radius: 50%;
+  background: rgba(16, 24, 32, 0.5);
+  color: var(--text);
+  font-size: 18px;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.tbtn.is-down {
+  background: rgba(92, 224, 139, 0.28);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.tbtn--fire {
+  right: calc(28px + var(--safe-r));
+  bottom: calc(96px + var(--safe-b));
+  width: 88px;
+  height: 88px;
+  border-color: rgba(92, 224, 139, 0.45);
+}
+
+.tbtn--fire svg {
+  width: 30px;
+  height: 30px;
+}
+
+.tbtn--jump {
+  right: calc(124px + var(--safe-r));
+  bottom: calc(150px + var(--safe-b));
+}
+
+.tbtn--reload {
+  right: calc(120px + var(--safe-r));
+  bottom: calc(64px + var(--safe-b));
+  width: 56px;
+  height: 56px;
+}
+
+.tbtn--interact {
+  left: 50%;
+  bottom: calc(96px + var(--safe-b));
+  transform: translateX(-50%);
+  width: 72px;
+  height: 72px;
+  border-color: rgba(92, 224, 139, 0.4);
+  font-family: var(--pixel);
+}
+
+.tbtn--interact.is-available {
+  background: rgba(92, 224, 139, 0.2);
+  animation: available 1.2s steps(2, end) infinite;
+}
+
+@keyframes available {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.tbtn--switch {
+  right: calc(210px + var(--safe-r));
+  bottom: calc(84px + var(--safe-b));
+  width: 48px;
+  height: 48px;
+  font-size: 15px;
+}
+
+.tbtn--ads {
+  right: calc(200px + var(--safe-r));
+  bottom: calc(150px + var(--safe-b));
+  width: 48px;
+  height: 48px;
+  font-size: 15px;
+}
+
+.tbtn--pause {
+  top: calc(10px + var(--safe-t));
+  right: calc(12px + var(--safe-r));
+  width: 44px;
+  height: 44px;
+  font-size: 12px;
+  border-radius: 0;
+}
+
+/* Left-handed players get the mirror layout; the look zone swaps too (see InputManager). */
+#app[data-hand="left"] .touch__stick {
+  left: auto;
+  right: calc(20px + var(--safe-l));
+}
+
+#app[data-hand="left"] .tbtn--fire {
+  right: auto;
+  left: calc(24px + var(--safe-l));
+}
+
+#app[data-hand="left"] .tbtn--jump {
+  right: auto;
+  left: calc(120px + var(--safe-l));
+}
+
+#app[data-hand="left"] .tbtn--reload {
+  right: auto;
+  left: calc(116px + var(--safe-l));
+}
+
+#app[data-hand="left"] .tbtn--switch {
+  right: auto;
+  left: calc(206px + var(--safe-l));
+}
+
+#app[data-hand="left"] .tbtn--ads {
+  right: auto;
+  left: calc(196px + var(--safe-l));
+}
+
+@media (max-width: 760px) {
+  .touch__stick {
+    width: 116px;
+    height: 116px;
+  }
+
+  .tbtn--fire {
+    width: 76px;
+    height: 76px;
+  }
+
+  .tbtn {
+    width: 58px;
+    height: 58px;
+  }
+}
+
+@media (max-height: 430px) {
+  .touch__stick {
+    width: 104px;
+    height: 104px;
+    bottom: calc(56px + var(--safe-b));
+  }
+
+  .tbtn--fire {
+    width: 70px;
+    height: 70px;
+    bottom: calc(60px + var(--safe-b));
+  }
+
+  .tbtn--jump {
+    bottom: calc(104px + var(--safe-b));
+    right: calc(104px + var(--safe-r));
+  }
+
+  .tbtn--reload {
+    bottom: calc(44px + var(--safe-b));
+    right: calc(100px + var(--safe-r));
+  }
+
+  .tbtn--switch,
+  .tbtn--ads {
+    display: none;
+  }
+}
