@@ -233,7 +233,7 @@ impl Player {
         );
 
         // Recoil decay, frame-rate independent.
-        let decay = (-RECOIL_RECOVER * dt).exp();
+        let decay = crate::math::exp(-RECOIL_RECOVER * dt);
         self.recoil_pitch *= decay;
         self.recoil_yaw *= decay;
         if self.recoil_pitch.abs() < 1e-4 {

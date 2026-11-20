@@ -149,7 +149,7 @@ pub fn dir_to_yaw(d: V3) -> f32 {
     if d.x.abs() < 1e-6 && d.z.abs() < 1e-6 {
         return 0.0;
     }
-    (-d.x).atan2(-d.z)
+    crate::math::atan2(-d.x, -d.z)
 }
 
 impl Enemy {
@@ -343,7 +343,11 @@ impl Enemy {
 
     fn patrol_target(&self) -> V3 {
         let angle = self.waypoint as f32 * 0.9;
-        v3(angle.cos() * 6.0, self.pos.y, angle.sin() * 6.0)
+        v3(
+            crate::math::cos(angle) * 6.0,
+            self.pos.y,
+            crate::math::sin(angle) * 6.0,
+        )
     }
 
     fn face_towards(&mut self, target: V3, dt: f32, rate: f32) {
