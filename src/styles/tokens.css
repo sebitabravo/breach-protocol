@@ -28,11 +28,10 @@
   --dist-4: 32px;
   --dist-5: 48px;
 
-  /* Technical mono stacks — no bundled webfonts, so name only faces that
-     actually ship on macOS / Windows / Linux; the wordmark's pixel feel
-     comes from weight + letter-spacing, not a custom family. */
+  /* Sin descargas de fuentes (ADR 0005): stacks del sistema. --sans para títulos y
+     texto; --mono para números, etiquetas y datos. */
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  --pixel: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
   --fs-h1: 48px;
   --lh-h1: 56px;

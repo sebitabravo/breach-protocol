@@ -19,6 +19,18 @@ export type ThemeName = 'control' | 'cryo' | 'archive';
 
 export const THEMES: readonly ThemeName[] = ['control', 'cryo', 'archive'];
 
+/** Mutadores del Protocolo Diario. El índice viene de la cabecera (slot 10) y debe coincidir con el núcleo. */
+export type Mutator = 'none' | 'swarm' | 'glass' | 'ironhide';
+
+export const MUTATORS: readonly Mutator[] = ['none', 'swarm', 'glass', 'ironhide'];
+
+export const MUTATOR_LABEL: Record<Mutator, string> = {
+  none: 'sin mutador',
+  swarm: 'enjambre',
+  glass: 'cristal',
+  ironhide: 'piel de hierro',
+};
+
 /** Debe coincidir con `core/src/maps.rs`. */
 export const SOLID_KIND = {
   wall: 0,
@@ -47,6 +59,8 @@ export interface MapData {
   /** `y` es la altura del suelo donde se para el jugador al usar la terminal. */
   nodes: { x: number; y: number; z: number }[];
   spawns: { x: number; z: number }[];
+  /** Solo el Protocolo Diario lo activa; un id desconocido cae en `none` para no romper el arranque. */
+  mutator: Mutator;
 }
 
 const HEADER = 16;
@@ -90,6 +104,7 @@ export function parseMapData(table: Float32Array): MapData {
     solids,
     nodes,
     spawns,
+    mutator: MUTATORS[table[10]] ?? 'none',
   };
 }
 

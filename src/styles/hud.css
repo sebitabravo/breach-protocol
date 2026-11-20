@@ -9,10 +9,8 @@
   /* No `touch-action: none` here: only the canvas and the touch zones need it. */
 }
 
-/* Decorative legibility scrims (S9): darken only the top 22.5% (behind the
-   top row + minimap) and the bottom 22.5% (behind vitals/ammo). The middle
-   55% of the frame stays untouched so the arena keeps its contrast. Painted
-   behind the HUD text (z-index: -1) and purely decorative. */
+/* Scrims decorativos: oscurecen solo el borde superior e inferior del cuadro, detrás
+   del texto. El centro (55%) queda libre para que la arena mantenga contraste. */
 #hud::before,
 #hud::after {
   content: '';
@@ -25,31 +23,25 @@
 
 #hud::before {
   top: 0;
-  height: 22.5%;
-  background: linear-gradient(
-    to bottom,
-    rgba(6, 10, 14, 0.82) 0%,
-    rgba(6, 10, 14, 0.55) 55%,
-    transparent 100%
-  );
+  height: 24%;
+  background: linear-gradient(to bottom, rgba(6, 10, 14, 0.82) 0%, rgba(6, 10, 14, 0.55) 55%, transparent 100%);
 }
 
 #hud::after {
   bottom: 0;
-  height: 22.5%;
-  background: linear-gradient(
-    to top,
-    rgba(6, 10, 14, 0.82) 0%,
-    rgba(6, 10, 14, 0.55) 55%,
-    transparent 100%
-  );
+  height: 24%;
+  background: linear-gradient(to top, rgba(6, 10, 14, 0.82) 0%, rgba(6, 10, 14, 0.55) 55%, transparent 100%);
+}
+
+#app[data-screen="playing"] #hud {
+  display: block;
 }
 
 /* ------------------------------------------------------------------ top row */
 .hud__top {
   position: absolute;
   top: calc(var(--dist-2) + var(--safe-t));
-  left: calc(190px + var(--safe-l));
+  left: calc(192px + var(--safe-l));
   right: calc(var(--dist-3) + var(--safe-r));
   display: flex;
   align-items: flex-start;
@@ -60,85 +52,106 @@
 .hud__block {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .hud__kicker {
+  font-family: var(--mono);
   font-size: 10px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--subtle);
-}
-
-.hud__kicker--danger {
-  color: var(--danger);
 }
 
 .hud__big {
   display: flex;
   align-items: baseline;
   gap: 4px;
-  font-family: var(--pixel);
-  font-size: 30px;
+  font-family: var(--mono);
+  font-size: 28px;
+  font-weight: 500;
   line-height: 1;
-  letter-spacing: 0.02em;
 }
 
 .hud__big i {
   font-style: normal;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--subtle);
 }
 
 .hud__mid {
-  font-family: var(--pixel);
+  font-family: var(--mono);
   font-size: 18px;
   line-height: 1.1;
 }
 
-.hud__block--wave {
-  min-width: 110px;
+.hud__block--sector {
+  width: min(260px, 30vw);
 }
 
-.hud__block--wave .bar {
-  width: 96px;
-  margin-top: 4px;
+.hud__sector-name {
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.hud__block--score {
+.hud__mode {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud__wave {
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+  width: 150px;
+}
+
+.hud__wave .hud__big {
+  font-size: 20px;
+}
+
+.hud__block--objective {
+  flex: 1;
+  max-width: 420px;
   text-align: center;
-  margin: 0 auto;
-}
-
-.hud__block--score .hud__big {
-  justify-content: center;
-  font-size: 34px;
+  justify-items: center;
 }
 
 .hud__sub {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  text-transform: lowercase;
+  font-family: var(--sans);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.hud__score {
+  display: flex;
+  gap: var(--dist);
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 16px;
+}
+
+.hud__score .hud__kicker {
+  align-self: center;
 }
 
 .hud__block--right {
   display: flex;
   align-items: flex-start;
-}
-
-/* Explicit rhythm: 16 px between stats, 12 px to the pause button. */
-.hud__stat + .hud__stat {
-  margin-left: var(--dist-2);
-}
-
-.hud__block--right .iconbtn {
-  margin-left: 12px;
-}
-
-/* Touch layers carry their own pause button (touch.css .tbtn--pause), so the
-   HUD copy only crowds the TIEMPO/RESTANTES stats — hide it there. */
-#app.is-touch #btn-pause-hud {
-  display: none;
+  gap: var(--dist-2);
 }
 
 .hud__stat {
@@ -146,6 +159,17 @@
   gap: 1px;
   text-align: right;
   min-width: 56px;
+}
+
+.hud__block--right .iconbtn {
+  pointer-events: auto;
+  width: 40px;
+  height: 40px;
+}
+
+/* Touch layers carry their own pause button (touch.css .tbtn--pause). */
+#app.is-touch #btn-pause-hud {
+  display: none;
 }
 
 /* ------------------------------------------------------------------ minimap */
@@ -167,41 +191,31 @@
   display: block;
 }
 
-.hud__minimap-label {
+/* ------------------------------------------------------------------ terminales */
+.hud__objective-track {
   position: absolute;
-  bottom: 6px;
+  top: calc(104px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
-  font-size: 9px;
-  letter-spacing: 0.2em;
-  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--dist);
+  width: min(300px, 40vw);
 }
 
-/* ------------------------------------------------------------------ objective */
-.hud__objective {
-  position: absolute;
-  top: calc(var(--dist-2) + 172px + var(--safe-t));
-  left: calc(var(--dist-2) + var(--safe-l));
-  width: 160px;
-  padding: var(--dist) 0 0;
-  border-top: 1px solid var(--border-soft);
-}
-
-.hud__objective p {
-  font-size: 12px;
-  line-height: 1.3;
-  color: var(--text);
-  margin: 4px 0 var(--dist);
+.hud__objective-track .hud__kicker {
+  white-space: nowrap;
 }
 
 .nodes {
   display: flex;
+  flex: 1;
   gap: 6px;
 }
 
 .node {
   flex: 1;
-  height: 4px;
+  height: 6px;
   background: var(--surface-3);
   border: 1px solid var(--border);
 }
@@ -218,7 +232,7 @@
 /* ------------------------------------------------------------------ feed */
 .hud__feed {
   position: absolute;
-  top: calc(112px + var(--safe-t));
+  top: calc(104px + var(--safe-t));
   right: calc(var(--dist-3) + var(--safe-r));
   display: grid;
   gap: 3px;
@@ -227,8 +241,10 @@
 }
 
 .feedline {
+  font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
   background: rgba(8, 15, 20, 0.55);
   padding: 2px 6px;
@@ -312,27 +328,92 @@
   right: calc(50% - var(--gap) - 7px);
 }
 
+/* Marca de impacto: dos diagonales; `is-kill` la vuelve roja. */
 .hitmarker {
   position: absolute;
-  inset: 0;
+  inset: -10px;
   opacity: 0;
-  background:
-    linear-gradient(45deg, transparent 46%, var(--text) 46% 54%, transparent 54%) center / 12px 12px no-repeat,
-    linear-gradient(-45deg, transparent 46%, var(--text) 46% 54%, transparent 54%) center / 12px 12px no-repeat;
+  pointer-events: none;
 }
 
 .hitmarker.is-hot {
-  animation: hit 160ms steps(2, end);
+  opacity: 1;
+  background:
+    linear-gradient(45deg, transparent 46%, var(--text) 46% 54%, transparent 54%) center / 16px 16px no-repeat,
+    linear-gradient(-45deg, transparent 46%, var(--text) 46% 54%, transparent 54%) center / 16px 16px no-repeat;
 }
 
-@keyframes hit {
-  0% {
-    opacity: 1;
-    transform: scale(1.5);
-  }
-  100% {
-    opacity: 0;
-  }
+.hitmarker.is-hot.is-kill {
+  background:
+    linear-gradient(45deg, transparent 46%, var(--danger) 46% 54%, transparent 54%) center / 16px 16px no-repeat,
+    linear-gradient(-45deg, transparent 46%, var(--danger) 46% 54%, transparent 54%) center / 16px 16px no-repeat;
+}
+
+/* Indicador de daño: anillo con una flecha que señala la fuente (rotación desde el frente). */
+.hud__dmgdir {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 180px;
+  height: 180px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.hud__dmgdir[hidden] {
+  display: none;
+}
+
+.hud__dmgdir span {
+  position: absolute;
+  inset: 0;
+}
+
+.hud__dmgdir span::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-bottom: 14px solid var(--danger);
+}
+
+/* ------------------------------------------------------------------ E prompt */
+.hud__prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 26%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--dist);
+  padding: 6px var(--dist-2);
+  border: 1px solid var(--primary-dim);
+  background: rgba(8, 15, 20, 0.85);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.hud__prompt[hidden] {
+  display: none;
+}
+
+.hud__key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  font-family: var(--mono);
+  font-weight: 600;
 }
 
 /* ------------------------------------------------------------------ bottom row */
@@ -365,8 +446,9 @@
 }
 
 .vitals__num {
-  font-family: var(--pixel);
-  font-size: 26px;
+  font-family: var(--mono);
+  font-size: 28px;
+  font-weight: 500;
   line-height: 1;
 }
 
@@ -382,6 +464,7 @@
 }
 
 .buff {
+  font-family: var(--mono);
   font-size: 9px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -391,13 +474,47 @@
 }
 
 .ammo {
-  text-align: right;
+  display: grid;
+  justify-items: end;
+  gap: 2px;
   min-width: 170px;
+  text-align: right;
+}
+
+.ammo__slots {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.slot {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(8, 15, 20, 0.6);
+}
+
+.slot.is-active {
+  border-color: var(--primary);
+  color: #04140c;
+  background: var(--primary);
+}
+
+.slot.is-locked {
+  color: var(--subtle);
+  border-style: dashed;
+  opacity: 0.6;
 }
 
 .ammo__weapon {
-  font-size: 10px;
-  letter-spacing: 0.24em;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--subtle);
 }
@@ -407,12 +524,13 @@
   align-items: baseline;
   justify-content: flex-end;
   gap: 4px;
-  font-family: var(--pixel);
+  font-family: var(--mono);
   line-height: 1;
 }
 
 .ammo__mag {
-  font-size: 34px;
+  font-size: 36px;
+  font-weight: 500;
 }
 
 .ammo__sep {
@@ -440,6 +558,7 @@
 }
 
 .ammo__hint {
+  font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -451,7 +570,7 @@
 /* ------------------------------------------------------------------ extraction */
 .hud__extraction {
   position: absolute;
-  top: calc(var(--dist-4) + var(--safe-t));
+  top: calc(164px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
   text-align: center;
@@ -460,15 +579,21 @@
   background: rgba(40, 10, 14, 0.55);
 }
 
+.hud__extraction[hidden] {
+  display: none;
+}
+
 .hud__extraction strong {
   display: block;
-  font-family: var(--pixel);
+  font-family: var(--mono);
+  font-weight: 500;
   font-size: 30px;
   color: var(--danger);
   line-height: 1.1;
 }
 
 .hud__extraction p {
+  font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -493,54 +618,48 @@
   padding: var(--dist) var(--dist-3);
   border: 1px solid var(--border);
   background: rgba(8, 15, 20, 0.9);
+  font-family: var(--mono);
   font-size: var(--fs-small);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 /* ------------------------------------------------------------------ responsive */
+@media (max-width: 1100px) {
+  .hud__block--objective {
+    display: none;
+  }
+
+  .hud__objective-track {
+    width: min(240px, 40vw);
+  }
+}
+
 @media (max-width: 900px) {
   .hud__minimap {
     width: 108px;
     height: 108px;
   }
 
-  .hud__objective {
-    top: calc(var(--dist-2) + 118px + var(--safe-t));
-    width: 150px;
-  }
-
   .hud__top {
     left: calc(128px + var(--safe-l));
     right: calc(var(--dist-2) + var(--safe-r));
-    gap: var(--dist);
-    row-gap: var(--dist);
-    flex-wrap: wrap;
   }
 
-  /* Narrow screens: the right stats wrap onto their own right-aligned row
-     below the wave/score blocks instead of overflowing the viewport. */
-  .hud__block--right {
-    margin-left: auto;
+  .hud__block--sector {
+    width: 180px;
   }
 
-  /* Keep the centred score clear of the touch-layer pause button (44 px at
-     the top-right, see touch.css .tbtn--pause). */
-  .hud__top {
-    padding-right: 56px;
+  .hud__wave {
+    width: 110px;
   }
 
-  /* Drop the kill feed below the wrapped stats row so they cannot collide. */
+  .hud__stat {
+    min-width: 44px;
+  }
+
   .hud__feed {
-    top: 192px;
-  }
-
-  .hud__block--score .hud__big {
-    font-size: 22px;
-  }
-
-  .hud__big {
-    font-size: 20px;
+    top: 190px;
   }
 
   .vitals {
@@ -552,7 +671,7 @@
   }
 
   .vitals__num {
-    font-size: 20px;
+    font-size: 22px;
   }
 
   .ammo {
@@ -560,41 +679,137 @@
   }
 
   .ammo__mag {
-    font-size: 24px;
+    font-size: 26px;
   }
 
   .ammo .bar {
     width: 120px;
   }
-
-  .hud__sub {
-    display: none;
-  }
 }
 
-/* Phone portrait: the top row can't fit wave + score + stats side by side, so
-   score joins the wave on row 1 and the stats take their own full-width row. */
+/* Teléfono vertical (320–480 px): minimapa a la izquierda, sector a su lado y el reloj en una segunda fila. */
 @media (max-width: 480px) {
-  .hud__block--wave {
-    min-width: 72px;
+  .hud__minimap {
+    top: calc(var(--dist) + var(--safe-t));
+    left: calc(var(--dist) + var(--safe-l));
+    width: 96px;
+    height: 96px;
   }
 
-  .hud__block--wave .bar {
-    width: 72px;
+  .hud__top {
+    flex-wrap: wrap;
+    row-gap: var(--dist);
+    left: calc(124px + var(--safe-l));
+    top: calc(var(--dist) + var(--safe-t));
+    right: calc(var(--dist) + var(--safe-r));
   }
 
-  .hud__block--score {
-    margin: 0 0 0 auto;
+  .hud__block--sector {
+    width: 136px;
   }
 
   .hud__block--right {
     flex-basis: 100%;
     justify-content: flex-end;
-    margin-left: 0;
+  }
+
+  .hud__objective-track {
+    top: calc(214px + var(--safe-t));
+    left: calc(var(--dist-2) + var(--safe-l));
+    right: calc(var(--dist-2) + var(--safe-r));
+    width: auto;
+    transform: none;
   }
 
   .hud__feed {
-    top: 136px;
+    top: calc(262px + var(--safe-t));
+    left: calc(var(--dist-2) + var(--safe-l));
+    right: auto;
+    max-width: 130px;
+    justify-items: start;
+  }
+}
+
+/* Controles táctiles: la munición, el feed y los vitales se mueven fuera del área de los pulgares.
+   La fila inferior deja de posicionarse para que sus hijos se midan desde #hud, no desde ella. */
+#app.is-touch .hud__bottom {
+  position: static;
+}
+
+#app.is-touch .hud__top {
+  right: calc(68px + var(--safe-r));
+}
+
+#app.is-touch .ammo {
+  position: absolute;
+  top: 120px;
+  right: calc(24px + var(--safe-r));
+  min-width: 150px;
+}
+
+#app.is-touch .vitals {
+  position: absolute;
+  left: calc(24px + var(--safe-l));
+  bottom: 232px;
+  min-width: 0;
+}
+
+#app.is-touch .hud__feed {
+  top: calc(200px + var(--safe-t));
+  left: calc(16px + var(--safe-l));
+  right: auto;
+  justify-items: start;
+}
+
+@media (max-width: 480px) {
+  #app.is-touch .hud__top {
+    right: calc(var(--dist) + var(--safe-r));
+  }
+
+  #app.is-touch .ammo {
+    top: auto;
+    bottom: 220px;
+    right: calc(12px + var(--safe-r));
+    min-width: 140px;
+  }
+
+  #app.is-touch .vitals {
+    bottom: 210px;
+    left: calc(16px + var(--safe-l));
+    width: 120px;
+  }
+
+  #app.is-touch .hud__feed {
+    top: calc(262px + var(--safe-t));
+  }
+
+  #app.is-touch .vitals .bar {
+    width: 110px;
+  }
+}
+
+@media (max-height: 460px) {
+  .hud__mode {
+    display: none;
+  }
+
+  .hud__wave .hud__big {
+    font-size: 16px;
+  }
+
+  #app.is-touch .ammo {
+    top: 96px;
+  }
+
+  #app.is-touch .vitals {
+    bottom: 176px;
+  }
+
+  #app.is-touch .hud__feed {
+    top: 150px;
+    left: 50%;
+    transform: translateX(-50%);
+    justify-items: center;
   }
 }
 
@@ -604,13 +819,25 @@
     height: 76px;
   }
 
-  .hud__minimap-label,
-  .hud__objective {
-    display: none;
+  .hud__top {
+    left: calc(104px + var(--safe-l));
   }
 
-  .hud__top {
-    left: calc(90px + var(--safe-l));
+  .hud__block--sector {
+    width: 150px;
+  }
+
+  .hud__wave {
+    width: 96px;
+  }
+
+  .hud__objective-track {
+    top: calc(12px + var(--safe-t));
+    width: 200px;
+  }
+
+  .hud__feed {
+    top: 110px;
   }
 
   .vitals .bar,
