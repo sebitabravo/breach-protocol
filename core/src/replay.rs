@@ -774,6 +774,9 @@ mod tests {
         }
     }
 
+    /// Límite conocido: el arnés no lleva a los interceptores más allá de PATROL. Sus
+    /// estados Flank, Charge y la embestida no quedan fijados por estos escenarios; los cubren
+    /// los tests de `enemy.rs` y `sim.rs`. Si el arnés cambia, revisar esta nota.
     #[test]
     fn scenarios_really_exercise_the_content_they_claim() {
         use crate::enemy::KIND_INTERCEPTOR;
