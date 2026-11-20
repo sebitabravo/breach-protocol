@@ -19,14 +19,14 @@ import { arenaBoxes } from '../world/layout';
 import type { MapData } from '../world/map';
 import { MAX_ENEMIES, type Snapshot, type WorldEvent } from '../wasm/bridge';
 import { ENEMY_STATE, EVT } from '../wasm/protocol';
-import { buildArena, disposeArena } from './arena';
+import { ArenaBuild } from './arena';
 import { CameraRig } from './camera';
 import { createRobotMesh, disposeRobotAssets } from './entities';
 import { FxPool } from './fx';
 import { PoseInterpolator } from './interp';
 import { PRESETS, type QualityName, type QualityPreset } from './presets';
 import { PostFx } from './postfx';
-import { PALETTE } from './themes';
+import { lookFor, PALETTE, type ThemeLook } from './themes';
 import { Viewmodel } from './viewmodel';
 
 export type { QualityName, QualityPreset } from './presets';
@@ -44,12 +44,14 @@ export class Renderer {
   private readonly hooks: Hooks;
   private readonly scene = new THREE.Scene();
   private readonly camera: THREE.PerspectiveCamera;
+  private readonly hemiLight: THREE.HemisphereLight;
   private readonly dirLight: THREE.DirectionalLight;
+  private readonly fog = new THREE.FogExp2(PALETTE.bg, 0);
   private readonly fx: FxPool;
   private readonly rig = new CameraRig();
   private readonly viewmodel: Viewmodel;
-  private sector: THREE.Group | null = null;
-  private sectorTextures: THREE.Texture[] = [];
+  private sector: ArenaBuild | null = null;
+  private elapsed = 0;
 
   private renderer: THREE.WebGLRenderer | null = null;
   private postfx: PostFx | null = null;
@@ -80,8 +82,9 @@ export class Renderer {
     this.hooks = hooks ?? {};
 
     this.scene.background = new THREE.Color(PALETTE.bg);
-    // No fog: the previous blue fog washed the whole arena into one value
-    // band. Contrast now comes from albedo + lighting, verified by probes.
+    // Fog de densidad por tema (FogExp2): en control es casi nulo para no
+    // lavar la escala de valores; en cryo es más denso (vapor).
+    this.scene.fog = this.fog;
 
     this.camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.05, 120);
     this.camera.rotation.order = 'YXZ';
@@ -90,8 +93,8 @@ export class Renderer {
     // lights: hemisphere base + modelling sun + weak fill; shadows on `high`.
     // Moderate physical intensities — the ladder is carried by albedo + light
     // shape, not giant multipliers (the old intensity-9 rig flattened it).
-    const hemiLight = new THREE.HemisphereLight(PALETTE.hemiSky, PALETTE.hemiGround, 3.75);
-    this.scene.add(hemiLight);
+    this.hemiLight = new THREE.HemisphereLight(PALETTE.hemiSky, PALETTE.hemiGround, 3.75);
+    this.scene.add(this.hemiLight);
     this.dirLight = new THREE.DirectionalLight(PALETTE.sun, 3.2);
     this.dirLight.position.set(8, 14, 6);
     this.dirLight.shadow.camera.left = -24;
@@ -194,6 +197,7 @@ export class Renderer {
   renderOrbit(dt: number): void {
     if (this.contextLost) return;
     const r = this.ensureRenderer();
+    this.elapsed += dt;
     this.rig.orbit(this.camera, dt);
     this.viewmodel.hide();
     this.draw(r);
@@ -207,6 +211,7 @@ export class Renderer {
   renderGame(state: Snapshot, alpha: number, dt: number, events: readonly WorldEvent[]): void {
     if (this.contextLost) return;
     const r = this.ensureRenderer();
+    this.elapsed += dt;
 
     // 1. camera interpolation (snap on reset / first frame)
     const pose = this.interp.sample(
@@ -257,12 +262,13 @@ export class Renderer {
     this.renderer = null;
   }
 
-  /** Reemplaza la geometría del sector (liberando la anterior). */
+  /** Reemplaza la geometría y el look del sector (liberando los anteriores). */
   setSector(map: MapData): void {
     this.disposeSector();
-    this.sector = new THREE.Group();
-    this.scene.add(this.sector);
-    this.sectorTextures = buildArena(arenaBoxes(map), this.sector);
+    const look = lookFor(map.theme);
+    this.applyLook(look);
+    this.sector = new ArenaBuild(map, arenaBoxes(map), look);
+    this.scene.add(this.sector.group);
   }
 
   // --- internals -----------------------------------------------------------
@@ -309,6 +315,7 @@ export class Renderer {
 
   /** One frame: reset the counters once, render through the composer or directly, record metrics. */
   private draw(r: THREE.WebGLRenderer): void {
+    this.sector?.setTime(this.elapsed);
     r.info.reset();
     if (this.postfx) this.postfx.render();
     else r.render(this.scene, this.camera);
@@ -317,10 +324,20 @@ export class Renderer {
   }
 
   private disposeSector(): void {
-    if (!this.sector) return;
-    disposeArena(this.sector, this.sectorTextures);
-    this.sectorTextures = [];
+    this.sector?.dispose();
     this.sector = null;
+  }
+
+  /** Luces, niebla y fondo del tema. Los objetos se reusan: sin allocations por cambio. */
+  private applyLook(look: ThemeLook): void {
+    this.scene.background = new THREE.Color(look.background);
+    this.fog.color.setHex(look.fogColor);
+    this.fog.density = look.fogDensity;
+    this.hemiLight.color.setHex(look.hemiSky);
+    this.hemiLight.groundColor.setHex(look.hemiGround);
+    this.hemiLight.intensity = look.hemiIntensity;
+    this.dirLight.color.setHex(look.sun);
+    this.dirLight.intensity = look.sunIntensity;
   }
 
   /** Lazily build the robot mesh for a slot/kind pair. */

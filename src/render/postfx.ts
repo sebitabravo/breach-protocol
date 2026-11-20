@@ -23,7 +23,7 @@ export function postPlan(name: QualityName): PostPlan {
 }
 
 /** Bloom tuning: only emissive strips (>1 in HDR) pass the threshold. */
-export const BLOOM = { strength: 0.6, radius: 0.45, threshold: 0.9 } as const;
+export const BLOOM = { strength: 0.35, radius: 0.35, threshold: 1.0 } as const;
 
 export class PostFx {
   private composer: EffectComposer | null = null;
