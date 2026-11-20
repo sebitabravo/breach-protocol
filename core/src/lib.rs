@@ -30,8 +30,16 @@ mod sim;
 mod waves;
 mod weapons;
 
-pub use replay::{decode, run, run_bytes, Log, Outcome, ReplayError};
-pub use sim::Game;
+// Superficie pública para el crate de API (`bp_core`). Solo se añaden reexportaciones.
+pub use daily::{daily_config, is_valid_date};
+pub use maps::MAP_COUNT;
+pub use player::Input;
+pub use protocol::phase;
+pub use replay::{decode, run, run_bytes, Header, Log, Outcome, ReplayError, MAX_TICKS};
+pub use sim::{
+    Game, FLAG_AIM_ASSIST, FLAG_AUTO_RELOAD, FLAG_SHOTGUN, MODE_DAILY, MODE_MISSION, MODE_OVERFLOW,
+    MODE_PRACTICE, OVERFLOW_SCORE_VERSION, SCORE_VERSION,
+};
 
 use core::ptr;
 use std::alloc::{alloc, dealloc, Layout};
@@ -159,7 +167,7 @@ pub extern "C" fn bp_log_ptr() -> *const u8 {
 /// 1 si la partida superó el techo de ticks verificables.
 #[no_mangle]
 pub extern "C" fn bp_log_truncated() -> u32 {
-    game().recorder.as_ref().is_some_and(|r| r.truncated()) as u32
+    game().log_truncated() as u32
 }
 
 /// Re-simula un registro y devuelve el hash del estado final (0 si es inválido).
