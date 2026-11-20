@@ -28,7 +28,7 @@ vercel_runtime = "2.4.1"
 # server/ es miembro del workspace. core/ queda fuera: tiene su propio Cargo.toml y Cargo.lock.
 [workspace]
 members = ["server"]
-exclude = ["core"]
+exclude = ["core", ".claude/worktrees"]
 
 # Perfil de release según la plantilla de Vercel para Rust.
 [profile.release]
