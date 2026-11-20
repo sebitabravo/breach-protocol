@@ -90,7 +90,10 @@ for (const viewport of VIEWPORTS) {
       await expect(page.locator('#hud-wave-total')).toHaveText('/5');
       await shot(page, viewport, '04-playing');
 
-      await page.locator(viewport.mobile ? '.tbtn--pause' : '#btn-pause-hud').click();
+      // Con pointer lock activo (Linux headless lo concede) el navegador entrega el mouse al
+      // canvas: un jugador real pausa con Esc, así que el clic sobre el HUD se despacha directo.
+      if (viewport.mobile) await page.locator('.tbtn--pause').click();
+      else await page.locator('#btn-pause-hud').dispatchEvent('click');
       await screenIs(page, 'pause');
       await shot(page, viewport, '05-pause');
       await page.locator('#screen-pause [data-action="resume"]').click();
@@ -162,7 +165,7 @@ for (const viewport of VIEWPORTS) {
       await screenIs(page, 'playing');
       await expect(page.locator('#tutorial')).toBeVisible();
       await shot(page, viewport, '12-tutorial');
-      await page.locator('[data-action="tutorial-skip"]').click();
+      await page.locator('[data-action="tutorial-skip"]').dispatchEvent('click');
       await expect(page.locator('#tutorial')).toBeHidden();
       await expect(page.locator('#hud')).toBeVisible();
     });
