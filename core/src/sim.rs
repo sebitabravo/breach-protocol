@@ -5,7 +5,7 @@
 
 use crate::arena::Arena;
 use crate::enemy::{self, Action, Enemy, EnemyContext, EMPTY_ENEMY};
-use crate::math::{clamp, right_from_yaw, v3, V3};
+use crate::math::{clamp, forward_from_yaw, right_from_yaw, v3, V3};
 use crate::player::{Input, Player, EYE_HEIGHT, HEIGHT, RADIUS};
 use crate::protocol::*;
 use crate::rng::Rng;
@@ -537,6 +537,7 @@ impl Game {
     fn update_enemies(&mut self, dt: f32) {
         let player_eye = self.player.eye();
         let player_feet = self.player.pos;
+        let player_forward = forward_from_yaw(self.player.yaw);
         // Fase 1: cada enemigo decide con préstamos separados; los efectos van en fase 2.
         let mut pending: [Option<(Action, V3, u8)>; MAX_ENEMIES] = [None; MAX_ENEMIES];
         for (slot, enemy) in pending.iter_mut().zip(self.enemies.iter_mut()) {
@@ -547,6 +548,7 @@ impl Game {
                 arena: &self.arena,
                 player_eye,
                 player_feet,
+                player_forward,
                 player_radius: RADIUS,
                 player_height: HEIGHT,
             };
@@ -1170,5 +1172,49 @@ mod tests {
         assert_eq!(s[H_WAVE], 1.0);
         assert!(s[H_TIME_LEFT] < MATCH_SECONDS);
         assert!(s[H_NODE_0] >= 0.0 && s[H_NODE_0] <= 1.0);
+    }
+
+    #[test]
+    fn interceptor_state_shows_the_telegraph_before_damage() {
+        let mut g = game_with_arena();
+        g.waves.queue_head = g.waves.queue_len;
+        g.player.pos = v3(0.0, 0.0, 0.0);
+        g.enemies[0] = Enemy::spawn(v3(3.2, 0.0, 0.0), enemy::KIND_INTERCEPTOR, 0.0, 0);
+        g.enemies[0].state = enemy::ST_FLANK;
+        let telegraph_ticks = (enemy::INTERCEPTOR.telegraph / FIXED_DT).round() as u32;
+        let mut charging_before_hit = 0u32;
+        let mut hit = false;
+        for _ in 0..(3 * 60) {
+            let before = g.damage_taken;
+            g.tick(FIXED_DT, Input::default());
+            if g.damage_taken > before {
+                hit = true;
+                break;
+            }
+            if g.snapshot[ENEMY_BASE + E_STATE] == enemy::ST_CHARGE as f32 {
+                charging_before_hit += 1;
+            }
+        }
+        assert!(hit, "interceptor never hit the stationary player");
+        assert!(
+            charging_before_hit >= telegraph_ticks,
+            "telegraph visible for {charging_before_hit} ticks, needs {telegraph_ticks}"
+        );
+    }
+
+    #[test]
+    fn interceptors_do_not_stack_on_top_of_each_other() {
+        let mut g = game_with_arena();
+        g.waves.queue_head = g.waves.queue_len;
+        g.player.pos = v3(0.0, 0.0, 0.0);
+        g.enemies[0] = Enemy::spawn(v3(5.0, 0.0, -5.0), enemy::KIND_INTERCEPTOR, 0.0, 0);
+        g.enemies[1] = Enemy::spawn(v3(5.0, 0.0, -4.5), enemy::KIND_INTERCEPTOR, 0.0, 0);
+        g.enemies[0].state = enemy::ST_FLANK;
+        g.enemies[1].state = enemy::ST_FLANK;
+        for _ in 0..120 {
+            g.tick(FIXED_DT, Input::default());
+            let d = g.enemies[0].pos.dist_xz(g.enemies[1].pos);
+            assert!(d >= 0.9, "interceptors stacked at {d} m");
+        }
     }
 }
