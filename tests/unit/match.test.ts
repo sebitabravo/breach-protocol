@@ -15,7 +15,7 @@ const facts = {
 
 describe('buildStartOptions', () => {
   it('maps every shell mode to its engine mode id', () => {
-    const base = { mapId: 1, seed: 9, aimAssist: true, autoReload: false };
+    const base = { mapId: 1, seed: 9, aimAssist: true, autoReload: false, shotgun: false };
     expect(buildStartOptions({ ...base, mode: 'run' }).mode).toBe(MODE.mission);
     expect(buildStartOptions({ ...base, mode: 'overflow' }).mode).toBe(MODE.overflow);
     expect(buildStartOptions({ ...base, mode: 'daily' }).mode).toBe(MODE.daily);
@@ -26,7 +26,13 @@ describe('buildStartOptions', () => {
       seed: 9,
       aimAssist: true,
       autoReload: false,
+      shotgun: false,
     });
+  });
+
+  it('forwards the shotgun unlock to the engine flags', () => {
+    const base = { mapId: 0, seed: 1, aimAssist: false, autoReload: true, mode: 'run' as const };
+    expect(buildStartOptions({ ...base, shotgun: true }).shotgun).toBe(true);
   });
 });
 

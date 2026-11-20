@@ -13,6 +13,7 @@ export interface StartRequest {
   seed: number;
   aimAssist: boolean;
   autoReload: boolean;
+  shotgun: boolean;
 }
 
 const ENGINE_MODE: Record<Mode, number> = {
@@ -29,6 +30,7 @@ export function buildStartOptions(request: StartRequest): StartOptions {
     seed: request.seed,
     aimAssist: request.aimAssist,
     autoReload: request.autoReload,
+    shotgun: request.shotgun,
   };
 }
 
