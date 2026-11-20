@@ -9,7 +9,7 @@ use crate::math::{clamp, forward_from_yaw, right_from_yaw, v3, V3};
 use crate::player::{Input, Player, EYE_HEIGHT, HEIGHT, RADIUS};
 use crate::protocol::*;
 use crate::rng::Rng;
-use crate::waves::Waves;
+use crate::waves::{mission_composition, Waves};
 use crate::weapons;
 
 pub const MATCH_SECONDS: f32 = 180.0;
@@ -322,9 +322,15 @@ impl Game {
         self.event_seq = 0;
         self.snapshot = [0.0; SNAPSHOT_LEN];
         self.input = Input::default();
-        self.waves.begin(1);
+        self.begin_wave(1);
         self.push_event(ev::WAVE_START, 1.0, 0.0, 0.0, 0.0);
         self.write_snapshot();
+    }
+
+    /// Arranca la oleada `wave` con la composición del sector actual.
+    fn begin_wave(&mut self, wave: u32) {
+        let comp = mission_composition(self.map_id, wave);
+        self.waves.begin(wave, comp);
     }
 
     fn push_event(&mut self, kind: f32, a: f32, b: f32, c: f32, d: f32) {
@@ -682,7 +688,7 @@ impl Game {
     fn update_waves(&mut self, dt: f32) {
         if self.practice && self.waves.finished {
             self.waves.finished = false;
-            self.waves.begin(1);
+            self.begin_wave(1);
             self.push_event(ev::WAVE_START, 1.0, 0.0, 0.0, 0.0);
         }
         let boost = if self.phase == phase::EXTRACTION {
@@ -712,7 +718,7 @@ impl Game {
             self.waves.intermission -= dt;
             if self.waves.intermission <= 0.0 && self.waves.wave < self.waves.total {
                 let next = self.waves.wave + 1;
-                self.waves.begin(next);
+                self.begin_wave(next);
                 self.push_event(ev::WAVE_START, next as f32, 0.0, 0.0, 0.0);
             }
         }
