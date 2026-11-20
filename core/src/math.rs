@@ -133,10 +133,6 @@ pub fn clamp(v: f32, lo: f32, hi: f32) -> f32 {
     }
 }
 
-pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
-}
-
 // Todas las funciones trascendentes pasan por `libm` (Rust puro): `f32::sin`
 // delega en el libm del sistema y difiere por 1 ulp entre nativo y wasm32, lo
 // que rompería los replays verificados en el servidor.
@@ -168,11 +164,6 @@ pub fn approach(cur: f32, target: f32, delta: f32) -> f32 {
     } else {
         (cur - delta).max(target)
     }
-}
-
-/// Exponential smoothing that stays stable for any `dt`.
-pub fn damp(cur: f32, target: f32, lambda: f32, dt: f32) -> f32 {
-    lerp(cur, target, 1.0 - exp(-lambda * dt))
 }
 
 /// Wraps an angle into `(-PI, PI]`.

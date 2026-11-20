@@ -15,9 +15,8 @@
 //!   bp_note_dropped(n)
 //!   bp_alloc(len) / bp_free(ptr, len)
 
-#![allow(clippy::missing_safety_doc)]
-
 mod arena;
+mod daily;
 mod enemy;
 mod maps;
 mod math;
@@ -76,35 +75,38 @@ pub extern "C" fn bp_start(mode: u32, map: u32, seed: u32, flags: u32) -> u32 {
 
 /// Un tick de paso fijo (`sim::FIXED_DT`). El host no elige `dt`: así el registro
 /// de entradas basta para reproducir la partida en el servidor.
+///
+/// # Safety
+/// `input_ptr` debe ser nulo o apuntar a `INPUT_LEN` `f32` legibles.
 #[no_mangle]
-pub extern "C" fn bp_tick_fixed(input_ptr: *const f32) -> u32 {
+pub unsafe extern "C" fn bp_tick_fixed(input_ptr: *const f32) -> u32 {
     let g = game();
-    let input = read_input(input_ptr);
+    let input = unsafe { read_input(input_ptr) };
     g.step(input);
     g.tick
 }
 
-fn read_input(ptr: *const f32) -> player::Input {
+/// # Safety
+/// `ptr` debe ser nulo o apuntar a `protocol::INPUT_LEN` `f32` legibles.
+unsafe fn read_input(ptr: *const f32) -> player::Input {
     use protocol::*;
     if ptr.is_null() {
         return player::Input::default();
     }
-    unsafe {
-        let s = core::slice::from_raw_parts(ptr, INPUT_LEN);
-        player::Input {
-            move_x: s[I_MOVE_X],
-            move_z: s[I_MOVE_Z],
-            look_dx: s[I_LOOK_DX],
-            look_dy: s[I_LOOK_DY],
-            fire_held: s[I_FIRE_HELD] > 0.5,
-            fire_pressed: s[I_FIRE_PRESSED] > 0.5,
-            jump: s[I_JUMP] > 0.5,
-            interact: s[I_INTERACT] > 0.5,
-            reload: s[I_RELOAD] > 0.5,
-            run: s[I_RUN] > 0.5,
-            switch: s[I_SWITCH] as u8,
-            ads: s[I_ADS] > 0.5,
-        }
+    let s = unsafe { core::slice::from_raw_parts(ptr, INPUT_LEN) };
+    player::Input {
+        move_x: s[I_MOVE_X],
+        move_z: s[I_MOVE_Z],
+        look_dx: s[I_LOOK_DX],
+        look_dy: s[I_LOOK_DY],
+        fire_held: s[I_FIRE_HELD] > 0.5,
+        fire_pressed: s[I_FIRE_PRESSED] > 0.5,
+        jump: s[I_JUMP] > 0.5,
+        interact: s[I_INTERACT] > 0.5,
+        reload: s[I_RELOAD] > 0.5,
+        run: s[I_RUN] > 0.5,
+        switch: s[I_SWITCH] as u8,
+        ads: s[I_ADS] > 0.5,
     }
 }
 
@@ -162,6 +164,9 @@ pub extern "C" fn bp_log_truncated() -> u32 {
 
 /// Re-simula un registro y devuelve el hash del estado final (0 si es inválido).
 /// Sirve de prueba cruzada nativo/wasm.
+///
+/// # Safety
+/// `ptr` debe ser nulo o apuntar a `len` bytes legibles.
 #[no_mangle]
 pub unsafe extern "C" fn bp_replay_hash(ptr: *const u8, len: usize) -> u64 {
     if ptr.is_null() {
@@ -171,10 +176,27 @@ pub unsafe extern "C" fn bp_replay_hash(ptr: *const u8, len: usize) -> u64 {
     replay::run_bytes(bytes).map_or(0, |o| o.hash)
 }
 
+/// Mapa y mutador del desafío de la fecha `yyyymmdd`, empaquetados como `map | mutator << 8`.
+/// Devuelve 0 si la fecha no es válida (el mutador 0 nunca aplica al diario).
+#[no_mangle]
+pub extern "C" fn bp_daily_config(date: u32) -> u32 {
+    if !daily::is_valid_date(date) {
+        return 0;
+    }
+    let (map, mutator) = daily::daily_config(date);
+    map as u32 | (mutator as u32) << 8
+}
+
 /// Hash de la partida dorada: la misma constante la fija un test nativo.
 #[no_mangle]
 pub extern "C" fn bp_golden_hash(ticks: u32) -> u64 {
     replay::golden_hash(ticks)
+}
+
+/// Hash de un escenario fijado (ver `replay::scenario_hash`). Lo comparan los tests de wasm.
+#[no_mangle]
+pub extern "C" fn bp_scenario_hash(id: u32, ticks: u32) -> u64 {
+    replay::scenario_hash(id, ticks)
 }
 
 #[no_mangle]
@@ -193,6 +215,8 @@ pub extern "C" fn bp_alloc(len: usize) -> *mut u8 {
     }
 }
 
+/// # Safety
+/// `p` debe venir de `bp_alloc(len)` con el mismo `len`, y no usarse después.
 #[no_mangle]
 pub unsafe extern "C" fn bp_free(p: *mut u8, len: usize) {
     if p.is_null() || len == 0 {

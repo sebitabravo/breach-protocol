@@ -42,7 +42,9 @@ impl Arena {
     /// `data` is `[min_x, min_y, min_z, max_x, max_y, max_z, kind]` per box.
     pub fn load(&mut self, data: &[f32]) -> usize {
         self.load_boxes(
-            data.chunks_exact(FLOATS_PER_BOX)
+            data.as_chunks::<FLOATS_PER_BOX>()
+                .0
+                .iter()
                 .map(|c| (v3(c[0], c[1], c[2]), v3(c[3], c[4], c[5]), c[6] as u8)),
         )
     }

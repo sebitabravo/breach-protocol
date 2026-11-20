@@ -29,7 +29,6 @@ pub struct Solid {
 
 pub struct MapDef {
     pub id: u8,
-    pub name: &'static str,
     pub theme: u8,
     pub solids: &'static [Solid],
     /// Terminales: `[x, y, z]`, con `y` la altura del suelo donde se para el jugador.
@@ -64,7 +63,6 @@ pub fn get(id: u8) -> Option<&'static MapDef> {
 
 pub static SECTOR_01: MapDef = MapDef {
     id: 0,
-    name: "SECTOR_01 · Control de Acceso",
     theme: THEME_CONTROL,
     solids: &[
         s(0.0, -0.5, 0.0, 36.0, 1.0, 36.0, KIND_FLOOR),
@@ -110,7 +108,6 @@ pub static SECTOR_01: MapDef = MapDef {
 
 pub static SECTOR_02: MapDef = MapDef {
     id: 1,
-    name: "SECTOR_02 · Refrigeración",
     theme: THEME_CRYO,
     solids: &[
         s(0.0, -0.5, 0.0, 60.0, 1.0, 32.0, KIND_FLOOR),
@@ -159,7 +156,6 @@ pub static SECTOR_02: MapDef = MapDef {
 
 pub static SECTOR_03: MapDef = MapDef {
     id: 2,
-    name: "SECTOR_03 · Archivo",
     theme: THEME_ARCHIVE,
     solids: &[
         s(0.0, -0.5, 0.0, 38.0, 1.0, 38.0, KIND_FLOOR),
@@ -242,7 +238,7 @@ mod tests {
                     assert!(
                         s.min[axis] < s.max[axis],
                         "{} has a degenerate solid {:?}",
-                        m.name,
+                        m.id,
                         s
                     );
                 }
@@ -259,7 +255,7 @@ mod tests {
                         (0..3).all(|k| a.min[k] < b.max[k] - 1e-4 && b.min[k] < a.max[k] - 1e-4);
                     // Las esquinas de los muros perimetrales se solapan sin consecuencia.
                     let corner = a.kind == KIND_WALL && b.kind == KIND_WALL;
-                    assert!(!overlap || corner, "{}: {:?} overlaps {:?}", m.name, a, b);
+                    assert!(!overlap || corner, "{}: {:?} overlaps {:?}", m.id, a, b);
                 }
             }
         }
@@ -268,24 +264,24 @@ mod tests {
     #[test]
     fn spawns_are_free_and_far_from_the_player_start() {
         for m in all() {
-            assert_eq!(m.spawns.len(), 8, "{}", m.name);
+            assert_eq!(m.spawns.len(), 8, "{}", m.id);
             for sp in m.spawns {
                 assert!(
                     sp[0].abs() < m.half_x && sp[1].abs() < m.half_z,
                     "{} spawn out of bounds",
-                    m.name
+                    m.id
                 );
                 for s in m.solids.iter().filter(|s| blocks_walking(s)) {
                     assert!(
                         !inside_xz(s, sp[0], sp[1], 0.5),
                         "{}: spawn {:?} inside {:?}",
-                        m.name,
+                        m.id,
                         sp,
                         s
                     );
                 }
                 let d = ((sp[0] - m.start[0]).powi(2) + (sp[1] - m.start[1]).powi(2)).sqrt();
-                assert!(d >= 9.0, "{}: spawn {:?} only {d} m from start", m.name, sp);
+                assert!(d >= 9.0, "{}: spawn {:?} only {d} m from start", m.id, sp);
             }
         }
     }
@@ -297,7 +293,7 @@ mod tests {
                 assert!(
                     !inside_xz(s, m.start[0], m.start[1], RADIUS),
                     "{}: start inside {:?}",
-                    m.name,
+                    m.id,
                     s
                 );
             }
@@ -307,7 +303,7 @@ mod tests {
     #[test]
     fn every_map_has_three_distinct_nodes_inside_bounds() {
         for m in all() {
-            assert_eq!(m.nodes.len(), 3, "{}", m.name);
+            assert_eq!(m.nodes.len(), 3, "{}", m.id);
             for (i, a) in m.nodes.iter().enumerate() {
                 assert!(a[0].abs() < m.half_x && a[2].abs() < m.half_z);
                 for b in &m.nodes[i + 1..] {
@@ -368,7 +364,7 @@ mod tests {
                             && ((x - n[0]).powi(2) + (z - n[2]).powi(2)).sqrt() < NODE_RADIUS
                     })
                 });
-                assert!(reachable, "{}: node {:?} unreachable on foot", m.name, n);
+                assert!(reachable, "{}: node {:?} unreachable on foot", m.id, n);
             }
         }
     }
