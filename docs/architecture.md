@@ -99,6 +99,31 @@ look deltas, fire held/pressed, salto, interactuar, recargar, correr, cambiar
 arma, ADS. Los eventos son efímeros (audio y feed del HUD); el shell consume
 hasta el último `seq` visto por frame.
 
+## Registro de partidas y truncamiento de Overflow
+
+Un registro `BPL1` guarda las entradas cuantizadas de cada tick que consumió la
+simulación. Su techo es `MAX_TICKS` = 72 000 ticks (20 min a 60 Hz); `replay::MAX_TICKS`
+y `bp_core::MAX_TICKS` son la misma constante. El host llama `enable_recording()` antes de
+`start()`: sin registro armado, `encode_log` no graba nada (`bp_start` lo hace así).
+
+- Overflow no tiene temporizador ni tope de oleadas: solo la muerte la termina. Por eso
+  una partida puede superar el techo.
+- Al tick 72 001, `Recorder::push` marca el registro como truncado y deja de grabar. La
+  simulación sigue en vivo, pero lo que no quedó grabado no existe para el servidor.
+- El encabezado no lleva ninguna marca de truncamiento. Un registro truncado es idéntico
+  a una partida que terminó sola en 72 000 ticks con el jugador vivo. El servidor no ve
+  `log_truncated`; solo ve el encabezado y el resultado de re-simularlo.
+- El servidor re-simula los primeros 72 000 ticks de forma exacta. Lo que no puede
+  verificar es la parte no grabada. Su señal es: `header.ticks == MAX_TICKS` y un
+  resultado con `phase` = PLAYING (o EXTRACTION). Esa partida se puntúa como "termina al
+  final del registro", según `docs/api-contract.md`.
+- El cliente sí conoce el truncamiento. `Game::log_truncated()` y `bp_log_truncated()`
+  devuelven `true` desde el tick 72 001. Conviene comprobarlo antes de enviar, y avisar
+  al jugador de que el tiempo posterior a 20 minutos no cuenta.
+- El núcleo no tiene un estado distinto para estas partidas. El criterio "tope
+  alcanzado" lo aplica el servidor.
+- Una partida que termina antes de 72 000 ticks no tiene este caso.
+
 ## El loop de paso fijo
 
 `src/core/loop.ts`: acumulador clásico con tres salvaguardas.

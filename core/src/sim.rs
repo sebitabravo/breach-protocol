@@ -285,6 +285,12 @@ impl Game {
         }
     }
 
+    /// Verdadero si la partida superó `replay::MAX_TICKS`. Su registro no es verificable: el
+    /// servidor debe rechazarlo aunque se pueda codificar.
+    pub fn log_truncated(&self) -> bool {
+        self.recorder.as_ref().is_some_and(|r| r.truncated())
+    }
+
     pub fn enable_recording(&mut self) {
         self.recorder = Some(crate::replay::Recorder::new());
     }

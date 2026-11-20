@@ -9,6 +9,8 @@
 //! que apunte perfecto. La entrada sigue siendo "humana" solo por confianza.
 
 use crate::daily;
+use crate::enemy::{Enemy, KIND_INTERCEPTOR};
+use crate::math::v3;
 use crate::player::{quantize_axis, quantize_look, Input, LOOK_UNITS_PER_RAD};
 use crate::protocol::phase;
 use crate::sim::{Game, MODE_DAILY, MODE_PRACTICE};
@@ -477,21 +479,29 @@ fn run_scenario(id: u32, ticks: u32, mut watch: impl FnMut(&Game)) -> Game {
         ),
         2 => (MODE_OVERFLOW, 2, 0x0BEE_F002, FLAG_AUTO_RELOAD),
         3 => (MODE_DAILY, 0, 20_261_120, 0),
+        4 => (MODE_MISSION, 0, 0x1C0F_F004, FLAG_AUTO_RELOAD),
         _ => (MODE_PRACTICE, 0, 0x00C0_FFEE, FLAG_AUTO_RELOAD),
     };
     let mut g = Game::new(seed);
     g.start(mode, map, seed, flags);
+    if id == 4 {
+        // Arnés del simulacro: dos interceptores en suelo abierto, con línea de visión al
+        // operador que está quieto en su punto de inicio. Ninguna oleada los acompaña.
+        g.waves.queue_head = g.waves.queue_len;
+        g.enemies[0] = Enemy::spawn(v3(4.0, 0.0, 6.0), KIND_INTERCEPTOR, 0.0, 0);
+        g.enemies[1] = Enemy::spawn(v3(-4.0, 0.0, 6.0), KIND_INTERCEPTOR, 0.0, 1);
+    }
     for t in 0..ticks {
         if g.phase != phase::PLAYING && g.phase != phase::EXTRACTION {
             break;
         }
         g.step(scenario_input(id, t));
         if id != 0 {
-            // Arnés: el operador scripteado no sobrevive ni despeja oleadas. Cada 10 s se
-            // despeja la oleada y el jugador queda con vida llena, para que la partida llegue a
-            // composiciones posteriores (interceptores desde la oleada 2).
+            // Arnés: el operador scripteado no sobrevive ni despeja oleadas. Los escenarios
+            // 1 a 3 limpian la oleada cada 10 s, para llegar a composiciones posteriores.
+            // El simulacro (4) no limpia: sus interceptores deben completar el ciclo.
             g.player.hp = g.player.hp_max;
-            if t % 600 == 599 {
+            if (1..=3).contains(&id) && t % 600 == 599 {
                 for e in g.enemies.iter_mut() {
                     e.hurt(f32::MAX);
                 }
@@ -502,8 +512,12 @@ fn run_scenario(id: u32, ticks: u32, mut watch: impl FnMut(&Game)) -> Game {
     g
 }
 
-/// Igual que `golden_input`, salvo el escenario 1: equipa la escopeta (switch 3) y vuelve a la pistola.
+/// Igual que `golden_input`, salvo el escenario 1: equipa la escopeta (switch 3) y vuelve a la
+/// pistola. El escenario 4 deja al operador quieto.
 fn scenario_input(id: u32, t: u32) -> Input {
+    if id == 4 {
+        return Input::default();
+    }
     let mut input = golden_input(t);
     if id == 1 {
         input.switch = if t % 500 == 250 {
@@ -774,9 +788,8 @@ mod tests {
         }
     }
 
-    /// Límite conocido: el arnés no lleva a los interceptores más allá de PATROL. Sus
-    /// estados Flank, Charge y la embestida no quedan fijados por estos escenarios; los cubren
-    /// los tests de `enemy.rs` y `sim.rs`. Si el arnés cambia, revisar esta nota.
+    /// Los escenarios 1 a 3 solo prueban que los interceptores aparecen: no salen de PATROL.
+    /// Su ciclo completo lo fija el simulacro (escenario 4).
     #[test]
     fn scenarios_really_exercise_the_content_they_claim() {
         use crate::enemy::KIND_INTERCEPTOR;
@@ -811,11 +824,47 @@ mod tests {
         }
     }
 
-    const SCENARIO_PINS: [u64; 4] = [
+    /// El simulacro (4) recorre el ciclo completo del interceptor: Flank, Charge, la embestida,
+    /// Strike, Recover y de nuevo Flank. Si un estado deja de visitarse, el test falla.
+    #[test]
+    fn interceptor_drill_visits_every_stage_of_the_fsm() {
+        use crate::enemy::{INTERCEPTOR, ST_CHARGE, ST_FLANK, ST_RECOVER, ST_STRIKE};
+        use crate::protocol::MAX_ENEMIES;
+        let mut seen = [false; 9];
+        let (mut dash_ticks, mut charges, mut reflanks) = (0u32, 0u32, 0u32);
+        let mut prev = [u8::MAX; MAX_ENEMIES];
+        let run = run_scenario(4, GOLDEN_TICKS, |w| {
+            for (i, e) in w.enemies.iter().enumerate() {
+                if !(e.is_alive() && e.kind == KIND_INTERCEPTOR) {
+                    continue;
+                }
+                seen[e.state as usize] = true;
+                if e.state == ST_CHARGE && e.state_time >= INTERCEPTOR.telegraph {
+                    dash_ticks += 1;
+                }
+                if prev[i] != e.state {
+                    charges += u32::from(e.state == ST_CHARGE);
+                    reflanks += u32::from(prev[i] == ST_RECOVER && e.state == ST_FLANK);
+                }
+                prev[i] = e.state;
+            }
+        });
+        assert!(seen[ST_FLANK as usize], "never flanked");
+        assert!(seen[ST_CHARGE as usize], "never charged");
+        assert!(dash_ticks > 0, "never dashed");
+        assert!(seen[ST_STRIKE as usize], "never struck");
+        assert!(seen[ST_RECOVER as usize], "never retreated");
+        assert!(reflanks > 0, "never re-flanked after a retreat");
+        assert!(charges >= 2, "expected repeated charges, got {charges}");
+        assert!(run.damage_taken > 0.0, "no dash ever landed a hit");
+    }
+
+    const SCENARIO_PINS: [u64; 5] = [
         6051080362437244339,
         8473981006168998935,
         14559882121426080077,
         1992019841316245935,
+        15493279338039416630,
     ];
     const GOLDEN_TICKS: u32 = 4000;
     const GOLDEN_HASH: u64 = 6051080362437244339;
