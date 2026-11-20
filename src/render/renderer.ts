@@ -24,7 +24,7 @@ import { CameraRig } from './camera';
 import { disposeRobotAssets } from './entities';
 import { EnemyPool } from './enemies';
 import { FxPool, impactColour } from './fx';
-import { PoseInterpolator } from './interp';
+import { PoseInterpolator, type Pose } from './interp';
 import { PRESETS, type QualityName, type QualityPreset } from './presets';
 import { PostFx } from './postfx';
 import { lookFor, PALETTE, type ThemeLook } from './themes';
@@ -68,6 +68,8 @@ export class Renderer {
 
   // --- camera interpolation state -----------------------------------------
   private readonly interp = new PoseInterpolator();
+  private readonly poseIn: Pose = { px: 0, py: 0, pz: 0, yaw: 0, pitch: 0 };
+  private readonly poseOut: Pose = { px: 0, py: 0, pz: 0, yaw: 0, pitch: 0 };
 
   private readonly enemies: EnemyPool;
 
@@ -215,11 +217,13 @@ export class Renderer {
     this.elapsed += dt;
 
     // 1. camera interpolation (snap on reset / first frame)
-    const pose = this.interp.sample(
-      { px: state.px, py: state.py, pz: state.pz, yaw: state.yaw, pitch: state.pitch },
-      state.tick,
-      alpha,
-    );
+    const input = this.poseIn;
+    input.px = state.px;
+    input.py = state.py;
+    input.pz = state.pz;
+    input.yaw = state.yaw;
+    input.pitch = state.pitch;
+    const pose = this.interp.sampleInto(input, state.tick, alpha, this.poseOut);
 
     // 2. camera: interpolated pose + recoil + grounded bob
     const reducedMotion = this.hooks.reducedMotion === true;

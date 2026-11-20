@@ -83,7 +83,7 @@ export class Telegraph {
   }
 
   /** Línea de mira desde `from` hasta `to`; `intensity` escala el color. */
-  addLaser(from: readonly [number, number, number], to: readonly [number, number, number], hex: number, intensity: number): void {
+  addLaser(from: ArrayLike<number>, to: ArrayLike<number>, hex: number, intensity: number): void {
     if (this.laserCount >= MAX_ENEMIES) return;
     const p = this.laserCount * 6;
     this.laserPos[p] = from[0];

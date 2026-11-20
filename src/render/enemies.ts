@@ -36,22 +36,20 @@ const HEAD_Y: Record<number, number> = { [ENEMY_KIND.scout]: 0.95, [ENEMY_KIND.s
 const HALO_R: Record<number, number> = { [ENEMY_KIND.scout]: 0.45, [ENEMY_KIND.sentinel]: 0.55, [ENEMY_KIND.interceptor]: 0.6 };
 
 /**
- * Traduce la FSM del snapshot a un aspecto. Función pura: sin THREE, probable en node.
+ * Traduce la FSM del snapshot a un aspecto, escribiendo en `look` (sin allocations).
  * - scout: windup (aim) brilla; strike destella fuerte.
  * - sentinel: aim dibuja la línea de mira; strike destella.
  * - interceptor: flank tenue; charge es el telegrama brillante e inclina el cuerpo.
  */
-export function robotLook(kind: number, state: number): RobotLook {
+export function robotLookInto(kind: number, state: number, look: RobotLook): RobotLook {
   const interceptor = kind === ENEMY_KIND.interceptor;
-  const look: RobotLook = {
-    lean: interceptor ? 0.16 : kind === ENEMY_KIND.scout ? 0.08 : 0,
-    squash: 1,
-    glow: 0,
-    hex: EYE_HEX,
-    headY: HEAD_Y[kind] ?? HEAD_Y[ENEMY_KIND.scout],
-    haloRadius: HALO_R[kind] ?? HALO_R[ENEMY_KIND.scout],
-    laser: false,
-  };
+  look.lean = interceptor ? 0.16 : kind === ENEMY_KIND.scout ? 0.08 : 0;
+  look.squash = 1;
+  look.glow = 0;
+  look.hex = EYE_HEX;
+  look.headY = HEAD_Y[kind] ?? HEAD_Y[ENEMY_KIND.scout];
+  look.haloRadius = HALO_R[kind] ?? HALO_R[ENEMY_KIND.scout];
+  look.laser = false;
   switch (state) {
     case ENEMY_STATE.aim:
       look.squash = 0.92;
@@ -78,18 +76,34 @@ export function robotLook(kind: number, state: number): RobotLook {
   return look;
 }
 
-/** Punta del cañón del sentinel en mundo, según su yaw (rotación Y, como en el mesh). */
-export function sentinelMuzzle(x: number, y: number, z: number, yaw: number): [number, number, number] {
+/** Versión cómoda para tests y lectura; el pool usa `robotLookInto` con un scratch. */
+export function robotLook(kind: number, state: number): RobotLook {
+  return robotLookInto(kind, state, newLook());
+}
+
+function newLook(): RobotLook {
+  return { lean: 0, squash: 1, glow: 0, hex: EYE_HEX, headY: 0, haloRadius: 0, laser: false };
+}
+
+/** Punta del cañón del sentinel en mundo, según su yaw (rotación Y, como en el mesh). Escribe en `out`. */
+export function sentinelMuzzle(x: number, y: number, z: number, yaw: number, out = new Float64Array(3)): Float64Array {
   const c = Math.cos(yaw);
   const s = Math.sin(yaw);
   const m = SENTINEL_MUZZLE;
-  return [x + m.x * c + m.z * s, y + m.y, z - m.x * s + m.z * c];
+  out[0] = x + m.x * c + m.z * s;
+  out[1] = y + m.y;
+  out[2] = z - m.x * s + m.z * c;
+  return out;
 }
 
 export class EnemyPool {
   private readonly meshes: (THREE.Mesh | null)[] = new Array(MAX_ENEMIES).fill(null);
   private readonly kinds: number[] = new Array(MAX_ENEMIES).fill(-1);
   private readonly telegraph: Telegraph;
+  // scratch por frame: el pool no aloca dentro de update()
+  private readonly look = newLook();
+  private readonly muzzle = new Float64Array(3);
+  private readonly target = new Float64Array(3);
 
   constructor(private readonly scene: THREE.Scene) {
     this.telegraph = new Telegraph(scene);
@@ -112,7 +126,7 @@ export class EnemyPool {
       const y = f[base + E.y];
       const z = f[base + E.z];
       const yaw = f[base + E.yaw];
-      const look = robotLook(kind, st);
+      const look = robotLookInto(kind, st, this.look);
       const bob = reducedMotion ? 0 : Math.sin(f[base + E.anim] * 7) * 0.03;
       mesh.visible = true;
       mesh.position.set(x, y + bob, z);
@@ -120,9 +134,12 @@ export class EnemyPool {
       mesh.scale.set(1, look.squash, 1);
       if (look.glow > 0) this.telegraph.addHalo(x, y + look.headY, z, look.haloRadius, look.hex, look.glow);
       if (look.laser) {
-        const from = sentinelMuzzle(x, y, z, yaw);
+        sentinelMuzzle(x, y, z, yaw, this.muzzle);
+        this.target[0] = state.px;
+        this.target[1] = state.py + PLAYER_CHEST_OFFSET;
+        this.target[2] = state.pz;
         const pulse = 0.8 + 0.2 * Math.sin(time * 12);
-        this.telegraph.addLaser(from, [state.px, state.py + PLAYER_CHEST_OFFSET, state.pz], EYE_HEX, pulse);
+        this.telegraph.addLaser(this.muzzle, this.target, EYE_HEX, pulse);
       }
     }
     this.telegraph.endFrame(camera);
