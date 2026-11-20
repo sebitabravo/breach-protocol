@@ -1,27 +1,27 @@
 /**
- * Composition root: boots the Rust/WASM core, the renderer and the UI, owns the
- * screen state machine, and runs the fixed-step loop.
+ * Composition root: arranca el núcleo WASM, el renderer y la UI, conduce la
+ * máquina de pantallas y ejecuta el bucle de paso fijo.
  *
- * Nothing here re-implements simulation rules — it forwards input, reads the
- * snapshot, and decides which screen is visible.
+ * No reimplementa reglas de simulación: reenvía input, lee el snapshot y decide
+ * qué pantalla está visible.
  */
 import { Engine, type Snapshot, type WorldEvent } from '../wasm/bridge';
-import { EVT, H, MODE, PHASE, WEAPON } from '../wasm/protocol';
+import { H, PHASE } from '../wasm/protocol';
 import { Renderer } from '../render/renderer';
 import { InputManager, type InputHooks } from '../input/input';
 import { AudioManager } from '../audio/audio';
 import { Hud } from '../ui/hud';
 import { Engineering } from '../ui/engineering';
+import { BootView, fallbackMessage, webgl2Supported } from '../ui/boot-view';
+import { renderResult } from '../ui/results';
+import { SettingsForm, type SettingsView } from '../ui/settings-form';
+import { byId } from '../ui/dom';
 import { QualityController } from './quality';
 import { FixedStepLoop } from './loop';
-import {
-  loadSettings,
-  resetSettings,
-  saveSettings,
-  type Quality,
-  type Settings,
-} from './settings';
-import { bestScore, grade, saveScore, type RunResult } from './scores';
+import { loadSettings, resetSettings, saveSettings, type Quality, type Settings } from './settings';
+import { bestScore, saveScore } from './scores';
+import { buildRunResult, buildStartOptions } from './match';
+import { effectsOf } from './events';
 import type { MapData } from '../world/map';
 import {
   escapeAction,
@@ -36,19 +36,22 @@ import {
 
 const ENGINE_URL = `${import.meta.env.BASE_URL}bp_core.wasm`;
 
-function el<T extends HTMLElement>(id: string): T {
-  const node = document.getElementById(id);
-  if (!node) throw new Error(`missing element #${id}`);
-  return node as T;
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 export class GameApp {
-  private readonly canvas = el<HTMLCanvasElement>('gl');
-  private readonly app = el('app');
+  private readonly canvas = byId<HTMLCanvasElement>('gl');
+  private readonly app = byId('app');
+  /** Un solo controlador: `dispose()` corta todos los listeners del shell de una vez. */
+  private readonly abort = new AbortController();
+  private readonly settingsForm = new SettingsForm(this.app, {
+    onPatch: (patch) => this.updateSettings(patch),
+    onTelemetry: (visible) => {
+      if (this.eng?.visible !== visible) this.toggleEngineering();
+    },
+    usingTouch: () => this.input?.usingTouch ?? false,
+  });
 
   private engine: Engine | null = null;
   private renderer: Renderer | null = null;
@@ -59,7 +62,7 @@ export class GameApp {
   private eng: Engineering | null = null;
 
   private settings: Settings = loadSettings();
-  private quality = new QualityController(loadSettings().quality);
+  private quality = new QualityController(this.settings.quality);
   private loop = new FixedStepLoop();
   private hooks = {
     reducedMotion: false,
@@ -86,41 +89,36 @@ export class GameApp {
   async boot(): Promise<void> {
     this.setScreen('boot');
     this.bindGlobalUI();
-    const setCheck = (name: string, state: 'ok' | 'fail'): void => {
-      document.querySelector(`[data-check="${name}"]`)?.setAttribute('data-state', state);
-    };
-    const progress = (percent: number): void => {
-      el('boot-progress').style.width = `${percent}%`;
-    };
+    const view = new BootView();
 
     try {
       const audioOk = 'AudioContext' in window || 'webkitAudioContext' in window;
-      setCheck('audio', audioOk ? 'ok' : 'fail');
-      progress(12);
+      view.setCheck('audio', audioOk ? 'ok' : 'fail');
+      view.setProgress(12);
 
       const startedAt = performance.now();
       this.engine = await Engine.load(ENGINE_URL);
       this.wasmKib = this.engine.wasmBytes / 1024;
-      setCheck('wasm', 'ok');
-      progress(46);
+      view.setCheck('wasm', 'ok');
+      view.setProgress(46);
 
-      if (!this.supportsWebGL2()) {
-        setCheck('webgl2', 'fail');
+      if (!webgl2Supported()) {
+        view.setCheck('webgl2', 'fail');
         throw new Error('webgl2');
       }
       this.renderer = new Renderer(this.canvas, this.hooks);
       this.renderer.init();
       this.renderer.setQuality(this.quality.preset, this.dprCap());
       this.renderer.resize();
-      setCheck('webgl2', 'ok');
-      progress(72);
+      view.setCheck('webgl2', 'ok');
+      view.setProgress(72);
 
       this.map = this.engine.loadMap(0);
       if (this.map.solids.length === 0) throw new Error('arena vacía');
       this.renderer.setSector(this.map);
-      setCheck('arena', 'ok');
+      view.setCheck('arena', 'ok');
       this.loadMs = performance.now() - startedAt;
-      progress(92);
+      view.setProgress(92);
 
       this.input = new InputManager(this.canvas, this.inputHooks(), this.settings);
       this.input.attach();
@@ -129,28 +127,21 @@ export class GameApp {
       this.eng = new Engineering();
 
       this.applySettings();
-      this.bindForms();
+      this.settingsForm.attach(this.abort.signal);
       this.syncSettingsUI();
       this.refreshMenuRecord();
       this.wireDisplayEvents();
-      progress(100);
-      el('boot-meta').textContent = `núcleo listo · ${this.wasmKib.toFixed(1)} KiB · ${this.loadMs.toFixed(0)} ms`;
+      view.setProgress(100);
+      view.setMeta(`núcleo listo · ${this.wasmKib.toFixed(1)} KiB · ${this.loadMs.toFixed(0)} ms`);
 
       this.lastNow = performance.now();
       this.rafId = requestAnimationFrame(this.frame);
 
       await sleep(320);
-      if (!this.settings.tutorialSeen) {
-        this.setScreen('calibrate');
-      } else {
-        this.setScreen('menu');
-      }
+      this.setScreen(this.settings.tutorialSeen ? 'menu' : 'calibrate');
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      el('fallback-detail').textContent =
-        detail === 'webgl2'
-          ? 'Este navegador no expone WebGL2. Probá Chrome, Edge, Firefox o Safari actualizados.'
-          : `No pudimos inicializar el sistema: ${detail}`;
+      view.setFallbackDetail(fallbackMessage(detail));
       this.setScreen('fallback');
     }
   }
@@ -158,21 +149,12 @@ export class GameApp {
   private handleContextLost(): void {
     if (this.screen === 'playing') this.pause('game');
     this.app.dataset.ctx = 'lost';
-    el('context-lost').hidden = false;
+    byId('context-lost').hidden = false;
   }
 
   private handleContextRestored(): void {
     this.app.dataset.ctx = 'ok';
-    el('context-lost').hidden = true;
-  }
-
-  private supportsWebGL2(): boolean {
-    try {
-      const probe = document.createElement('canvas');
-      return probe.getContext('webgl2') !== null;
-    } catch {
-      return false;
-    }
+    byId('context-lost').hidden = true;
   }
 
   private dprCap(): number {
@@ -211,13 +193,15 @@ export class GameApp {
     this.mode = mode;
     this.pauseOrigin = 'game';
 
-    const started = this.engine.start({
-      mode: mode === 'practice' ? MODE.practice : MODE.mission,
-      map: mapId,
-      seed: (Math.random() * 0xffffffff) >>> 0,
-      aimAssist: this.settings.aimAssistTouch && this.input.usingTouch,
-      autoReload: this.settings.autoReload,
-    });
+    const started = this.engine.start(
+      buildStartOptions({
+        mode,
+        mapId,
+        seed: (Math.random() * 0xffffffff) >>> 0,
+        aimAssist: this.settings.aimAssistTouch && this.input.usingTouch,
+        autoReload: this.settings.autoReload,
+      }),
+    );
     if (!started) throw new Error(`no se pudo iniciar el sector ${mapId}`);
     if (this.map?.id !== mapId) {
       this.map = this.engine.mapData();
@@ -242,7 +226,7 @@ export class GameApp {
     this.input?.reset();
     this.input?.releasePointerLock();
     this.setScreen('pause');
-    el('pause-sub').textContent = pauseSubtitle(this.mode);
+    byId('pause-sub').textContent = pauseSubtitle(this.mode);
     const resume = this.app.querySelector<HTMLElement>('[data-action="resume"]');
     if (resume) resume.textContent = 'Continuar ▸';
     this.audio.suspend();
@@ -260,7 +244,7 @@ export class GameApp {
   private openSettingsFromMenu(): void {
     this.pauseOrigin = 'menu';
     this.setScreen('pause');
-    el('pause-sub').textContent = 'Ajustes del protocolo';
+    byId('pause-sub').textContent = 'Ajustes del protocolo';
     const resume = this.app.querySelector<HTMLElement>('[data-action="resume"]');
     if (resume) resume.textContent = 'Jugar ▸';
   }
@@ -276,47 +260,21 @@ export class GameApp {
   private finish(won: boolean): void {
     if (this.finished || !this.engine) return;
     this.finished = true;
-    const state = this.engine.state;
-    const run: RunResult = {
-      score: Math.round(state.score),
-      kills: state.kills,
-      accuracy: state.shots > 0 ? state.hits / state.shots : 0,
-      nodes: state.nodesActive,
-      timeLeft: state.timeLeft,
-      damage: Math.round(state.damageTaken),
-      durationMs: Math.max(0, state.timeElapsed * 1000),
+    const run = buildRunResult(this.engine.state, {
       mode: this.mode,
       input: this.input?.usingTouch ? 'touch' : 'mouse',
-      difficulty: 'operator',
       won,
       at: Date.now(),
-    };
+    });
     const outcome = saveScore(run);
-    this.showResult(run, outcome.isRecord);
+    renderResult(run, outcome.isRecord);
     this.setScreen('result');
     this.audio.play(won ? 'win' : 'lose');
-    el('result-timebar').style.width = `${Math.min(100, (state.timeElapsed / 180) * 100)}%`;
-  }
-
-  private showResult(run: RunResult, isRecord: boolean): void {
-    el('result-eyebrow').textContent = run.won ? 'protocolo completado' : 'protocolo fallido';
-    el('result-title').textContent = run.won ? 'PARTIDA COMPLETADA' : 'CONEXIÓN PERDIDA';
-    el('result-grade').textContent = grade(run);
-    el('result-score').textContent = run.score.toLocaleString('es-CL');
-    el('result-kills').textContent = String(run.kills);
-    el('result-accuracy').textContent = `${Math.round(run.accuracy * 100)}%`;
-    el('result-nodes').textContent = `${run.nodes}/3`;
-    el('result-time').textContent = `${Math.floor(run.durationMs / 60000)}:${Math.floor((run.durationMs % 60000) / 1000)
-      .toString()
-      .padStart(2, '0')}`;
-    el('result-damage').textContent = String(run.damage);
-    el('result-input').textContent = run.input === 'touch' ? 'táctil' : 'mouse';
-    el('result-record').hidden = !isRecord;
   }
 
   private refreshMenuRecord(): void {
     const best = bestScore('run');
-    el('menu-record').textContent = best === null ? 'récord: —' : `récord: ${best.toLocaleString('es-CL')}`;
+    byId('menu-record').textContent = best === null ? 'récord: —' : `récord: ${best.toLocaleString('es-CL')}`;
   }
 
   // ------------------------------------------------------------------ loop
@@ -372,53 +330,9 @@ export class GameApp {
 
   private consumeEvents(events: readonly WorldEvent[]): void {
     for (const event of events) {
-      switch (event.type) {
-        case EVT.shot:
-          this.audio.play(event.a === WEAPON.carbine ? 'shotCarbine' : 'shotSidearm');
-          break;
-        case EVT.enemyHit:
-          this.audio.play('hit');
-          break;
-        case EVT.enemyDied:
-          this.audio.play('kill');
-          this.hud?.pushFeed(event.d === 1 ? 'centinela eliminado' : 'scout eliminado', 'good');
-          break;
-        case EVT.playerDamaged:
-          if (event.a >= 1) this.audio.play('damage');
-          break;
-        case EVT.enemyShot:
-          this.audio.play('enemyShot');
-          break;
-        case EVT.enemyWindup:
-          this.audio.play('windup');
-          break;
-        case EVT.nodeActivated:
-          this.audio.play('node');
-          this.hud?.pushFeed('nodo de red activado', 'good');
-          break;
-        case EVT.waveStart:
-          this.audio.play('wave');
-          this.hud?.pushFeed(`oleada ${Math.round(event.a)}`);
-          break;
-        case EVT.extraction:
-          this.audio.play('wave');
-          this.hud?.pushFeed('extracción iniciada · sobreviví', 'danger');
-          break;
-        case EVT.reloadStart:
-          this.audio.play('reload');
-          break;
-        case EVT.emptyMag:
-          this.audio.play('empty');
-          break;
-        case EVT.win:
-          this.hud?.pushFeed('protocolo completado', 'good');
-          break;
-        case EVT.lose:
-          this.hud?.pushFeed('conexión perdida', 'danger');
-          break;
-        default:
-          break;
-      }
+      const effects = effectsOf(event);
+      for (const sound of effects.sounds) this.audio.play(sound);
+      for (const line of effects.feed) this.hud?.pushFeed(line.text, line.kind);
     }
   }
 
@@ -492,73 +406,66 @@ export class GameApp {
     const visible = this.eng.toggle();
     this.settings = { ...this.settings, telemetry: visible };
     saveSettings(this.settings);
-    const toggle = this.app.querySelector<HTMLInputElement>('#set-telemetry');
-    if (toggle) toggle.checked = visible;
+    this.syncSettingsUI();
     this.lastEngineeringAt = 0;
   }
 
   private bindGlobalUI(): void {
-    this.app.addEventListener('click', (event) => {
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
+    const signal = this.abort.signal;
+    this.app.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target as HTMLElement | null;
+        if (!target) return;
 
-      const actionEl = target.closest<HTMLElement>('[data-action]');
-      if (actionEl) {
-        this.audio.unlock();
-        this.audio.play('ui');
-        const action = actionEl.dataset.action;
-        void this.handleAction(action ?? '');
-        return;
-      }
+        const actionEl = target.closest<HTMLElement>('[data-action]');
+        if (actionEl) {
+          this.audio.unlock();
+          this.audio.play('ui');
+          const action = actionEl.dataset.action;
+          void this.handleAction(action ?? '');
+          return;
+        }
 
-      const gotoEl = target.closest<HTMLElement>('[data-goto]');
-      if (gotoEl) {
-        this.audio.unlock();
-        this.audio.play('ui');
-        const goto = gotoEl.dataset.goto;
-        if (goto === 'menu') this.goToMenu();
-        else if (goto === 'calibrate' || goto === 'about') this.setScreen(goto);
-        return;
-      }
+        const gotoEl = target.closest<HTMLElement>('[data-goto]');
+        if (gotoEl) {
+          this.audio.unlock();
+          this.audio.play('ui');
+          const goto = gotoEl.dataset.goto;
+          if (goto === 'menu') this.goToMenu();
+          else if (goto === 'calibrate' || goto === 'about') this.setScreen(goto);
+          return;
+        }
 
-      const tab = target.closest<HTMLElement>('[data-tab]');
-      if (tab) {
-        this.audio.play('ui');
-        const name = tab.dataset.tab;
-        this.app.querySelectorAll('[data-tab]').forEach((node) => {
-          const active = node === tab;
-          node.classList.toggle('is-active', active);
-          node.setAttribute('aria-selected', active ? 'true' : 'false');
-        });
-        this.app.querySelectorAll('[data-pane]').forEach((node) => {
-          node.classList.toggle('is-active', (node as HTMLElement).dataset.pane === name);
-        });
-        return;
-      }
+        const tab = target.closest<HTMLElement>('[data-tab]');
+        if (tab) {
+          this.audio.play('ui');
+          const name = tab.dataset.tab;
+          this.app.querySelectorAll('[data-tab]').forEach((node) => {
+            const active = node === tab;
+            node.classList.toggle('is-active', active);
+            node.setAttribute('aria-selected', active ? 'true' : 'false');
+          });
+          this.app.querySelectorAll('[data-pane]').forEach((node) => {
+            node.classList.toggle('is-active', (node as HTMLElement).dataset.pane === name);
+          });
+        }
+      },
+      { signal },
+    );
 
-      const handed = target.closest<HTMLElement>('[data-handedness]');
-      if (handed) {
-        const value = handed.dataset.handedness === 'left' ? 'left' : 'right';
-        this.settings = { ...this.settings, handedness: value };
-        this.applySettings();
-        this.syncSettingsUI();
-      }
-    });
-
-    this.app.addEventListener('pointerdown', () => this.audio.unlock(), { passive: true });
-    this.app.addEventListener('keydown', () => this.audio.unlock(), { passive: true });
+    this.app.addEventListener('pointerdown', () => this.audio.unlock(), { passive: true, signal });
+    this.app.addEventListener('keydown', () => this.audio.unlock(), { passive: true, signal });
   }
 
   private async handleAction(action: string): Promise<void> {
     switch (action) {
       case 'play':
-        this.settings = { ...this.settings, tutorialSeen: true };
-        saveSettings(this.settings);
+        this.markTutorialSeen();
         await this.startMatch('run');
         break;
       case 'practice':
-        this.settings = { ...this.settings, tutorialSeen: true };
-        saveSettings(this.settings);
+        this.markTutorialSeen();
         await this.startMatch('practice');
         break;
       case 'settings':
@@ -591,8 +498,13 @@ export class GameApp {
     }
   }
 
+  private markTutorialSeen(): void {
+    this.settings = { ...this.settings, tutorialSeen: true };
+    saveSettings(this.settings);
+  }
+
   private toast(message: string): void {
-    const node = el('toast');
+    const node = byId('toast');
     node.textContent = message;
     node.hidden = false;
     window.setTimeout(() => {
@@ -601,29 +513,46 @@ export class GameApp {
   }
 
   private wireDisplayEvents(): void {
+    const signal = this.abort.signal;
     const onResize = (): void => {
       this.renderer?.resize();
     };
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', () => {
-      this.input?.reset();
-      window.setTimeout(onResize, 220);
-    });
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
+    window.addEventListener('resize', onResize, { signal });
+    window.addEventListener(
+      'orientationchange',
+      () => {
+        this.input?.reset();
+        window.setTimeout(onResize, 220);
+      },
+      { signal },
+    );
+    document.addEventListener(
+      'visibilitychange',
+      () => {
+        if (document.hidden) {
+          if (this.screen === 'playing') this.pause('game');
+          this.audio.suspend();
+        }
+      },
+      { signal },
+    );
+    window.addEventListener(
+      'blur',
+      () => {
         if (this.screen === 'playing') this.pause('game');
-        this.audio.suspend();
-      }
-    });
-    window.addEventListener('blur', () => {
-      if (this.screen === 'playing') this.pause('game');
-    });
-    window.addEventListener('pagehide', () => {
-      if (this.screen === 'playing') this.pause('game');
-    });
-    window.addEventListener('beforeunload', () => {
-      cancelAnimationFrame(this.rafId);
-    });
+      },
+      { signal },
+    );
+    window.addEventListener(
+      'pagehide',
+      () => {
+        if (this.screen === 'playing') this.pause('game');
+      },
+      { signal },
+    );
+    window.addEventListener('beforeunload', () => cancelAnimationFrame(this.rafId), { signal });
+    byId('btn-pause-hud').addEventListener('click', () => this.pause('game'), { signal });
+
     if (window.matchMedia('(pointer: coarse)').matches) {
       this.app.classList.add('is-touch');
     }
@@ -634,6 +563,14 @@ export class GameApp {
   }
 
   // ---------------------------------------------------------------- settings
+
+  /** Aplica un parche de ajustes, lo persiste y resincroniza todos los controles. */
+  private updateSettings(patch: Partial<Settings>): void {
+    this.settings = { ...this.settings, ...patch };
+    if (patch.audioEnabled !== undefined) this.audio.unlock();
+    this.applySettings();
+    this.syncSettingsUI();
+  }
 
   private applySettings(): void {
     this.settings = { ...this.settings };
@@ -655,143 +592,18 @@ export class GameApp {
     saveSettings(this.settings);
   }
 
-  private bindForms(): void {
-    const onChange = (
-      id: string,
-      handler: (element: HTMLInputElement | HTMLSelectElement) => void,
-    ): void => {
-      const node = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
-      if (!node) return;
-      const eventName = node instanceof HTMLInputElement && node.type === 'range' ? 'input' : 'change';
-      node.addEventListener(eventName, () => handler(node));
-    };
-
-    onChange('set-quality', (node) => {
-      this.settings = { ...this.settings, quality: node.value as Quality };
-      this.quality.setManual(node.value as Quality);
-      this.applySettings();
-    });
-    onChange('set-motion', (node) => {
-      this.settings = { ...this.settings, reduceMotion: (node as HTMLInputElement).checked };
-      this.applySettings();
-    });
-    onChange('set-telemetry', (node) => {
-      const checked = (node as HTMLInputElement).checked;
-      if (this.eng?.visible !== checked) this.toggleEngineering();
-    });
-    onChange('set-audio', (node) => {
-      this.settings = { ...this.settings, audioEnabled: (node as HTMLInputElement).checked };
-      this.audio.unlock();
-      this.applySettings();
-    });
-    onChange('set-volume', (node) => {
-      const volume = Number(node.value);
-      this.settings = { ...this.settings, volume };
-      el('set-volume-val').textContent = `${Math.round(volume * 100)}%`;
-      this.applySettings();
-    });
-    onChange('set-sens', (node) => {
-      const value = Number(node.value);
-      this.settings = { ...this.settings, sensitivityMouse: value, sensitivityTouch: value };
-      el('set-sens-val').textContent = `${value.toFixed(2)}×`;
-      this.applySettings();
-    });
-    onChange('set-invert', (node) => {
-      this.settings = { ...this.settings, invertY: (node as HTMLInputElement).checked };
-      this.applySettings();
-    });
-    onChange('set-hud', (node) => {
-      const value = Number(node.value);
-      this.settings = { ...this.settings, hudScale: value };
-      el('set-hud-val').textContent = `${Math.round(value * 100)}%`;
-      this.applySettings();
-    });
-    onChange('set-handed', (node) => {
-      this.settings = {
-        ...this.settings,
-        handedness: (node as HTMLInputElement).checked ? 'left' : 'right',
-      };
-      this.applySettings();
-      this.syncSettingsUI();
-    });
-    onChange('set-autoreload', (node) => {
-      this.settings = { ...this.settings, autoReload: (node as HTMLInputElement).checked };
-      this.applySettings();
-    });
-    onChange('set-aimassist', (node) => {
-      this.settings = { ...this.settings, aimAssistTouch: (node as HTMLInputElement).checked };
-      this.applySettings();
-    });
-
-    // Calibration screen mirrors the same settings.
-    onChange('calib-sens', (node) => {
-      const value = Number(node.value);
-      this.settings = this.input?.usingTouch
-        ? { ...this.settings, sensitivityTouch: value }
-        : { ...this.settings, sensitivityMouse: value };
-      el('calib-sens-val').textContent = `${value.toFixed(2)}×`;
-      this.applySettings();
-    });
-    onChange('calib-invert', (node) => {
-      this.settings = { ...this.settings, invertY: (node as HTMLInputElement).checked };
-      this.applySettings();
-    });
-    onChange('calib-autoreload', (node) => {
-      this.settings = { ...this.settings, autoReload: (node as HTMLInputElement).checked };
-      this.applySettings();
-    });
-    onChange('calib-aimassist', (node) => {
-      this.settings = { ...this.settings, aimAssistTouch: (node as HTMLInputElement).checked };
-      this.applySettings();
-    });
-
-    this.app.querySelector<HTMLButtonElement>('#btn-pause-hud')?.addEventListener('click', () => {
-      this.pause('game');
-    });
-  }
-
   private syncSettingsUI(): void {
-    const set = <T extends HTMLInputElement | HTMLSelectElement>(
-      id: string,
-      value: string | number | boolean,
-    ): void => {
-      const node = document.getElementById(id) as T | null;
-      if (!node) return;
-      if (node instanceof HTMLInputElement && node.type === 'checkbox') node.checked = Boolean(value);
-      else node.value = String(value);
+    const view: SettingsView = {
+      settings: this.settings,
+      telemetry: this.eng?.visible ?? this.settings.telemetry,
+      usingTouch: this.input?.usingTouch ?? false,
+      gfxDetail: `preset ${this.renderer?.preset.name ?? '—'} · dpr ${(this.renderer?.dpr ?? 1).toFixed(2)} · aim assist ${this.settings.aimAssistTouch ? 'on' : 'off'}`,
     };
-    set<HTMLSelectElement>('set-quality', this.settings.quality);
-    set('set-motion', this.settings.reduceMotion);
-    set('set-telemetry', this.eng?.visible ?? this.settings.telemetry);
-    set('set-audio', this.settings.audioEnabled);
-    set('set-volume', this.settings.volume);
-    set('set-sens', this.settings.sensitivityMouse);
-    set('set-invert', this.settings.invertY);
-    set('set-hud', this.settings.hudScale);
-    set('set-handed', this.settings.handedness === 'left');
-    set('set-autoreload', this.settings.autoReload);
-    set('set-aimassist', this.settings.aimAssistTouch);
-    set('calib-invert', this.settings.invertY);
-    set('calib-autoreload', this.settings.autoReload);
-    set('calib-aimassist', this.settings.aimAssistTouch);
-    const calibSens = this.input?.usingTouch
-      ? this.settings.sensitivityTouch
-      : this.settings.sensitivityMouse;
-    set('calib-sens', calibSens);
-    el('calib-sens-val').textContent = `${calibSens.toFixed(2)}×`;
-    el('set-sens-val').textContent = `${this.settings.sensitivityMouse.toFixed(2)}×`;
-    el('set-volume-val').textContent = `${Math.round(this.settings.volume * 100)}%`;
-    el('set-hud-val').textContent = `${Math.round(this.settings.hudScale * 100)}%`;
-    el('gfx-detail').textContent = `preset ${this.renderer?.preset.name ?? '—'} · dpr ${(this.renderer?.dpr ?? 1).toFixed(2)} · aim assist ${this.settings.aimAssistTouch ? 'on' : 'off'}`;
-
-    this.app.querySelectorAll<HTMLElement>('[data-handedness]').forEach((node) => {
-      const active = node.dataset.handedness === this.settings.handedness;
-      node.classList.toggle('is-active', active);
-      node.setAttribute('aria-checked', active ? 'true' : 'false');
-    });
+    this.settingsForm.sync(view);
   }
 
   dispose(): void {
+    this.abort.abort();
     cancelAnimationFrame(this.rafId);
     this.input?.detach();
     this.renderer?.dispose();
