@@ -8,6 +8,7 @@
  * lazily on the first render call, using the AA requirement of the last
  * `setQuality` — antialias on for `high` only.
  */
+import { PoseInterpolator } from './interp';
 import * as THREE from 'three';
 import { ARENA_BOXES, type ArenaBox, type Material } from '../world/layout';
 import { MAX_ENEMIES, type Snapshot, type WorldEvent } from '../wasm/bridge';
@@ -190,13 +191,7 @@ export class Renderer {
   private disposed = false;
 
   // --- camera interpolation state -----------------------------------------
-  private hasPrev = false;
-  private prevPx = 0;
-  private prevPy = 0;
-  private prevPz = 0;
-  private prevYaw = 0;
-  private prevPitch = 0;
-  private prevTick = 0;
+  private readonly interp = new PoseInterpolator();
   private bobPhase = 0;
   private bobAmp = 0;
   private adsAmount = 0;
@@ -346,31 +341,12 @@ export class Renderer {
     const r = this.ensureRenderer();
 
     // 1. camera interpolation (snap on reset / first frame)
-    const snap = !this.hasPrev || state.tick < this.prevTick;
-    let px = state.px;
-    let py = state.py;
-    let pz = state.pz;
-    let yaw = state.yaw;
-    let pitch = state.pitch;
-    if (snap) {
-      yaw = state.yaw;
-      pitch = state.pitch;
-    } else {
-      const a = Math.min(Math.max(alpha, 0), 1);
-      px = this.prevPx + (state.px - this.prevPx) * a;
-      py = this.prevPy + (state.py - this.prevPy) * a;
-      pz = this.prevPz + (state.pz - this.prevPz) * a;
-      const dy = state.yaw - this.prevYaw;
-      yaw = this.prevYaw + Math.atan2(Math.sin(dy), Math.cos(dy)) * a; // shortest arc
-      pitch = this.prevPitch + (state.pitch - this.prevPitch) * a;
-    }
-    this.prevPx = state.px;
-    this.prevPy = state.py;
-    this.prevPz = state.pz;
-    this.prevYaw = state.yaw;
-    this.prevPitch = state.pitch;
-    this.prevTick = state.tick;
-    this.hasPrev = true;
+    const pose = this.interp.sample(
+      { px: state.px, py: state.py, pz: state.pz, yaw: state.yaw, pitch: state.pitch },
+      state.tick,
+      alpha,
+    );
+    const { px, py, pz, yaw, pitch } = pose;
 
     // 2. recoil on top of the interpolated view + grounded speed bob
     const reducedMotion = this.hooks.reducedMotion === true;
