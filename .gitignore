@@ -1,0 +1,30 @@
+# Node
+node_modules/
+
+# Build output
+dist/
+
+# Rust
+target/
+core/target/
+
+# Playwright
+playwright-report/
+test-results/
+
+# OS / editor junk
+.DS_Store
+
+# Logs
+*.log
+
+# Secrets — never commit environment files
+.env
+.env.*
+
+# Generated wasm artifact (npm run build:wasm)
+public/bp_core.wasm
+public/bp_core.build.json
+
+# Personal agent tooling
+.atl/
