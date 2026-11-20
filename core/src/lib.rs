@@ -22,6 +22,7 @@
 
 mod arena;
 mod enemy;
+mod maps;
 mod math;
 mod player;
 mod protocol;
