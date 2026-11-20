@@ -193,6 +193,12 @@ pub extern "C" fn bp_golden_hash(ticks: u32) -> u64 {
     replay::golden_hash(ticks)
 }
 
+/// Hash de un escenario fijado (ver `replay::scenario_hash`). Lo comparan los tests de wasm.
+#[no_mangle]
+pub extern "C" fn bp_scenario_hash(id: u32, ticks: u32) -> u64 {
+    replay::scenario_hash(id, ticks)
+}
+
 #[no_mangle]
 pub extern "C" fn bp_note_dropped(n: u32) {
     game().note_dropped(n);

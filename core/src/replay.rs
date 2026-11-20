@@ -459,10 +459,51 @@ pub fn golden_hash(ticks: u32) -> u64 {
     hash_snapshot(&g)
 }
 
+/// Escenarios fijados. La partida dorada no pisa interceptores, escopeta ni mutadores; estos
+/// sí. El escenario 0 es la dorada. Ids desconocidos caen en la dorada.
+pub fn scenario_hash(id: u32, ticks: u32) -> u64 {
+    use crate::sim::{FLAG_AUTO_RELOAD, FLAG_SHOTGUN, MODE_DAILY, MODE_MISSION, MODE_OVERFLOW};
+    let (mode, map, seed, flags) = match id {
+        1 => (
+            MODE_MISSION,
+            1,
+            0x5EED_0001,
+            FLAG_AUTO_RELOAD | FLAG_SHOTGUN,
+        ),
+        2 => (MODE_OVERFLOW, 2, 0x0BEE_F002, FLAG_AUTO_RELOAD),
+        3 => (MODE_DAILY, 0, 20_261_120, 0),
+        _ => (MODE_PRACTICE, 0, 0x00C0_FFEE, FLAG_AUTO_RELOAD),
+    };
+    let mut g = Game::new(seed);
+    g.start(mode, map, seed, flags);
+    for t in 0..ticks {
+        if g.phase != phase::PLAYING && g.phase != phase::EXTRACTION {
+            break;
+        }
+        g.step(scenario_input(id, t));
+    }
+    hash_snapshot(&g)
+}
+
+/// Igual que `golden_input`, salvo el escenario 1: equipa la escopeta (switch 3) y vuelve a la pistola.
+fn scenario_input(id: u32, t: u32) -> Input {
+    let mut input = golden_input(t);
+    if id == 1 {
+        input.switch = if t % 500 == 250 {
+            3
+        } else if t.is_multiple_of(500) {
+            1
+        } else {
+            0
+        };
+    }
+    input
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::{FLAG_AUTO_RELOAD, FLAG_SHOTGUN, MODE_MISSION};
+    use crate::sim::{FLAG_AUTO_RELOAD, FLAG_SHOTGUN, MODE_MISSION, MODE_OVERFLOW};
 
     fn record(mode: u8, map: u8, seed: u32, flags: u8, ticks: u32) -> (Vec<u8>, Outcome) {
         let mut g = Game::new(seed);
@@ -687,6 +728,37 @@ mod tests {
         assert_eq!(play(&mut used), play(&mut fresh));
     }
 
+    #[test]
+    fn overflow_replay_reproduces_the_live_run() {
+        for map in 0..crate::maps::MAP_COUNT {
+            let (bytes, live) =
+                record(MODE_OVERFLOW, map, 900 + map as u32, FLAG_AUTO_RELOAD, 3000);
+            assert_eq!(
+                run_bytes(&bytes).expect("valid overflow log"),
+                live,
+                "map {map}"
+            );
+        }
+    }
+
+    #[test]
+    fn scenario_hashes_are_pinned() {
+        // Los mismos valores los comprueba wasm en tests/unit/determinism.test.ts.
+        for (id, pinned) in SCENARIO_PINS.iter().enumerate() {
+            assert_eq!(
+                scenario_hash(id as u32, GOLDEN_TICKS),
+                *pinned,
+                "scenario {id}"
+            );
+        }
+    }
+
+    const SCENARIO_PINS: [u64; 4] = [
+        6051080362437244339,
+        10290377329398245135,
+        14917908633056250358,
+        14807544573109845086,
+    ];
     const GOLDEN_TICKS: u32 = 4000;
     const GOLDEN_HASH: u64 = 6051080362437244339;
 }
