@@ -225,6 +225,9 @@ export class Snapshot {
     };
   }
 
+  /** Eventos sobrescritos en el ring antes de que el shell los leyera. */
+  lostEvents = 0;
+
   /** Copies the event ring entries newer than `lastSeq`. */
   readEvents(lastSeq: number, out: WorldEvent[]): number {
     out.length = 0;
@@ -245,9 +248,12 @@ export class Snapshot {
       });
     }
     out.sort((a, b) => a.seq - b.seq);
+    if (out.length > 0 && out[0].seq > lastSeq + 1) this.lostEvents += out[0].seq - lastSeq - 1;
     return out.length;
   }
 }
+
+const LOAD_TIMEOUT_MS = 15_000;
 
 export class Engine {
   private constructor(
@@ -259,7 +265,7 @@ export class Engine {
   ) {}
 
   static async load(url: string): Promise<Engine> {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(LOAD_TIMEOUT_MS) });
     if (!response.ok) {
       throw new Error(`no se pudo descargar el núcleo: ${response.status}`);
     }

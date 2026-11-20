@@ -21,6 +21,7 @@ export interface InputHooks {
   onPointerLockError(): void;
   isPlaying(): boolean;
   onTouchDetected(): void;
+  onMouseDetected(): void;
   getWeapon(): number;
 }
 
@@ -95,11 +96,8 @@ export class InputManager {
     document.addEventListener('pointerlockerror', this.onPointerLockError);
     this.canvas.addEventListener('pointerdown', this.onCanvasPointerDown);
     this.canvas.addEventListener('contextmenu', this.preventDefault);
-    this.canvas.addEventListener('mousedown', this.onMouseDown);
-    this.canvas.addEventListener('mouseup', this.onMouseUp);
     this.canvas.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('pointermove', this.onWindowPointerMove, { passive: true });
-    window.addEventListener('mouseup', this.onMouseUp);
     document.getElementById('touch-layer')?.addEventListener('pointerdown', this.onTouchLayerDown);
     window.addEventListener('pointerup', this.onWindowPointerUp);
     window.addEventListener('pointercancel', this.onWindowPointerUp);
@@ -120,11 +118,8 @@ export class InputManager {
     document.removeEventListener('pointerlockerror', this.onPointerLockError);
     this.canvas.removeEventListener('pointerdown', this.onCanvasPointerDown);
     this.canvas.removeEventListener('contextmenu', this.preventDefault);
-    this.canvas.removeEventListener('mousedown', this.onMouseDown);
-    this.canvas.removeEventListener('mouseup', this.onMouseUp);
     this.canvas.removeEventListener('mousemove', this.onMouseMove);
     window.removeEventListener('pointermove', this.onWindowPointerMove);
-    window.removeEventListener('mouseup', this.onMouseUp);
     document.getElementById('touch-layer')?.removeEventListener('pointerdown', this.onTouchLayerDown);
     window.removeEventListener('pointerup', this.onWindowPointerUp);
     window.removeEventListener('pointercancel', this.onWindowPointerUp);
@@ -259,17 +254,6 @@ export class InputManager {
     this.reset();
   };
 
-  private onMouseDown = (event: MouseEvent): void => {
-    if (event.button !== 0) return;
-    this.fireHeld = true;
-    this.firePressed = true;
-  };
-
-  private onMouseUp = (event: MouseEvent): void => {
-    if (event.button !== 0) return;
-    this.fireHeld = false;
-  };
-
   private onMouseMove = (event: MouseEvent): void => {
     if (!this.pointerLocked || this.usingTouch) return;
     this.lookX += event.movementX;
@@ -291,16 +275,24 @@ export class InputManager {
     this.hooks.onPointerLockError();
   };
 
+  /** El modo sigue al último puntero real; los eventos de mouse de compatibilidad ya no disparan. */
   private markTouch(event: PointerEvent): void {
     if (event.pointerType === 'touch' && !this.usingTouch) {
       this.usingTouch = true;
       this.hooks.onTouchDetected();
+    } else if (event.pointerType === 'mouse' && this.usingTouch) {
+      this.usingTouch = false;
+      this.hooks.onMouseDetected();
     }
   }
 
   private onCanvasPointerDown = (event: PointerEvent): void => {
     this.markTouch(event);
     if (event.pointerType === 'mouse') {
+      if (event.button === 0) {
+        this.fireHeld = true;
+        this.firePressed = true;
+      }
       if (!this.pointerLocked) {
         void this.requestPointerLock();
       }
@@ -352,6 +344,7 @@ export class InputManager {
   };
 
   private onWindowPointerUp = (event: PointerEvent): void => {
+    if (event.pointerType === 'mouse' && event.button === 0) this.fireHeld = false;
     const tracked = this.pointers.get(event.pointerId);
     if (!tracked) return;
     if (tracked.kind === 'stick') {

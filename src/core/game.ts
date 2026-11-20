@@ -74,7 +74,6 @@ export class GameApp {
   private frameSamples: number[] = [];
   private lastNow = 0;
   private rafId = 0;
-  private runStartMs = 0;
   private finished = false;
   private wasmKib = 0;
   private loadMs = 0;
@@ -221,7 +220,6 @@ export class GameApp {
     this.events.length = 0;
     this.loop.reset();
     this.hud?.reset();
-    this.runStartMs = performance.now();
     this.lastNow = performance.now();
     this.setScreen('playing');
     this.renderer.setQuality(this.quality.preset, this.dprCap());
@@ -277,7 +275,7 @@ export class GameApp {
       nodes: state.nodesActive,
       timeLeft: state.timeLeft,
       damage: Math.round(state.damageTaken),
-      durationMs: Math.max(0, performance.now() - this.runStartMs),
+      durationMs: Math.max(0, state.timeElapsed * 1000),
       mode: this.mode,
       input: this.input?.usingTouch ? 'touch' : 'mouse',
       difficulty: 'operator',
@@ -440,7 +438,7 @@ export class GameApp {
       memory,
       wasmKib: this.wasmKib,
       loadMs: this.loadMs,
-      note: 'arranque: ' + new Date(this.bootAt).toLocaleTimeString('es-CL'),
+      note: `arranque: ${new Date(this.bootAt).toLocaleTimeString('es-CL')} · eventos perdidos: ${state?.lostEvents ?? 0}`,
     });
   }
 
@@ -470,6 +468,10 @@ export class GameApp {
       isPlaying: () => this.screen === 'playing',
       onTouchDetected: () => {
         this.app.classList.add('is-touch');
+        this.applySettings();
+      },
+      onMouseDetected: () => {
+        this.app.classList.remove('is-touch');
         this.applySettings();
       },
       getWeapon: () => this.engine?.state.weapon ?? 1,
@@ -607,6 +609,9 @@ export class GameApp {
     window.addEventListener('blur', () => {
       if (this.screen === 'playing') this.pause('game');
     });
+    window.addEventListener('pagehide', () => {
+      if (this.screen === 'playing') this.pause('game');
+    });
     window.addEventListener('beforeunload', () => {
       cancelAnimationFrame(this.rafId);
     });
@@ -649,9 +654,8 @@ export class GameApp {
     ): void => {
       const node = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
       if (!node) return;
-      const eventName = node instanceof HTMLSelectElement ? 'change' : 'input';
+      const eventName = node instanceof HTMLInputElement && node.type === 'range' ? 'input' : 'change';
       node.addEventListener(eventName, () => handler(node));
-      node.addEventListener('change', () => handler(node));
     };
 
     onChange('set-quality', (node) => {
