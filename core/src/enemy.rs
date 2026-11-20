@@ -82,8 +82,14 @@ pub fn def(kind: u8) -> &'static KindDef {
 pub enum Action {
     /// Telegraph started: the renderer/audio can play a warning.
     Windup,
-    Melee { damage: f32 },
-    Shot { origin: V3, dir: V3, damage: f32 },
+    Melee {
+        damage: f32,
+    },
+    Shot {
+        origin: V3,
+        dir: V3,
+        damage: f32,
+    },
 }
 
 pub struct EnemyContext<'a> {
@@ -174,7 +180,11 @@ impl Enemy {
     }
 
     pub fn eye(&self) -> V3 {
-        v3(self.pos.x, self.pos.y + def(self.kind).height * 0.82, self.pos.z)
+        v3(
+            self.pos.x,
+            self.pos.y + def(self.kind).height * 0.82,
+            self.pos.z,
+        )
     }
 
     /// Applies damage. Returns true when this hit killed the enemy.
@@ -433,7 +443,10 @@ mod tests {
             e.tick(1.0 / 60.0, &c, &mut rng);
         }
         assert_ne!(e.state, ST_PATROL, "scout should be hunting");
-        assert!(e.pos.dist_xz(player) < start - 3.0, "scout did not approach");
+        assert!(
+            e.pos.dist_xz(player) < start - 3.0,
+            "scout did not approach"
+        );
     }
 
     #[test]
@@ -454,7 +467,10 @@ mod tests {
             }
         }
         assert!(windups >= 1, "telegraph must precede damage");
-        assert!(melee_hits >= 1 && melee_hits <= 2, "melee hits: {melee_hits}");
+        assert!(
+            melee_hits >= 1 && melee_hits <= 2,
+            "melee hits: {melee_hits}"
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Static collision world. The layout itself lives in TypeScript (`src/world/layout.ts`)
 //! and is uploaded once, so the renderer and the simulation always agree on geometry.
 
-use crate::math::{v3, Aabb, V3, EPS};
+use crate::math::{v3, Aabb, EPS, V3};
 
 pub const MAX_BOXES: usize = 512;
 pub const FLOATS_PER_BOX: usize = 7;
@@ -13,7 +13,10 @@ pub struct BoxCollider {
     pub kind: u8,
 }
 
-pub const EMPTY_BOX: BoxCollider = BoxCollider { aabb: crate::math::EMPTY_AABB, kind: 0 };
+pub const EMPTY_BOX: BoxCollider = BoxCollider {
+    aabb: crate::math::EMPTY_AABB,
+    kind: 0,
+};
 
 pub struct Arena {
     pub boxes: [BoxCollider; MAX_BOXES],
@@ -67,7 +70,10 @@ impl Arena {
             if aabb.max.z > bounds_max.z {
                 bounds_max.z = aabb.max.z;
             }
-            self.boxes[self.len] = BoxCollider { aabb, kind: chunk[6] as u8 };
+            self.boxes[self.len] = BoxCollider {
+                aabb,
+                kind: chunk[6] as u8,
+            };
             self.len += 1;
         }
         if self.len > 0 {
@@ -195,8 +201,12 @@ impl Arena {
         // Hard safety net: never leave the arena envelope even if a future
         // layout has a gap the collider solver cannot see.
         let pad = 0.5;
-        pos.x = pos.x.clamp(self.bounds.min.x + pad, self.bounds.max.x - pad);
-        pos.z = pos.z.clamp(self.bounds.min.z + pad, self.bounds.max.z - pad);
+        pos.x = pos
+            .x
+            .clamp(self.bounds.min.x + pad, self.bounds.max.x - pad);
+        pos.z = pos
+            .z
+            .clamp(self.bounds.min.z + pad, self.bounds.max.z - pad);
         grounded
     }
 }
@@ -262,7 +272,9 @@ mod tests {
     #[test]
     fn lands_on_top_of_crate() {
         let mut a = Arena::new();
-        a.load(&[-18.0, -1.0, -18.0, 18.0, 0.0, 18.0, 1.0, -1.5, 0.0, -1.5, 1.5, 1.2, 1.5, 2.0]);
+        a.load(&[
+            -18.0, -1.0, -18.0, 18.0, 0.0, 18.0, 1.0, -1.5, 0.0, -1.5, 1.5, 1.2, 1.5, 2.0,
+        ]);
         let mut p = v3(0.0, 3.0, 0.0);
         let mut v = v3(0.0, 0.0, 0.0);
         for _ in 0..240 {
@@ -271,7 +283,10 @@ mod tests {
                 break;
             }
         }
-        assert!((p.y - 1.2).abs() < 1e-3, "expected to rest on crate top: {p:?}");
+        assert!(
+            (p.y - 1.2).abs() < 1e-3,
+            "expected to rest on crate top: {p:?}"
+        );
     }
 
     #[test]

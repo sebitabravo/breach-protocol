@@ -198,7 +198,9 @@ mod tests {
     fn wave_one_never_spawns_sentinels() {
         let mut w = Waves::new();
         w.begin(1);
-        assert!(w.queue[..w.queue_len].iter().all(|k| *k == crate::enemy::KIND_SCOUT));
+        assert!(w.queue[..w.queue_len]
+            .iter()
+            .all(|k| *k == crate::enemy::KIND_SCOUT));
     }
 
     #[test]
@@ -210,7 +212,13 @@ mod tests {
     #[test]
     fn spawn_choice_avoids_the_player() {
         let mut rng = Rng::new(4);
-        let points = [(-14.0, 0.0), (14.0, 0.0), (0.0, 14.0), (0.0, -14.0), (2.0, 2.0)];
+        let points = [
+            (-14.0, 0.0),
+            (14.0, 0.0),
+            (0.0, 14.0),
+            (0.0, -14.0),
+            (2.0, 2.0),
+        ];
         let w = Waves::new();
         let (x, z) = w.pick_spawn(&points, 0.0, 0.0, &mut rng);
         let d = (x * x + z * z).sqrt();

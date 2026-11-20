@@ -186,12 +186,18 @@ pub struct Aabb {
     pub max: V3,
 }
 
-pub const EMPTY_AABB: Aabb = Aabb { min: V3::ZERO, max: V3::ZERO };
+pub const EMPTY_AABB: Aabb = Aabb {
+    min: V3::ZERO,
+    max: V3::ZERO,
+};
 
 impl Aabb {
     pub fn from_center_size(center: V3, size: V3) -> Aabb {
         let h = size * 0.5;
-        Aabb { min: center - h, max: center + h }
+        Aabb {
+            min: center - h,
+            max: center + h,
+        }
     }
 
     pub fn from_min_max(min: V3, max: V3) -> Aabb {
@@ -215,7 +221,10 @@ impl Aabb {
     }
 
     pub fn expand(&self, m: f32) -> Aabb {
-        Aabb { min: self.min - v3(m, m, m), max: self.max + v3(m, m, m) }
+        Aabb {
+            min: self.min - v3(m, m, m),
+            max: self.max + v3(m, m, m),
+        }
     }
 
     pub fn overlaps(&self, o: &Aabb) -> bool {

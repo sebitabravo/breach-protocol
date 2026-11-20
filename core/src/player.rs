@@ -133,7 +133,11 @@ impl Player {
 
     pub fn spread(&self) -> f32 {
         let def = weapons::def(self.weapon);
-        let base = if self.ads > 0.5 { def.ads_spread } else { def.spread };
+        let base = if self.ads > 0.5 {
+            def.ads_spread
+        } else {
+            def.spread
+        };
         // Moving destabilises the shot a little, airborne more so.
         let move_penalty = clamp(self.vel.len_xz() / RUN_SPEED, 0.0, 1.0) * 0.012;
         let air_penalty = if self.grounded { 0.0 } else { 0.02 };
@@ -309,7 +313,10 @@ mod tests {
     fn walks_forward_along_negative_z() {
         let arena = flat_arena();
         let mut p = Player::new(v3(0.0, 0.0, 0.0), 0.0);
-        let input = Input { move_z: 1.0, ..Default::default() };
+        let input = Input {
+            move_z: 1.0,
+            ..Default::default()
+        };
         for _ in 0..60 {
             p.tick(1.0 / 60.0, &input, &arena);
         }
@@ -322,7 +329,10 @@ mod tests {
     fn strafe_right_moves_positive_x() {
         let arena = flat_arena();
         let mut p = Player::new(v3(0.0, 0.0, 0.0), 0.0);
-        let input = Input { move_x: 1.0, ..Default::default() };
+        let input = Input {
+            move_x: 1.0,
+            ..Default::default()
+        };
         for _ in 0..30 {
             p.tick(1.0 / 60.0, &input, &arena);
         }
@@ -334,8 +344,15 @@ mod tests {
         let arena = flat_arena();
         let mut walker = Player::new(v3(0.0, 0.0, 0.0), 0.0);
         let mut runner = Player::new(v3(0.0, 0.0, 0.0), 0.0);
-        let input = Input { move_z: 1.0, ..Default::default() };
-        let run_input = Input { move_z: 1.0, run: true, ..Default::default() };
+        let input = Input {
+            move_z: 1.0,
+            ..Default::default()
+        };
+        let run_input = Input {
+            move_z: 1.0,
+            run: true,
+            ..Default::default()
+        };
         for _ in 0..90 {
             walker.tick(1.0 / 60.0, &input, &arena);
             runner.tick(1.0 / 60.0, &run_input, &arena);
@@ -347,7 +364,10 @@ mod tests {
     fn jump_leaves_ground_and_lands() {
         let arena = flat_arena();
         let mut p = Player::new(v3(0.0, 0.0, 0.0), 0.0);
-        let jump = Input { jump: true, ..Default::default() };
+        let jump = Input {
+            jump: true,
+            ..Default::default()
+        };
         p.tick(1.0 / 60.0, &jump, &arena);
         assert!(!p.grounded);
         let idle = Input::default();
@@ -366,14 +386,22 @@ mod tests {
         let arena = flat_arena();
         let mut a = Player::new(v3(0.0, 0.0, 0.0), 0.0);
         let mut b = Player::new(v3(0.0, 0.0, 0.0), 0.0);
-        let input = Input { move_z: 1.0, ..Default::default() };
+        let input = Input {
+            move_z: 1.0,
+            ..Default::default()
+        };
         for _ in 0..60 {
             a.tick(1.0 / 60.0, &input, &arena);
         }
         for _ in 0..30 {
             b.tick(2.0 / 60.0, &input, &arena);
         }
-        assert!((a.pos.z - b.pos.z).abs() < 0.8, "{} vs {}", a.pos.z, b.pos.z);
+        assert!(
+            (a.pos.z - b.pos.z).abs() < 0.8,
+            "{} vs {}",
+            a.pos.z,
+            b.pos.z
+        );
     }
 
     #[test]
@@ -393,7 +421,11 @@ mod tests {
         for _ in 0..120 {
             p.tick(1.0 / 60.0, &idle, &arena);
         }
-        assert!((p.hp - 50.0).abs() < 1e-3, "regenerated too early: {}", p.hp);
+        assert!(
+            (p.hp - 50.0).abs() < 1e-3,
+            "regenerated too early: {}",
+            p.hp
+        );
         for _ in 0..(60 * 8) {
             p.tick(1.0 / 60.0, &idle, &arena);
         }
@@ -413,7 +445,10 @@ mod tests {
             p.tick(1.0 / 60.0, &idle, &arena);
         }
         assert_eq!(p.ammo, weapons::SIDEARM.mag);
-        assert_eq!(p.reserve, weapons::SIDEARM.reserve - (weapons::SIDEARM.mag - 2));
+        assert_eq!(
+            p.reserve,
+            weapons::SIDEARM.reserve - (weapons::SIDEARM.mag - 2)
+        );
     }
 
     #[test]

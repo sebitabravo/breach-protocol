@@ -31,7 +31,12 @@ pub struct Node {
 
 impl Node {
     pub const fn new(x: f32, z: f32) -> Node {
-        Node { x, z, progress: 0.0, active: false }
+        Node {
+            x,
+            z,
+            progress: 0.0,
+            active: false,
+        }
     }
 }
 
@@ -190,7 +195,11 @@ impl Game {
 
     /// Enemies still to come in the current wave (alive plus queued).
     fn enemies_remaining(&self) -> u32 {
-        let queued = if self.waves.running { self.waves.queued() as u32 } else { 0 };
+        let queued = if self.waves.running {
+            self.waves.queued() as u32
+        } else {
+            0
+        };
         self.alive_count() + queued
     }
 
@@ -205,7 +214,9 @@ impl Game {
         } else {
             0.0
         };
-        let raw = 100.0 * self.kills as f32 + 500.0 * self.nodes_active as f32 + time_bonus
+        let raw = 100.0 * self.kills as f32
+            + 500.0 * self.nodes_active as f32
+            + time_bonus
             + 500.0 * accuracy
             - 2.0 * self.damage_taken;
         raw.max(0.0)
@@ -285,8 +296,8 @@ impl Game {
         let mut enemy_hit = false;
 
         for _ in 0..def.pellets.max(1) {
-            let dir = (aim + right * self.rng.signed(spread) + up * self.rng.signed(spread))
-                .norm_or(aim);
+            let dir =
+                (aim + right * self.rng.signed(spread) + up * self.rng.signed(spread)).norm_or(aim);
             if self.fire_ray(origin, dir, &def) {
                 enemy_hit = true;
             }
@@ -297,7 +308,8 @@ impl Game {
         }
 
         self.push_event(ev::SHOT, def.id as f32, origin.x, origin.y, origin.z);
-        self.player.add_recoil(def.recoil_pitch, self.rng.signed(def.recoil_yaw));
+        self.player
+            .add_recoil(def.recoil_pitch, self.rng.signed(def.recoil_yaw));
 
         if self.player.ammo == 0 && self.player.reserve > 0 {
             if self.player.start_reload() {
@@ -399,7 +411,11 @@ impl Game {
                         damage_len += 1;
                     }
                 }
-                Some(Action::Shot { origin, dir, damage }) => {
+                Some(Action::Shot {
+                    origin,
+                    dir,
+                    damage,
+                }) => {
                     self.push_event(ev::ENEMY_SHOT, origin.x, origin.y, origin.z, kind as f32);
                     let body = crate::math::Aabb::from_feet(player_feet, RADIUS, HEIGHT);
                     if body.ray(origin, dir, 60.0).is_some() {
@@ -503,7 +519,11 @@ impl Game {
             self.waves.begin(1);
             self.push_event(ev::WAVE_START, 1.0, 0.0, 0.0, 0.0);
         }
-        let boost = if self.phase == phase::EXTRACTION { 2.0 } else { 1.0 };
+        let boost = if self.phase == phase::EXTRACTION {
+            2.0
+        } else {
+            1.0
+        };
 
         if self.waves.running {
             let alive = self.alive_count() as usize;
@@ -658,7 +678,11 @@ impl Game {
             s[base + E_Z] = e.pos.z;
             s[base + E_YAW] = e.yaw;
             s[base + E_HP] = e.hp / e.hp_max.max(1.0);
-            s[base + E_STATE] = if e.is_alive() { e.state as f32 } else { enemy::ST_DEAD as f32 };
+            s[base + E_STATE] = if e.is_alive() {
+                e.state as f32
+            } else {
+                enemy::ST_DEAD as f32
+            };
             s[base + E_KIND] = e.kind as f32;
             s[base + E_ANIM] = e.anim;
         }
@@ -677,7 +701,11 @@ impl Game {
     }
 
     pub fn player_eye(&self) -> V3 {
-        v3(self.player.pos.x, self.player.pos.y + EYE_HEIGHT, self.player.pos.z)
+        v3(
+            self.player.pos.x,
+            self.player.pos.y + EYE_HEIGHT,
+            self.player.pos.z,
+        )
     }
 
     pub fn aim_direction(&self) -> V3 {
@@ -744,7 +772,10 @@ mod tests {
     #[test]
     fn firing_consumes_ammo_and_recoils() {
         let mut g = game_with_arena();
-        let input = Input { fire_pressed: true, ..Default::default() };
+        let input = Input {
+            fire_pressed: true,
+            ..Default::default()
+        };
         g.tick(1.0 / 60.0, input);
         assert_eq!(g.player.ammo, weapons::SIDEARM.mag - 1);
         assert_eq!(g.shots, 1);
@@ -761,7 +792,14 @@ mod tests {
         g.player.yaw = 0.0;
         let mut killed = 0;
         for _ in 0..6 {
-            g.tick(1.0 / 60.0, Input { fire_pressed: true, fire_held: true, ..Default::default() });
+            g.tick(
+                1.0 / 60.0,
+                Input {
+                    fire_pressed: true,
+                    fire_held: true,
+                    ..Default::default()
+                },
+            );
             run_steps(&mut g, 12, Input::default());
             if g.kills > killed {
                 killed = g.kills;
@@ -782,7 +820,13 @@ mod tests {
         g.set_player_start(0.0, 10.0, 0.0);
         g.reset(7);
         g.enemies[0] = Enemy::spawn(v3(0.0, 0.0, -4.0), enemy::KIND_SCOUT, 0.0, 0);
-        g.tick(1.0 / 60.0, Input { fire_pressed: true, ..Default::default() });
+        g.tick(
+            1.0 / 60.0,
+            Input {
+                fire_pressed: true,
+                ..Default::default()
+            },
+        );
         assert_eq!(g.hits, 0, "bullet passed through a wall");
         assert_eq!(g.enemies[0].hp, enemy::SCOUT.hp);
     }
@@ -792,12 +836,29 @@ mod tests {
         let mut g = game_with_arena();
         g.player.pos = v3(-12.0, 0.0, 0.8);
         // short tap does not complete
-        run_steps(&mut g, 10, Input { interact: true, ..Default::default() });
+        run_steps(
+            &mut g,
+            10,
+            Input {
+                interact: true,
+                ..Default::default()
+            },
+        );
         assert!(g.nodes[0].progress > 0.0 && g.nodes[0].progress < 1.0);
         run_steps(&mut g, 10, Input::default());
-        assert!(g.nodes[0].progress < 0.3, "progress must decay when released");
+        assert!(
+            g.nodes[0].progress < 0.3,
+            "progress must decay when released"
+        );
         // full hold completes
-        run_steps(&mut g, 90, Input { interact: true, ..Default::default() });
+        run_steps(
+            &mut g,
+            90,
+            Input {
+                interact: true,
+                ..Default::default()
+            },
+        );
         assert!(g.nodes[0].active);
         assert_eq!(g.nodes_active, 1);
     }
@@ -812,7 +873,11 @@ mod tests {
         g.tick(1.0 / 60.0, Input::default());
         assert_eq!(g.phase, phase::EXTRACTION);
         assert!(g.extraction > 11.0);
-        run_steps(&mut g, (EXTRACTION_SECONDS * 60.0) as u32 + 5, Input::default());
+        run_steps(
+            &mut g,
+            (EXTRACTION_SECONDS * 60.0) as u32 + 5,
+            Input::default(),
+        );
         assert_eq!(g.phase, phase::WIN);
     }
 
@@ -843,14 +908,22 @@ mod tests {
         }
         assert!(g.alive_count() >= 1, "no enemies spawned");
         assert!(g.waves.spawned >= 1);
-        assert!(g.enemies.iter().filter(|e| e.is_alive()).all(|e| e.kind == enemy::KIND_SCOUT));
+        assert!(g
+            .enemies
+            .iter()
+            .filter(|e| e.is_alive())
+            .all(|e| e.kind == enemy::KIND_SCOUT));
     }
 
     #[test]
     fn same_seed_same_world() {
         let mut a = game_with_arena();
         let mut b = game_with_arena();
-        let input = Input { move_z: 1.0, fire_held: true, ..Default::default() };
+        let input = Input {
+            move_z: 1.0,
+            fire_held: true,
+            ..Default::default()
+        };
         for _ in 0..240 {
             a.tick(1.0 / 60.0, input);
             b.tick(1.0 / 60.0, input);
@@ -884,7 +957,13 @@ mod tests {
         let mut g = game_with_arena();
         g.reset(1);
         let before = g.event_seq;
-        g.tick(1.0 / 60.0, Input { fire_pressed: true, ..Default::default() });
+        g.tick(
+            1.0 / 60.0,
+            Input {
+                fire_pressed: true,
+                ..Default::default()
+            },
+        );
         assert!(g.event_seq > before);
         let head = g.event_head;
         let slot = if head == 0 { MAX_EVENTS - 1 } else { head - 1 };
@@ -900,14 +979,26 @@ mod tests {
         g.enemies[0] = Enemy::spawn(v3(0.72, 0.0, 4.0), enemy::KIND_SCOUT, 0.0, 0);
         g.enemies[0].state = enemy::ST_CHASE;
         g.aim_assist = false;
-        g.tick(1.0 / 60.0, Input { fire_pressed: true, ..Default::default() });
+        g.tick(
+            1.0 / 60.0,
+            Input {
+                fire_pressed: true,
+                ..Default::default()
+            },
+        );
         let without = g.hits;
         g.player.ammo = 10;
         g.player.fire_cd = 0.0;
         g.aim_assist = true;
         g.hits = 0;
         g.shots = 0;
-        g.tick(1.0 / 60.0, Input { fire_pressed: true, ..Default::default() });
+        g.tick(
+            1.0 / 60.0,
+            Input {
+                fire_pressed: true,
+                ..Default::default()
+            },
+        );
         assert!(g.hits >= without);
     }
 
