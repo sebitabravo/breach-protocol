@@ -4,9 +4,9 @@
  * (S8) owns all game truth; this module only visualises snapshots and events.
  *
  * Note on MSAA: WebGL only lets a canvas hold one context, so antialias is
- * fixed when the first frame is created. The renderer is therefore created
- * lazily on the first render call, using the AA requirement of the last
- * `setQuality` — antialias on for `high` only.
+ * fixed when the context is created. `init()` creates it (called from boot so a
+ * WebGL failure reaches the fallback screen) using the AA requirement of the
+ * last `setQuality` — antialias on for `high` only.
  */
 import { PoseInterpolator } from './interp';
 import * as THREE from 'three';
@@ -28,6 +28,8 @@ export interface QualityPreset {
 
 export interface Hooks {
   reducedMotion?: boolean;
+  onContextLost?: () => void;
+  onContextRestored?: () => void;
 }
 
 /** Ladder palette: each entry is the albedo fed to the lighting rig so the
@@ -189,6 +191,7 @@ export class Renderer {
   private lastCalls = 0;
   private lastTriangles = 0;
   private disposed = false;
+  private contextLost = false;
 
   // --- camera interpolation state -----------------------------------------
   private readonly interp = new PoseInterpolator();
@@ -259,6 +262,15 @@ export class Renderer {
     this.resize();
   }
 
+  /** Creates the WebGL context eagerly; throws if the browser refuses. */
+  init(): void {
+    this.ensureRenderer();
+  }
+
+  get isContextLost(): boolean {
+    return this.contextLost;
+  }
+
   /** Switch quality preset; `dprCap` clamps the device pixel ratio. */
   setQuality(preset: QualityName, dprCap?: number): void {
     const p = PRESETS[preset] ?? PRESETS.medium;
@@ -318,6 +330,7 @@ export class Renderer {
 
   /** Menu/loading camera: slow orbit over the arena. */
   renderOrbit(dt: number): void {
+    if (this.contextLost) return;
     const r = this.ensureRenderer();
     this.orbitAngle += dt * ORBIT_SPEED;
     this.camera.position.set(
@@ -338,6 +351,7 @@ export class Renderer {
    * and FX from `events`, then render.
    */
   renderGame(state: Snapshot, alpha: number, dt: number, events: readonly WorldEvent[]): void {
+    if (this.contextLost) return;
     const r = this.ensureRenderer();
 
     // 1. camera interpolation (snap on reset / first frame)
@@ -395,6 +409,8 @@ export class Renderer {
     });
     geoms.forEach((g) => g.dispose());
     mats.forEach((m) => m.dispose());
+    this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
+    this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.renderer?.dispose();
     this.renderer = null;
   }
@@ -415,6 +431,10 @@ export class Renderer {
     r.shadowMap.enabled = this.presetValue.shadows;
     r.shadowMap.type = THREE.PCFShadowMap;
     this.renderer = r;
+    // three.js ya hace preventDefault en 'webglcontextlost' y reinicia estado en
+    // 'webglcontextrestored'; el shell solo necesita enterarse para pausar.
+    this.canvas.addEventListener('webglcontextlost', this.onContextLost);
+    this.canvas.addEventListener('webglcontextrestored', this.onContextRestored);
     this.resize();
     // debugging/metrics hook: window.__BREACH__.renderer.{calls,triangles}.
     // Merge, never replace: main.ts exposes the GameApp shell here first and
@@ -423,6 +443,18 @@ export class Renderer {
     w.__BREACH__ = Object.assign(w.__BREACH__ ?? {}, { renderer: this });
     return r;
   }
+
+  private onContextLost = (event: Event): void => {
+    event.preventDefault();
+    this.contextLost = true;
+    this.hooks.onContextLost?.();
+  };
+
+  private onContextRestored = (): void => {
+    this.contextLost = false;
+    this.resize();
+    this.hooks.onContextRestored?.();
+  };
 
   private captureMetrics(r: THREE.WebGLRenderer): void {
     this.lastCalls = r.info.render.calls;

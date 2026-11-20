@@ -60,7 +60,11 @@ export class GameApp {
   private settings: Settings = loadSettings();
   private quality = new QualityController(loadSettings().quality);
   private loop = new FixedStepLoop();
-  private hooks = { reducedMotion: false };
+  private hooks = {
+    reducedMotion: false,
+    onContextLost: (): void => this.handleContextLost(),
+    onContextRestored: (): void => this.handleContextRestored(),
+  };
 
   private screen: Screen = 'boot';
   private mode: Mode = 'run';
@@ -105,6 +109,7 @@ export class GameApp {
         throw new Error('webgl2');
       }
       this.renderer = new Renderer(this.canvas, this.hooks);
+      this.renderer.init();
       this.renderer.setQuality(this.quality.preset, this.dprCap());
       this.renderer.resize();
       setCheck('webgl2', 'ok');
@@ -149,6 +154,17 @@ export class GameApp {
           : `No pudimos inicializar el sistema: ${detail}`;
       this.setScreen('fallback');
     }
+  }
+
+  private handleContextLost(): void {
+    if (this.screen === 'playing') this.pause('game');
+    this.app.dataset.ctx = 'lost';
+    el('context-lost').hidden = false;
+  }
+
+  private handleContextRestored(): void {
+    this.app.dataset.ctx = 'ok';
+    el('context-lost').hidden = true;
   }
 
   private supportsWebGL2(): boolean {
