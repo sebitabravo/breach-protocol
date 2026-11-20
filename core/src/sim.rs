@@ -10,7 +10,7 @@ use crate::math::{clamp, forward_from_yaw, right_from_yaw, v3, V3};
 use crate::player::{Input, Player, EYE_HEIGHT, HEIGHT, RADIUS};
 use crate::protocol::*;
 use crate::rng::Rng;
-use crate::waves::{mission_composition, Waves};
+use crate::waves::{endless_composition, mission_composition, Waves};
 use crate::weapons;
 
 pub const MATCH_SECONDS: f32 = 180.0;
@@ -36,6 +36,19 @@ pub const FLAG_AIM_ASSIST: u8 = 1;
 pub const FLAG_AUTO_RELOAD: u8 = 2;
 /// El arma 3 (SG-08) puede equiparse. El progreso es del cliente; el servidor lo registra pero no lo juzga.
 pub const FLAG_SHOTGUN: u8 = 4;
+
+/// Versión de la fórmula del modo Overflow. La misión conserva `SCORE_VERSION`.
+pub const OVERFLOW_SCORE_VERSION: u8 = 1;
+const OVERFLOW_KILL_POINTS: f32 = 100.0;
+const OVERFLOW_NODE_POINTS: f32 = 500.0;
+const OVERFLOW_WAVE_POINTS: f32 = 250.0;
+const OVERFLOW_ACCURACY_POINTS: f32 = 500.0;
+const OVERFLOW_DAMAGE_PENALTY: f32 = 2.0;
+/// Vida que devuelve cada terminal activada en Overflow.
+const OVERFLOW_NODE_HEAL: f32 = 25.0;
+/// Overflow: la vida enemiga sube 4 % por oleada, hasta el doble.
+const OVERFLOW_HP_PER_WAVE: f32 = 0.04;
+const OVERFLOW_HP_CAP: f32 = 2.0;
 
 /// Alcance vertical (m) dentro del cual una terminal responde al jugador.
 const NODE_VERTICAL_REACH: f32 = 1.2;
@@ -323,12 +336,12 @@ impl Game {
         for n in self.nodes.iter_mut() {
             *n = Node::at(n.x, n.y, n.z);
         }
-        self.waves.reset();
+        self.waves.reset(self.mode == MODE_OVERFLOW);
         self.tick = 0;
         self.dropped = 0;
         self.phase = phase::PLAYING;
         self.time_elapsed = 0.0;
-        self.time_left = MATCH_SECONDS;
+        self.time_left = self.clock_left();
         self.extraction = 0.0;
         self.kills = 0;
         self.shots = 0;
@@ -350,8 +363,50 @@ impl Game {
 
     /// Arranca la oleada `wave` con la composición del sector actual.
     fn begin_wave(&mut self, wave: u32) {
-        let comp = daily::rules(self.mutator).scale(mission_composition(self.map_id, wave));
-        self.waves.begin(wave, comp);
+        let base = if self.mode == MODE_OVERFLOW {
+            endless_composition(self.map_id, wave)
+        } else {
+            mission_composition(self.map_id, wave)
+        };
+        self.waves
+            .begin(wave, daily::rules(self.mutator).scale(base));
+    }
+
+    /// Segundos que quedan. Overflow no tiene reloj: se reporta 0 y `waveTotal == 0` lo indica.
+    fn clock_left(&self) -> f32 {
+        if self.mode == MODE_OVERFLOW {
+            0.0
+        } else {
+            (MATCH_SECONDS - self.time_elapsed).max(0.0)
+        }
+    }
+
+    /// Terminales listas para otra oleada: se desactivan al limpiar la anterior.
+    fn reset_terminals(&mut self) {
+        for n in self.nodes.iter_mut() {
+            n.active = false;
+            n.progress = 0.0;
+        }
+    }
+
+    /// Vida de cada enemigo que aparece: mutador del desafío y, en Overflow, escalado por oleada.
+    fn enemy_hp_scale(&self) -> f32 {
+        let mutator = daily::rules(self.mutator).enemy_hp_pct as f32 / 100.0;
+        if self.mode == MODE_OVERFLOW {
+            let wave_bonus = 1.0 + OVERFLOW_HP_PER_WAVE * self.waves.wave.saturating_sub(1) as f32;
+            mutator * wave_bonus.min(OVERFLOW_HP_CAP)
+        } else {
+            mutator
+        }
+    }
+
+    /// Versión de la fórmula de `final_score` para el modo actual.
+    pub fn score_version(&self) -> u8 {
+        if self.mode == MODE_OVERFLOW {
+            OVERFLOW_SCORE_VERSION
+        } else {
+            SCORE_VERSION
+        }
     }
 
     fn push_event(&mut self, kind: f32, a: f32, b: f32, c: f32, d: f32) {
@@ -382,6 +437,9 @@ impl Game {
     }
 
     pub fn compute_score(&self) -> f32 {
+        if self.mode == MODE_OVERFLOW {
+            return self.overflow_score();
+        }
         let accuracy = if self.shots > 0 {
             self.hits as f32 / self.shots as f32
         } else {
@@ -403,6 +461,16 @@ impl Game {
     /// Puntaje entero que guarda el ranking; lo calcula el servidor al re-simular.
     pub fn final_score(&self) -> u32 {
         self.compute_score().round() as u32
+    }
+
+    /// Overflow: kills, oleada alcanzada, precisión y daño. Sin tiempo: no hay victoria.
+    fn overflow_score(&self) -> f32 {
+        let raw = OVERFLOW_KILL_POINTS * self.kills as f32
+            + OVERFLOW_NODE_POINTS * self.nodes_active as f32
+            + OVERFLOW_WAVE_POINTS * self.waves.wave as f32
+            + OVERFLOW_ACCURACY_POINTS * self.accuracy()
+            - OVERFLOW_DAMAGE_PENALTY * self.damage_taken;
+        raw.max(0.0)
     }
 
     pub fn accuracy(&self) -> f32 {
@@ -428,7 +496,7 @@ impl Game {
         self.input = input;
         self.tick = self.tick.wrapping_add(1);
         self.time_elapsed += dt;
-        self.time_left = (MATCH_SECONDS - self.time_elapsed).max(0.0);
+        self.time_left = self.clock_left();
 
         self.update_weapons(dt, input);
         self.player.tick(dt, &input, &self.arena);
@@ -700,6 +768,9 @@ impl Game {
                 if self.nodes[i].progress >= 1.0 {
                     self.nodes[i].active = true;
                     self.nodes_active += 1;
+                    if self.mode == MODE_OVERFLOW {
+                        self.player.heal(OVERFLOW_NODE_HEAL);
+                    }
                     self.push_event(ev::NODE_ACTIVATED, i as f32, n.x, n.y, n.z);
                 }
             } else {
@@ -731,7 +802,10 @@ impl Game {
             }
             if self.waves.queued() == 0 && alive == 0 {
                 self.waves.running = false;
-                if self.waves.wave >= self.waves.total {
+                if self.mode == MODE_OVERFLOW {
+                    self.reset_terminals();
+                    self.waves.intermission = 4.0;
+                } else if self.waves.wave >= self.waves.total {
                     self.waves.finished = true;
                 } else {
                     self.waves.intermission = 4.0;
@@ -739,7 +813,7 @@ impl Game {
             }
         } else if self.waves.intermission > 0.0 {
             self.waves.intermission -= dt;
-            if self.waves.intermission <= 0.0 && self.waves.wave < self.waves.total {
+            if self.waves.intermission <= 0.0 && self.waves.has_next() {
                 let next = self.waves.wave + 1;
                 self.begin_wave(next);
                 self.push_event(ev::WAVE_START, next as f32, 0.0, 0.0, 0.0);
@@ -765,7 +839,7 @@ impl Game {
         );
         let yaw = enemy::dir_to_yaw(v3(self.player.pos.x - x, 0.0, self.player.pos.z - z));
         self.enemies[idx] = Enemy::spawn(v3(x, 0.0, z), kind, yaw, (self.waves.spawned % 7) as u8);
-        let hp_scale = daily::rules(self.mutator).enemy_hp_pct as f32 / 100.0;
+        let hp_scale = self.enemy_hp_scale();
         let spawned = &mut self.enemies[idx];
         spawned.hp *= hp_scale;
         spawned.hp_max = spawned.hp;
@@ -788,6 +862,11 @@ impl Game {
         if self.player.hp <= 0.0 {
             self.phase = phase::LOSE;
             self.push_event(ev::LOSE, 0.0, 0.0, 0.0, 0.0);
+            return;
+        }
+
+        // Overflow no tiene extracción ni temporizador: solo la muerte termina la partida.
+        if self.mode == MODE_OVERFLOW {
             return;
         }
 
@@ -928,6 +1007,7 @@ pub fn run_steps(game: &mut Game, steps: u32, input: Input) {
 mod tests {
     use super::*;
     use crate::enemy::Enemy;
+    use crate::waves::WAVE_TOTAL;
 
     fn game_with_arena() -> Game {
         let mut g = Game::new(42);
@@ -1397,5 +1477,145 @@ mod tests {
     fn daily_rejects_a_seed_that_is_not_a_date() {
         let mut g = Game::new(1);
         assert!(!g.start(MODE_DAILY, 0, 20261332, 0));
+    }
+
+    /// Overflow con los tres tipos y el jugador vivo: pasa la oleada 5 sin ganar ni agotar el reloj.
+    fn overflow_game(map: u8) -> Game {
+        let mut g = Game::new(3);
+        assert!(g.start(MODE_OVERFLOW, map, 3, FLAG_AUTO_RELOAD));
+        g
+    }
+
+    #[test]
+    fn overflow_never_reaches_win_and_ends_only_on_death() {
+        let mut g = overflow_game(2);
+        for n in g.nodes.iter_mut() {
+            n.active = true;
+        }
+        g.nodes_active = 3;
+        for _ in 0..(200 * 60) {
+            g.player.hp = g.player.hp_max;
+            for e in g.enemies.iter_mut().filter(|e| e.is_alive()) {
+                e.hurt(1000.0);
+            }
+            g.tick(FIXED_DT, Input::default());
+            assert_eq!(
+                g.phase,
+                phase::PLAYING,
+                "overflow ended at wave {}",
+                g.waves.wave
+            );
+        }
+        assert!(
+            g.waves.wave > WAVE_TOTAL,
+            "overflow never went past wave {WAVE_TOTAL}"
+        );
+        g.player.hp = 0.0;
+        g.tick(FIXED_DT, Input::default());
+        assert_eq!(g.phase, phase::LOSE);
+    }
+
+    #[test]
+    fn overflow_reports_no_wave_cap_and_no_clock() {
+        let mut g = overflow_game(0);
+        assert_eq!(g.snapshot[H_WAVE_TOTAL], 0.0);
+        g.tick(FIXED_DT, Input::default());
+        assert_eq!(g.snapshot[H_TIME_LEFT], 0.0);
+    }
+
+    #[test]
+    fn terminals_reset_when_a_wave_is_cleared_and_activations_stay_cumulative() {
+        let mut g = overflow_game(0);
+        g.waves.queue_head = g.waves.queue_len;
+        for n in g.nodes.iter_mut() {
+            n.active = true;
+            n.progress = 1.0;
+        }
+        g.nodes_active = 3;
+        for _ in 0..(10 * 60) {
+            if !g.waves.running {
+                break;
+            }
+            g.tick(FIXED_DT, Input::default());
+        }
+        assert!(!g.waves.running, "wave never cleared");
+        for n in g.nodes.iter() {
+            assert!(!n.active && n.progress == 0.0, "{n:?}");
+        }
+        assert_eq!(g.nodes_active, 3, "activations are a running total");
+    }
+
+    #[test]
+    fn each_overflow_terminal_is_worth_500_and_heals_25() {
+        let mut g = overflow_game(0);
+        g.waves.queue_head = g.waves.queue_len;
+        g.player.hp = 50.0;
+        // Sin esto la regeneración sumaría vida y el test no mediría la curación del terminal.
+        g.player.damage_age = 0.0;
+        let node = g.nodes[0];
+        g.player.pos = V3::new(node.x, node.y, node.z + 1.0);
+        for _ in 0..((NODE_CHANNEL / FIXED_DT) as u32 + 30) {
+            g.step(Input {
+                interact: true,
+                ..Default::default()
+            });
+        }
+        assert_eq!(g.nodes_active, 1);
+        assert!((g.player.hp - 75.0).abs() < 0.5, "hp {}", g.player.hp);
+        // Un terminal a oleada 1, sin disparos ni daño: 500 + 250 de oleada alcanzada.
+        assert_eq!(g.final_score(), 750);
+    }
+
+    #[test]
+    fn overflow_score_counts_kills_wave_accuracy_and_damage() {
+        let mut g = overflow_game(0);
+        g.kills = 2;
+        g.waves.wave = 3;
+        g.shots = 10;
+        g.hits = 5;
+        g.damage_taken = 20.0;
+        assert!(
+            (g.compute_score() - 1160.0).abs() < 1e-3,
+            "{}",
+            g.compute_score()
+        );
+        assert_eq!(g.score_version(), OVERFLOW_SCORE_VERSION);
+    }
+
+    #[test]
+    fn mission_keeps_its_score_version() {
+        let mut g = Game::new(1);
+        assert!(g.start(MODE_MISSION, 0, 1, 0));
+        assert_eq!(g.score_version(), SCORE_VERSION);
+    }
+
+    #[test]
+    fn overflow_enemies_gain_health_each_wave_up_to_double() {
+        let mut g = overflow_game(0);
+        g.waves.wave = 11;
+        g.spawn_one();
+        let scout = g
+            .enemies
+            .iter()
+            .find(|e| e.is_alive())
+            .expect("one spawned");
+        assert!(
+            (scout.hp - enemy::SCOUT.hp * 1.4).abs() < 1e-3,
+            "{}",
+            scout.hp
+        );
+        g.waves.wave = 60;
+        g.spawn_one();
+        let capped = g
+            .enemies
+            .iter()
+            .rev()
+            .find(|e| e.is_alive())
+            .expect("spawned");
+        assert!(
+            (capped.hp - enemy::SCOUT.hp * 2.0).abs() < 1e-3,
+            "{}",
+            capped.hp
+        );
     }
 }

@@ -357,7 +357,7 @@ pub fn hash_snapshot(g: &Game) -> u64 {
 
 pub fn outcome_of(g: &Game, ticks: u32) -> Outcome {
     Outcome {
-        score_version: crate::sim::SCORE_VERSION,
+        score_version: g.score_version(),
         phase: g.phase as u8,
         won: g.phase == phase::WIN,
         ticks,

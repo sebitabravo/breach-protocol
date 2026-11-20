@@ -12,6 +12,8 @@ pub const MAX_QUEUE: usize = 32;
 
 /// Enemigos vivos a la vez en misión: mantiene la dificultad acotada (SPEC §3.3).
 const MISSION_ALIVE_CAP: usize = 12;
+/// Overflow: cada oleada extra suma un scout y, cada dos oleadas, un especialista.
+const ENDLESS_SPECIALIST_EVERY: u32 = 2;
 
 /// Cuántos enemigos de cada tipo entran en una oleada.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -25,6 +27,43 @@ impl Composition {
     pub const fn total(self) -> u32 {
         self.scouts + self.sentinels + self.interceptors
     }
+
+    /// Recorta hasta `max`: primero scouts, luego especialistas.
+    fn fit(mut self, max: u32) -> Self {
+        let over = self.total().saturating_sub(max);
+        let from_scouts = over.min(self.scouts);
+        self.scouts -= from_scouts;
+        let left = over - from_scouts;
+        let from_sentinels = left.min(self.sentinels);
+        self.sentinels -= from_sentinels;
+        self.interceptors -= (left - from_sentinels).min(self.interceptors);
+        self
+    }
+}
+
+/// Oleada del modo Overflow. Hasta la oleada 5 es la de misión; después crece sin tope de
+/// oleadas y se recorta a `MAX_QUEUE`. El especialista del sector: sentinel (0), interceptor (1),
+/// y en el sector 2 se alternan.
+pub fn endless_composition(sector: u8, wave: u32) -> Composition {
+    let base = mission_composition(sector, wave);
+    let extra = wave.saturating_sub(WAVE_TOTAL);
+    if extra == 0 {
+        return base;
+    }
+    let specialists = extra.div_ceil(ENDLESS_SPECIALIST_EVERY);
+    let mut c = Composition {
+        scouts: base.scouts + extra,
+        ..base
+    };
+    match sector {
+        0 => c.sentinels += specialists,
+        1 => c.interceptors += specialists,
+        _ => {
+            c.sentinels += specialists.div_ceil(2);
+            c.interceptors += specialists / 2;
+        }
+    }
+    c.fit(MAX_QUEUE as u32)
 }
 
 /// Oleada de misión para el sector `sector` (= id del mapa), oleada 1-based.
@@ -65,6 +104,7 @@ pub struct Waves {
     pub finished: bool,
     pub spawned: u32,
     pub killed: u32,
+    pub alive_cap: usize,
 }
 
 impl Waves {
@@ -82,11 +122,22 @@ impl Waves {
             finished: false,
             spawned: 0,
             killed: 0,
+            alive_cap: MISSION_ALIVE_CAP,
         }
     }
 
-    pub fn reset(&mut self) {
+    /// `endless` activa el modo Overflow: sin tope de oleadas y hasta `MAX_ENEMIES` vivos.
+    pub fn reset(&mut self, endless: bool) {
         *self = Waves::new();
+        if endless {
+            self.total = 0;
+            self.alive_cap = MAX_ENEMIES;
+        }
+    }
+
+    /// Queda al menos una oleada por jugar. En modo infinito (`total == 0`) siempre hay.
+    pub fn has_next(&self) -> bool {
+        self.total == 0 || self.wave < self.total
     }
 
     pub fn spawn_interval_for(wave: u32) -> f32 {
@@ -133,7 +184,7 @@ impl Waves {
     }
 
     pub fn alive_target(&self) -> usize {
-        MISSION_ALIVE_CAP.min(MAX_ENEMIES)
+        self.alive_cap.min(MAX_ENEMIES)
     }
 
     /// Picks the safest spawn point: far from the player and inside the arena.
@@ -281,6 +332,39 @@ mod tests {
                 assert_eq!(count(&kinds, KIND_INTERCEPTOR), c.interceptors);
             }
         }
+    }
+
+    #[test]
+    fn endless_waves_match_the_mission_until_wave_five_then_grow_within_the_queue() {
+        for sector in 0..3 {
+            for wave in 1..=WAVE_TOTAL {
+                assert_eq!(
+                    endless_composition(sector, wave),
+                    mission_composition(sector, wave)
+                );
+            }
+            let mut last = 0;
+            for wave in 1..=60 {
+                let c = endless_composition(sector, wave);
+                assert!(c.total() <= MAX_QUEUE as u32, "sector {sector} wave {wave}");
+                assert!(c.total() >= last, "sector {sector} wave {wave} shrank");
+                last = c.total();
+            }
+        }
+        assert_eq!(
+            endless_composition(0, 6).scouts,
+            mission_composition(0, 5).scouts + 1
+        );
+    }
+
+    #[test]
+    fn overflow_alive_cap_is_the_whole_array_and_mission_keeps_twelve() {
+        let mut w = Waves::new();
+        assert_eq!(w.alive_target(), 12);
+        w.reset(true);
+        assert_eq!(w.alive_target(), MAX_ENEMIES);
+        assert!(w.has_next());
+        assert_eq!(w.total, 0);
     }
 
     #[test]
