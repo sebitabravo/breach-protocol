@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { ARENA_BOXES, type ArenaBox, type Material } from '../world/layout';
 import { MAX_ENEMIES, type Snapshot, type WorldEvent } from '../wasm/bridge';
 import { ENEMY_STATE, EVT, WEAPON } from '../wasm/protocol';
-import { createRobotMesh, createWeaponModel } from './entities';
+import { createRobotMesh, createWeaponModel, disposeRobotAssets } from './entities';
 import { FxPool } from './fx';
 
 export type QualityName = 'low' | 'medium' | 'high';
@@ -409,6 +409,7 @@ export class Renderer {
     });
     geoms.forEach((g) => g.dispose());
     mats.forEach((m) => m.dispose());
+    disposeRobotAssets();
     this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
     this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.renderer?.dispose();
@@ -582,11 +583,7 @@ export class Renderer {
   private enemyMesh(index: number, kind: number): THREE.Mesh {
     let mesh = this.enemyMeshes[index];
     if (!mesh || this.enemyKinds[index] !== kind) {
-      if (mesh) {
-        mesh.removeFromParent();
-        mesh.geometry.dispose();
-        (mesh.material as THREE.Material).dispose();
-      }
+      mesh?.removeFromParent();
       mesh = createRobotMesh(kind);
       this.enemyKinds[index] = kind;
       this.scene.add(mesh);

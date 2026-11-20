@@ -128,24 +128,55 @@ function sentinelVisorParts(): BoxPart[] {
   return [{ x: 0, y: 1.37, z: 0.16, sx: 0.22, sy: 0.05, sz: 0.02, color: C.danger }];
 }
 
+interface RobotAssets {
+  body: THREE.BufferGeometry;
+  bodyMat: THREE.Material;
+  visor: THREE.BufferGeometry;
+  visorMat: THREE.Material;
+}
+
+/** Un set de geometría y material por tipo: los slots del pool los comparten. */
+const robotAssets = new Map<number, RobotAssets>();
+
+function assetsFor(kind: number): RobotAssets {
+  let assets = robotAssets.get(kind);
+  if (!assets) {
+    const isSentinel = kind === ENEMY_KIND.sentinel;
+    assets = {
+      body: buildMergedGeometry(isSentinel ? sentinelParts() : scoutParts()),
+      bodyMat: new THREE.MeshLambertMaterial({ vertexColors: true }),
+      visor: buildMergedGeometry(isSentinel ? sentinelVisorParts() : scoutVisorParts()),
+      visorMat: new THREE.MeshBasicMaterial({ color: isSentinel ? C.danger : C.primary }),
+    };
+    robotAssets.set(kind, assets);
+  }
+  return assets;
+}
+
 /**
  * Enemy robot mesh. `kind`: 0 = scout, 1 = sentinel. The lit body is ONE
  * vertex-coloured Lambert mesh; the visor is a separate unlit MeshBasicMaterial
- * child (real emissive) so it stays readable at 15 m.
+ * child (real emissive) so it stays readable at 15 m. Assets are shared per
+ * kind; free them once with `disposeRobotAssets`.
  */
 export function createRobotMesh(kind: number): THREE.Mesh {
-  const isSentinel = kind === ENEMY_KIND.sentinel;
-  const geometry = buildMergedGeometry(isSentinel ? sentinelParts() : scoutParts());
-  const material = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const mesh = new THREE.Mesh(geometry, material);
+  const assets = assetsFor(kind);
+  const mesh = new THREE.Mesh(assets.body, assets.bodyMat);
   mesh.castShadow = true;
-
-  const visorGeom = buildMergedGeometry(isSentinel ? sentinelVisorParts() : scoutVisorParts());
-  const visorMat = new THREE.MeshBasicMaterial({ color: isSentinel ? C.danger : C.primary });
-  const visor = new THREE.Mesh(visorGeom, visorMat);
+  const visor = new THREE.Mesh(assets.visor, assets.visorMat);
   visor.castShadow = false;
   mesh.add(visor);
   return mesh;
+}
+
+export function disposeRobotAssets(): void {
+  for (const assets of robotAssets.values()) {
+    assets.body.dispose();
+    assets.bodyMat.dispose();
+    assets.visor.dispose();
+    assets.visorMat.dispose();
+  }
+  robotAssets.clear();
 }
 
 /** PB-01 sidearm viewmodel parts. Origin at the grip / hand. Muzzle ≈ (0, 0.02, -0.2). */
