@@ -8,7 +8,7 @@ on:
 jobs:
   rust:
     name: Rust core (tests + wasm build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install wasm32 target
@@ -20,7 +20,7 @@ jobs:
 
   web:
     name: Web shell (typecheck, unit, build, e2e)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
