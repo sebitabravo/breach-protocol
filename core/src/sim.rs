@@ -33,6 +33,8 @@ pub const SCORE_VERSION: u8 = 1;
 
 pub const FLAG_AIM_ASSIST: u8 = 1;
 pub const FLAG_AUTO_RELOAD: u8 = 2;
+/// El arma 3 (SG-08) puede equiparse. El progreso es del cliente; el servidor lo registra pero no lo juzga.
+pub const FLAG_SHOTGUN: u8 = 4;
 
 /// Alcance vertical (m) dentro del cual una terminal responde al jugador.
 const NODE_VERTICAL_REACH: f32 = 1.2;
@@ -208,7 +210,7 @@ impl Game {
         self.practice = mode == MODE_PRACTICE;
         self.aim_assist = flags & FLAG_AIM_ASSIST != 0;
         self.auto_reload = flags & FLAG_AUTO_RELOAD != 0;
-        self.log_flags = flags & (FLAG_AIM_ASSIST | FLAG_AUTO_RELOAD);
+        self.log_flags = flags & (FLAG_AIM_ASSIST | FLAG_AUTO_RELOAD | FLAG_SHOTGUN);
         if let Some(rec) = self.recorder.as_mut() {
             *rec = crate::replay::Recorder::new();
         }

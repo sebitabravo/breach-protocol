@@ -69,7 +69,7 @@ impl Frame {
         if i.ads {
             flags |= F_ADS;
         }
-        flags |= (i.switch.min(2) as u16) << SWITCH_SHIFT;
+        flags |= (i.switch.min(3) as u16) << SWITCH_SHIFT;
         Frame {
             flags,
             move_x: quantize_axis(i.move_x),
@@ -261,7 +261,9 @@ pub fn decode(bytes: &[u8]) -> Result<Log, ReplayError> {
         return Err(ReplayError::BadMap);
     }
     let flags = c.u8()?;
-    if flags & !(crate::sim::FLAG_AIM_ASSIST | crate::sim::FLAG_AUTO_RELOAD) != 0 {
+    let known =
+        crate::sim::FLAG_AIM_ASSIST | crate::sim::FLAG_AUTO_RELOAD | crate::sim::FLAG_SHOTGUN;
+    if flags & !known != 0 {
         return Err(ReplayError::BadField);
     }
     let seed = c.u32()?;
@@ -279,7 +281,7 @@ pub fn decode(bytes: &[u8]) -> Result<Log, ReplayError> {
         let mut f = Frame::default();
         if mask & M_FLAGS != 0 {
             f.flags = c.u16()?;
-            if f.flags & !FLAGS_MASK != 0 || (f.flags >> SWITCH_SHIFT) & 3 == 3 {
+            if f.flags & !FLAGS_MASK != 0 {
                 return Err(ReplayError::BadField);
             }
         }

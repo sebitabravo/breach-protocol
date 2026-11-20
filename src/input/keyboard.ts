@@ -18,6 +18,7 @@ export class KeyboardState {
     if (code === 'KeyR') this.reload = true;
     if (code === 'Digit1') this.switchTo = 1;
     if (code === 'Digit2') this.switchTo = 2;
+    if (code === 'Digit3') this.switchTo = 3;
   }
 
   keyUp(code: string): void {

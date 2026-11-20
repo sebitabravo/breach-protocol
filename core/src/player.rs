@@ -51,7 +51,7 @@ impl Input {
         self.move_z = quantize_axis(self.move_z) as f32 / 127.0;
         self.look_dx = quantize_look(self.look_dx) as f32 / LOOK_UNITS_PER_RAD;
         self.look_dy = quantize_look(self.look_dy) as f32 / LOOK_UNITS_PER_RAD;
-        self.switch = self.switch.min(2);
+        self.switch = self.switch.min(3);
         self
     }
 }

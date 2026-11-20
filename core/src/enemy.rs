@@ -9,6 +9,8 @@ use crate::rng::Rng;
 
 pub const KIND_SCOUT: u8 = 0;
 pub const KIND_SENTINEL: u8 = 1;
+/// Reservado para el Interceptor (SPEC §3.5); la FSM llega con el contenido del sector 2.
+pub const KIND_INTERCEPTOR: u8 = 2;
 
 pub const ST_SPAWN: u8 = 0;
 pub const ST_PATROL: u8 = 1;
@@ -17,6 +19,8 @@ pub const ST_AIM: u8 = 3;
 pub const ST_STRIKE: u8 = 4;
 pub const ST_RECOVER: u8 = 5;
 pub const ST_DEAD: u8 = 6;
+pub const ST_FLANK: u8 = 7;
+pub const ST_CHARGE: u8 = 8;
 
 const THINK_HZ: f32 = 12.0;
 const GRAVITY: f32 = 21.0;

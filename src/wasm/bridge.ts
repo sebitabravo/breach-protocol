@@ -264,6 +264,8 @@ export interface StartOptions {
   seed: number;
   aimAssist: boolean;
   autoReload: boolean;
+  /** Habilita el arma 3 (SG-08). */
+  shotgun?: boolean;
 }
 
 /** FNV-1a de 64 bits sobre los bits del snapshot; igual a `replay::hash_snapshot`. */
@@ -336,7 +338,7 @@ export class Engine {
 
   /** Inicia una partida y arma el grabador de entradas. Devuelve falso si modo o mapa no existen. */
   start(options: StartOptions): boolean {
-    const flags = (options.aimAssist ? 1 : 0) | (options.autoReload ? 2 : 0);
+    const flags = (options.aimAssist ? 1 : 0) | (options.autoReload ? 2 : 0) | (options.shotgun ? 4 : 0);
     const ok = this.exports.bp_start(options.mode, options.map, options.seed >>> 0, flags) === 1;
     this.refresh();
     return ok;

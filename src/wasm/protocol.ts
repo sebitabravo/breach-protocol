@@ -113,9 +113,13 @@ export const ENEMY_STATE = {
   strike: 4,
   recover: 5,
   dead: 6,
+  /** Interceptor: rodea al jugador antes de cargar. */
+  flank: 7,
+  /** Interceptor: telegrafía y ejecuta la embestida. */
+  charge: 8,
 } as const;
 
-export const ENEMY_KIND = { scout: 0, sentinel: 1 } as const;
+export const ENEMY_KIND = { scout: 0, sentinel: 1, interceptor: 2 } as const;
 
 export const I = {
   moveX: 0,
@@ -134,11 +138,12 @@ export const I = {
 
 export const INPUT_LEN = 16;
 
-export const WEAPON = { sidearm: 1, carbine: 2 } as const;
+export const WEAPON = { sidearm: 1, carbine: 2, shotgun: 3 } as const;
 
 export const WEAPON_LABEL: Record<number, string> = {
   [WEAPON.sidearm]: 'PB-01 SIDEARM',
   [WEAPON.carbine]: 'AR-04 CARBINE',
+  [WEAPON.shotgun]: 'SG-08 SCATTER',
 };
 
 export function assertProtocol(version: number): void {
