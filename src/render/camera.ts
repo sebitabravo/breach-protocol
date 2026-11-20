@@ -1,0 +1,70 @@
+/**
+ * Camera rig: the menu orbit and the first-person pose (eye height, recoil,
+ * grounded bob and roll). The rig only moves the camera; it never reads the
+ * simulation directly, so it can be driven from plain numbers in tests.
+ */
+import * as THREE from 'three';
+import type { Pose } from './interp';
+
+const ORBIT_RADIUS = 17;
+const ORBIT_HEIGHT = 8.5;
+const ORBIT_SPEED = 0.12;
+/** The snapshot carries the player's FEET y (core/src/sim.rs writes
+ * `player.pos.y`); the first-person camera needs the eye, so the renderer
+ * lifts it by the sim's EYE_HEIGHT (core/src/player.rs). */
+export const EYE_HEIGHT = 1.62;
+const BOB_AMPLITUDE = 0.035;
+
+/** Subset of the snapshot the first-person pose needs. */
+export interface ViewInput {
+  grounded: boolean;
+  speed: number;
+  recoilPitch: number;
+  recoilYaw: number;
+}
+
+export class CameraRig {
+  private orbitAngle = 0;
+  private bobPhase = 0;
+  private bobAmp = 0;
+
+  /** Menu/loading camera: slow orbit over the arena. */
+  orbit(camera: THREE.PerspectiveCamera, dt: number): void {
+    this.orbitAngle += dt * ORBIT_SPEED;
+    camera.position.set(
+      Math.cos(this.orbitAngle) * ORBIT_RADIUS,
+      ORBIT_HEIGHT,
+      Math.sin(this.orbitAngle) * ORBIT_RADIUS,
+    );
+    camera.lookAt(0, 1.2, 0);
+    camera.updateMatrixWorld();
+  }
+
+  /**
+   * Places the camera at the interpolated pose plus recoil and grounded bob.
+   * Returns the vertical bob offset so the viewmodel can follow it.
+   */
+  firstPerson(
+    camera: THREE.PerspectiveCamera,
+    pose: Pose,
+    view: ViewInput,
+    dt: number,
+    reducedMotion: boolean,
+  ): number {
+    let bobY = 0;
+    let roll = 0;
+    if (!reducedMotion && view.grounded) {
+      const target = Math.min(Math.max(view.speed / 6, 0), 1);
+      this.bobAmp += (target - this.bobAmp) * Math.min(dt * 8, 1);
+      this.bobPhase += dt * (4 + view.speed * 1.6);
+      bobY = Math.sin(this.bobPhase) * BOB_AMPLITUDE * this.bobAmp;
+      roll = Math.sin(this.bobPhase * 0.5) * 0.008 * this.bobAmp;
+    } else {
+      this.bobAmp += (0 - this.bobAmp) * Math.min(dt * 8, 1);
+    }
+    camera.position.set(pose.px, pose.py + EYE_HEIGHT + bobY, pose.pz);
+    camera.rotation.set(pose.pitch + view.recoilPitch, pose.yaw + view.recoilYaw, roll);
+    camera.updateMatrixWorld();
+    return bobY;
+  }
+}
