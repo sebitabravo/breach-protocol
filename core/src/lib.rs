@@ -35,6 +35,7 @@ pub use daily::{daily_config, is_valid_date};
 pub use maps::MAP_COUNT;
 pub use player::Input;
 pub use protocol::phase;
+pub use protocol::phase::{EXTRACTION, LOSE, PLAYING, WIN};
 pub use replay::{decode, run, run_bytes, Header, Log, Outcome, ReplayError, MAX_TICKS};
 pub use sim::{
     Game, FLAG_AIM_ASSIST, FLAG_AUTO_RELOAD, FLAG_SHOTGUN, MODE_DAILY, MODE_MISSION, MODE_OVERFLOW,

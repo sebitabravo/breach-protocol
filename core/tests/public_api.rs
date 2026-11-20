@@ -19,6 +19,16 @@ fn mode_score_and_phase_constants_are_exported() {
     assert_eq!(phase::PLAYING, 1.0);
     assert_eq!(phase::WIN, 3.0);
     assert_eq!(phase::LOSE, 4.0);
+    // Las mismas constantes, por la ruta de la raíz que usa el crate de API.
+    assert_eq!(
+        (
+            bp_core::PLAYING,
+            bp_core::EXTRACTION,
+            bp_core::WIN,
+            bp_core::LOSE
+        ),
+        (phase::PLAYING, phase::EXTRACTION, phase::WIN, phase::LOSE)
+    );
 }
 
 #[test]
