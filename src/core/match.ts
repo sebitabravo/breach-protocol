@@ -15,9 +15,16 @@ export interface StartRequest {
   autoReload: boolean;
 }
 
+const ENGINE_MODE: Record<Mode, number> = {
+  run: MODE.mission,
+  overflow: MODE.overflow,
+  daily: MODE.daily,
+  practice: MODE.practice,
+};
+
 export function buildStartOptions(request: StartRequest): StartOptions {
   return {
-    mode: request.mode === 'practice' ? MODE.practice : MODE.mission,
+    mode: ENGINE_MODE[request.mode],
     map: request.mapId,
     seed: request.seed,
     aimAssist: request.aimAssist,

@@ -14,10 +14,12 @@ const facts = {
 };
 
 describe('buildStartOptions', () => {
-  it('maps practice to the practice mode and every other request to mission', () => {
+  it('maps every shell mode to its engine mode id', () => {
     const base = { mapId: 1, seed: 9, aimAssist: true, autoReload: false };
-    expect(buildStartOptions({ ...base, mode: 'practice' }).mode).toBe(MODE.practice);
     expect(buildStartOptions({ ...base, mode: 'run' }).mode).toBe(MODE.mission);
+    expect(buildStartOptions({ ...base, mode: 'overflow' }).mode).toBe(MODE.overflow);
+    expect(buildStartOptions({ ...base, mode: 'daily' }).mode).toBe(MODE.daily);
+    expect(buildStartOptions({ ...base, mode: 'practice' }).mode).toBe(MODE.practice);
     expect(buildStartOptions({ ...base, mode: 'run' })).toEqual({
       mode: MODE.mission,
       map: 1,
