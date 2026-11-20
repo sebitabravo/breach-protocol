@@ -25,6 +25,20 @@ export function postPlan(name: QualityName): PostPlan {
 /** Bloom tuning: only emissive strips (>1 in HDR) pass the threshold. */
 export const BLOOM = { strength: 0.35, radius: 0.35, threshold: 1.0 } as const;
 
+/**
+ * Niveles de desenfoque que se usan: 3 de los 5 que trae UnrealBloomPass. Cada
+ * nivel cuesta dos pases de pantalla completa; los dos más anchos no aportan lo
+ * suficiente frente a su costo en el presupuesto de draw calls (ver ADR 0004).
+ */
+const BLOOM_MIPS = 3;
+
+/** Recorta la cadena de desenfoque sin tocar el shader: los pesos de los niveles sobrantes van a cero. */
+function trimBloomMips(pass: UnrealBloomPass): void {
+  pass.nMips = BLOOM_MIPS;
+  const factors = pass.compositeMaterial.uniforms.bloomFactors.value as number[];
+  for (let i = BLOOM_MIPS; i < factors.length; i += 1) factors[i] = 0;
+}
+
 export class PostFx {
   private composer: EffectComposer | null = null;
   private quality: QualityName = 'medium';
@@ -82,9 +96,9 @@ export class PostFx {
     });
     const composer = new EffectComposer(this.renderer, target);
     composer.addPass(new RenderPass(this.scene, this.camera));
-    composer.addPass(
-      new UnrealBloomPass(new THREE.Vector2(this.width, this.height), BLOOM.strength, BLOOM.radius, BLOOM.threshold),
-    );
+    const bloom = new UnrealBloomPass(new THREE.Vector2(this.width, this.height), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
+    trimBloomMips(bloom);
+    composer.addPass(bloom);
     composer.addPass(new OutputPass());
     this.composer = composer;
   }
