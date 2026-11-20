@@ -5,14 +5,27 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     name: Rust core (tests + wasm build)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install wasm32 target
         run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: Format check
+        run: cargo fmt --manifest-path core/Cargo.toml --check
       - name: Cargo tests
         run: cargo test --manifest-path core/Cargo.toml --locked
       - name: Build wasm artifact
@@ -21,6 +34,7 @@ jobs:
   web:
     name: Web shell (typecheck, unit, build, e2e)
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,6 +43,9 @@ jobs:
           cache: npm
       - name: Install wasm32 target
         run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
       - name: Install dependencies
         run: npm ci
       - name: Typecheck
