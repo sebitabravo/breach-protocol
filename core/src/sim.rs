@@ -97,6 +97,7 @@ pub struct Game {
     pub aim_assist: bool,
     pub practice: bool,
     pub auto_reload: bool,
+    pub shotgun_unlocked: bool,
     pub map_id: u8,
     pub mode: u8,
     pub input: Input,
@@ -144,6 +145,7 @@ impl Game {
             aim_assist: false,
             practice: false,
             auto_reload: true,
+            shotgun_unlocked: false,
             map_id: 0,
             mode: MODE_MISSION,
             input: Input::default(),
@@ -210,6 +212,7 @@ impl Game {
         self.practice = mode == MODE_PRACTICE;
         self.aim_assist = flags & FLAG_AIM_ASSIST != 0;
         self.auto_reload = flags & FLAG_AUTO_RELOAD != 0;
+        self.shotgun_unlocked = flags & FLAG_SHOTGUN != 0;
         self.log_flags = flags & (FLAG_AIM_ASSIST | FLAG_AUTO_RELOAD | FLAG_SHOTGUN);
         if let Some(rec) = self.recorder.as_mut() {
             *rec = crate::replay::Recorder::new();
@@ -416,8 +419,11 @@ impl Game {
             self.player.reserve = 999;
         }
 
+        // El arma 3 solo existe si la partida se inició con FLAG_SHOTGUN.
+        let unlocked = input.switch != weapons::ID_SHOTGUN || self.shotgun_unlocked;
         if input.switch != 0
             && input.switch != self.player.weapon
+            && unlocked
             && self.player.equip(input.switch)
         {
             self.push_event(ev::RELOAD_END, self.player.weapon as f32, 0.0, 0.0, 0.0);
@@ -457,7 +463,9 @@ impl Game {
             }
         }
 
+        // Precisión por disparo, no por perdigón: con 8 perdigones, contar por rayo daría >100 %.
         if enemy_hit {
+            self.hits += 1;
             self.player.hit_age = 0.0;
         }
 
@@ -513,12 +521,11 @@ impl Game {
         let enemy_pos = self.enemies[idx].pos;
         let enemy_height = enemy::def(self.enemies[idx].kind).height;
         let head = point.y > enemy_pos.y + enemy_height * 0.78;
-        let mut damage = def.damage;
+        let mut damage = def.damage * weapons::falloff_mult(def, best_t);
         if head {
             damage *= def.headshot_mult;
         }
 
-        self.hits += 1;
         let killed = self.enemies[idx].hurt(damage);
         self.push_event(ev::ENEMY_HIT, point.x, point.y, point.z, damage);
         if killed {
@@ -1216,5 +1223,72 @@ mod tests {
             let d = g.enemies[0].pos.dist_xz(g.enemies[1].pos);
             assert!(d >= 0.9, "interceptors stacked at {d} m");
         }
+    }
+
+    #[test]
+    fn shotgun_switch_is_ignored_without_the_flag() {
+        let mut locked = Game::new(3);
+        assert!(locked.start(MODE_MISSION, 0, 3, 0));
+        locked.step(Input {
+            switch: 3,
+            ..Default::default()
+        });
+        assert_eq!(locked.player.weapon, weapons::ID_SIDEARM);
+
+        let mut open = Game::new(3);
+        assert!(open.start(MODE_MISSION, 0, 3, FLAG_SHOTGUN));
+        open.step(Input {
+            switch: 3,
+            ..Default::default()
+        });
+        assert_eq!(open.player.weapon, weapons::ID_SHOTGUN);
+        assert_eq!(open.snapshot[H_WEAPON], 3.0);
+    }
+
+    #[test]
+    fn shotgun_pellet_damage_follows_the_distance_falloff() {
+        let damage_at = |z: f32| {
+            let mut g = game_with_arena();
+            g.enemies[0] = Enemy::spawn(v3(0.0, 0.0, z), enemy::KIND_SCOUT, 0.0, 0);
+            let origin = g.player.eye();
+            let dir = (v3(0.0, 0.85, z) - origin).norm_or(V3::UP);
+            let def = *weapons::def(weapons::ID_SHOTGUN);
+            g.fire_ray(origin, dir, &def);
+            enemy::SCOUT.hp - g.enemies[0].hp
+        };
+        // La distancia de caída es hasta el punto de impacto en el cuerpo, no hasta su centro.
+        // Jugador en z = 13: z = 9 impacta a ~3.6 m (pleno); z = -9 impacta a ~21 m (cuarto).
+        assert!((damage_at(9.0) - 6.0).abs() < 1e-4, "{}", damage_at(9.0));
+        assert!((damage_at(-9.0) - 1.5).abs() < 1e-4, "{}", damage_at(-9.0));
+    }
+
+    #[test]
+    fn shotgun_counts_one_hit_per_trigger_pull_so_accuracy_stays_bounded() {
+        let mut g = game_with_arena();
+        g.waves.queue_head = g.waves.queue_len;
+        g.shotgun_unlocked = true;
+        g.player.equip(weapons::ID_SHOTGUN);
+        g.player.fire_cd = 0.0;
+        g.enemies[0] = Enemy::spawn(v3(0.0, 0.0, 9.0), enemy::KIND_SCOUT, 0.0, 0);
+        g.tick(
+            FIXED_DT,
+            Input {
+                fire_pressed: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(g.shots, 1);
+        assert_eq!(g.player.ammo, weapons::SHOTGUN.mag - 1);
+        assert!(
+            g.hits <= g.shots,
+            "hits {} exceed shots {}",
+            g.hits,
+            g.shots
+        );
+        assert!(g.accuracy() <= 1.0);
+        assert!(
+            enemy::SCOUT.hp - g.enemies[0].hp >= 12.0,
+            "fewer than two pellets reached the target; the regression is not exercised"
+        );
     }
 }
