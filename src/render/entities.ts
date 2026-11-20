@@ -1,27 +1,27 @@
 /**
- * Procedural robot meshes for SECTOR_01. Everything is built from merged
- * axis-aligned boxes with per-face normals and vertex colours, so each enemy
- * is ONE geometry + ONE own material instance (no external assets, per S14).
- * Colours come from the design tokens in tokens.css.
+ * Procedural robot meshes. Everything is built from merged axis-aligned boxes
+ * with per-face normals and vertex colours, so each enemy kind is ONE body
+ * geometry + ONE eyes geometry, shared by every robot of that kind (no external
+ * assets, per S14). The state glow lives in telegraph.ts, not in these
+ * materials, so the shared-material contract holds.
  */
 import * as THREE from 'three';
 import { ENEMY_KIND } from '../wasm/protocol';
 import { buildMergedGeometry, type BoxPart } from './geometry';
 
-/** Enemy palette — albedo-compensated so the FINAL pixel on the enemy's
+/** Robot palette: albedo-compensated so the FINAL pixel on the enemy's
  * player-facing faces lands on the ladder: body ≈ #45596a, joints ≈ #2e3d4a
  * (those faces receive ~0.7× irradiance, albedo is lifted ÷0.7). */
 const C = {
   surface1: 0x3f5465, // joints / limbs
   surface2: 0x5e7a91, // body armour
   surface3: 0x6e89a2, // head / torso highlight
+  blade: 0x8fa6b8, // interceptor blade arms
   border: 0x5c7086,
-  primary: 0x5ce08b, // mint accent — scout visor
-  danger: 0xff5b6b, // danger accent — sentinel visor
+  eye: 0xff5b6b, // danger red: every robot has red emissive eyes
 } as const;
 
-/** Scout: compact hunched robot. Origin at the feet. The visor is built
- * separately as a real emissive (unlit) mesh so it reads at 15 m. */
+/** Scout: compact hunched robot. Origin at the feet. */
 function scoutParts(): BoxPart[] {
   return [
     { x: 0, y: 0.42, z: 0, sx: 0.34, sy: 0.16, sz: 0.26, color: C.surface2 },
@@ -35,11 +35,14 @@ function scoutParts(): BoxPart[] {
   ];
 }
 
-function scoutVisorParts(): BoxPart[] {
-  return [{ x: 0, y: 0.85, z: 0.24, sx: 0.2, sy: 0.05, sz: 0.02, color: C.primary }];
+function scoutEyeParts(): BoxPart[] {
+  return [
+    { x: -0.06, y: 0.86, z: 0.24, sx: 0.07, sy: 0.04, sz: 0.02, color: C.eye },
+    { x: 0.06, y: 0.86, z: 0.24, sx: 0.07, sy: 0.04, sz: 0.02, color: C.eye },
+  ];
 }
 
-/** Sentinel: taller unit with a rifle arm. Origin at the feet. */
+/** Sentinel: tall, wide-shouldered unit with a rifle arm. Origin at the feet. */
 function sentinelParts(): BoxPart[] {
   return [
     { x: 0, y: 0.72, z: 0, sx: 0.4, sy: 0.18, sz: 0.3, color: C.surface2 },
@@ -56,8 +59,38 @@ function sentinelParts(): BoxPart[] {
   ];
 }
 
-function sentinelVisorParts(): BoxPart[] {
-  return [{ x: 0, y: 1.37, z: 0.16, sx: 0.22, sy: 0.05, sz: 0.02, color: C.danger }];
+function sentinelEyeParts(): BoxPart[] {
+  return [{ x: 0, y: 1.37, z: 0.16, sx: 0.22, sy: 0.05, sz: 0.02, color: C.eye }];
+}
+
+/**
+ * Interceptor: lean, angular, built to be read as a diagonal silhouette. Blade
+ * forearms reach forward past the knees; no shoulder pads. Leans forward via
+ * `robotLook().lean` on the mesh, so the body itself stays upright here.
+ */
+function interceptorParts(): BoxPart[] {
+  return [
+    { x: 0, y: 0.62, z: 0, sx: 0.34, sy: 0.14, sz: 0.22, color: C.surface1 }, // hips
+    { x: -0.11, y: 0.3, z: 0.04, sx: 0.12, sy: 0.5, sz: 0.14, color: C.surface1 },
+    { x: 0.11, y: 0.3, z: 0.04, sx: 0.12, sy: 0.5, sz: 0.14, color: C.surface1 },
+    { x: -0.11, y: 0.07, z: 0.12, sx: 0.14, sy: 0.12, sz: 0.3, color: C.border }, // feet
+    { x: 0.11, y: 0.07, z: 0.12, sx: 0.14, sy: 0.12, sz: 0.3, color: C.border },
+    { x: 0, y: 0.98, z: 0.08, sx: 0.36, sy: 0.42, sz: 0.26, color: C.surface2 }, // chest
+    { x: 0, y: 1.0, z: 0.22, sx: 0.26, sy: 0.28, sz: 0.06, color: C.surface3 }, // chest plate
+    { x: 0, y: 1.36, z: 0.18, sx: 0.22, sy: 0.2, sz: 0.24, color: C.surface3 }, // head wedge
+    { x: 0, y: 1.2, z: -0.16, sx: 0.08, sy: 0.5, sz: 0.06, color: C.surface1 }, // spine fin
+    { x: -0.27, y: 1.0, z: 0.22, sx: 0.1, sy: 0.1, sz: 0.4, color: C.surface1 }, // upper arms
+    { x: 0.27, y: 1.0, z: 0.22, sx: 0.1, sy: 0.1, sz: 0.4, color: C.surface1 },
+    { x: -0.3, y: 0.82, z: 0.72, sx: 0.04, sy: 0.06, sz: 0.8, color: C.blade }, // blade arms
+    { x: 0.3, y: 0.82, z: 0.72, sx: 0.04, sy: 0.06, sz: 0.8, color: C.blade },
+  ];
+}
+
+function interceptorEyeParts(): BoxPart[] {
+  return [
+    { x: -0.06, y: 1.37, z: 0.31, sx: 0.07, sy: 0.04, sz: 0.02, color: C.eye },
+    { x: 0.06, y: 1.37, z: 0.31, sx: 0.07, sy: 0.04, sz: 0.02, color: C.eye },
+  ];
 }
 
 interface RobotAssets {
@@ -70,15 +103,21 @@ interface RobotAssets {
 /** Un set de geometría y material por tipo: los slots del pool los comparten. */
 const robotAssets = new Map<number, RobotAssets>();
 
+function partsFor(kind: number): { body: BoxPart[]; eyes: BoxPart[] } {
+  if (kind === ENEMY_KIND.sentinel) return { body: sentinelParts(), eyes: sentinelEyeParts() };
+  if (kind === ENEMY_KIND.interceptor) return { body: interceptorParts(), eyes: interceptorEyeParts() };
+  return { body: scoutParts(), eyes: scoutEyeParts() };
+}
+
 function assetsFor(kind: number): RobotAssets {
   let assets = robotAssets.get(kind);
   if (!assets) {
-    const isSentinel = kind === ENEMY_KIND.sentinel;
+    const parts = partsFor(kind);
     assets = {
-      body: buildMergedGeometry(isSentinel ? sentinelParts() : scoutParts()),
+      body: buildMergedGeometry(parts.body),
       bodyMat: new THREE.MeshLambertMaterial({ vertexColors: true }),
-      visor: buildMergedGeometry(isSentinel ? sentinelVisorParts() : scoutVisorParts()),
-      visorMat: new THREE.MeshBasicMaterial({ color: isSentinel ? C.danger : C.primary }),
+      visor: buildMergedGeometry(parts.eyes),
+      visorMat: new THREE.MeshBasicMaterial({ color: C.eye }),
     };
     robotAssets.set(kind, assets);
   }
@@ -86,15 +125,16 @@ function assetsFor(kind: number): RobotAssets {
 }
 
 /**
- * Enemy robot mesh. `kind`: 0 = scout, 1 = sentinel. The lit body is ONE
- * vertex-coloured Lambert mesh; the visor is a separate unlit MeshBasicMaterial
- * child (real emissive) so it stays readable at 15 m. Assets are shared per
- * kind; free them once with `disposeRobotAssets`.
+ * Enemy robot mesh. `kind`: 0 = scout, 1 = sentinel, 2 = interceptor. The lit
+ * body is ONE vertex-coloured Lambert mesh; the eyes are a separate unlit
+ * MeshBasicMaterial child (real emissive) so they stay readable at 15 m. Robots
+ * do not cast shadows (a shadow draw per robot would break the draw budget).
+ * Assets are shared per kind; free them once with `disposeRobotAssets`.
  */
 export function createRobotMesh(kind: number): THREE.Mesh {
   const assets = assetsFor(kind);
   const mesh = new THREE.Mesh(assets.body, assets.bodyMat);
-  mesh.castShadow = true;
+  mesh.castShadow = false;
   const visor = new THREE.Mesh(assets.visor, assets.visorMat);
   visor.castShadow = false;
   mesh.add(visor);

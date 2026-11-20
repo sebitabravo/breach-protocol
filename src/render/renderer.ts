@@ -17,11 +17,12 @@
 import * as THREE from 'three';
 import { arenaBoxes } from '../world/layout';
 import type { MapData } from '../world/map';
-import { MAX_ENEMIES, type Snapshot, type WorldEvent } from '../wasm/bridge';
-import { ENEMY_STATE, EVT } from '../wasm/protocol';
+import type { Snapshot, WorldEvent } from '../wasm/bridge';
+import { EVT } from '../wasm/protocol';
 import { ArenaBuild } from './arena';
 import { CameraRig } from './camera';
-import { createRobotMesh, disposeRobotAssets } from './entities';
+import { disposeRobotAssets } from './entities';
+import { EnemyPool } from './enemies';
 import { FxPool } from './fx';
 import { PoseInterpolator } from './interp';
 import { PRESETS, type QualityName, type QualityPreset } from './presets';
@@ -67,9 +68,7 @@ export class Renderer {
   // --- camera interpolation state -----------------------------------------
   private readonly interp = new PoseInterpolator();
 
-  // --- enemy pool ----------------------------------------------------------
-  private readonly enemyMeshes: (THREE.Mesh | null)[] = new Array(MAX_ENEMIES).fill(null);
-  private readonly enemyKinds: number[] = new Array(MAX_ENEMIES).fill(-1);
+  private readonly enemies: EnemyPool;
 
   // --- preallocated scratch (never allocate per frame) ---------------------
   private readonly tmpVec = new THREE.Vector3();
@@ -121,6 +120,7 @@ export class Renderer {
 
     this.fx = new FxPool(this.scene, this.presetValue.particles);
     this.viewmodel = new Viewmodel(this.camera);
+    this.enemies = new EnemyPool(this.scene);
 
     this.resize();
   }
@@ -225,7 +225,7 @@ export class Renderer {
     const bobY = this.rig.firstPerson(this.camera, pose, state, dt, reducedMotion);
 
     // 3. enemies
-    this.updateEnemies(state, reducedMotion);
+    this.enemies.update(state, reducedMotion, this.camera, this.elapsed);
 
     // 4. viewmodel
     this.viewmodel.update(state, dt, bobY);
@@ -242,6 +242,7 @@ export class Renderer {
     if (this.disposed) return;
     this.disposed = true;
     this.fx.dispose();
+    this.enemies.dispose();
     this.postfx?.dispose();
     this.postfx = null;
     const geoms = new Set<THREE.BufferGeometry>();
@@ -338,39 +339,6 @@ export class Renderer {
     this.hemiLight.intensity = look.hemiIntensity;
     this.dirLight.color.setHex(look.sun);
     this.dirLight.intensity = look.sunIntensity;
-  }
-
-  /** Lazily build the robot mesh for a slot/kind pair. */
-  private enemyMesh(index: number, kind: number): THREE.Mesh {
-    let mesh = this.enemyMeshes[index];
-    if (!mesh || this.enemyKinds[index] !== kind) {
-      mesh?.removeFromParent();
-      mesh = createRobotMesh(kind);
-      this.enemyKinds[index] = kind;
-      this.scene.add(mesh);
-      this.enemyMeshes[index] = mesh;
-    }
-    return mesh;
-  }
-
-  private updateEnemies(state: Snapshot, reducedMotion: boolean): void {
-    for (let i = 0; i < MAX_ENEMIES; i += 1) {
-      const e = state.enemy(i);
-      const mesh = this.enemyMesh(i, e.kind);
-      if (e.state === ENEMY_STATE.dead) {
-        mesh.visible = false;
-        continue;
-      }
-      mesh.visible = true;
-      // walk bob from the FSM anim phase (skipped under reduced motion)
-      const bob = reducedMotion ? 0 : Math.sin(e.anim * 7) * 0.03;
-      mesh.position.set(e.x, e.y + bob, e.z);
-      mesh.rotation.set(0, e.yaw, 0);
-      // squash / lunge on windup & strike for readability
-      if (e.state === ENEMY_STATE.aim) mesh.scale.set(1, 0.92, 1);
-      else if (e.state === ENEMY_STATE.strike) mesh.scale.set(1, 1.06, 1);
-      else mesh.scale.set(1, 1, 1);
-    }
   }
 
   private handleEvents(events: readonly WorldEvent[], weapon: number): void {
