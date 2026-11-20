@@ -41,7 +41,7 @@ import {
 import { SECTOR_IDS, SECTORS, sectorInfo, type SectorId } from './sectors';
 import { observeTutorial, skipTutorial, startTutorial, tutorialDone, type TutorialState } from './tutorial';
 import { boardFor, fetchBoard, sanitizeName, submitRun, type BoardKey, type RunMode } from '../net/leaderboard';
-import type { MapData, Mutator } from '../world/map';
+import { MUTATORS, type MapData, type Mutator } from '../world/map';
 import {
   INITIAL_FLOW,
   escapeAction,
@@ -301,7 +301,8 @@ export class GameApp {
   private syncMap(): void {
     if (!this.engine || !this.renderer) return;
     const data = this.engine.mapData();
-    this.mutator = data.mutator;
+    // El núcleo publica el mutador en el snapshot (H.mutator), no en la tabla del mapa.
+    this.mutator = MUTATORS[this.engine.state.at(H.mutator)] ?? 'none';
     if (this.map?.id === data.id) return;
     this.map = data;
     this.renderer.setSector(data);
