@@ -33,7 +33,17 @@ Proposed fix, for the owner to approve (not applied):
   library and CI target.
 - `vercel.json` `functions` keys already use the `api/<name>.rs` paths, so they stay valid.
 
-This has not been tested against a real Vercel build.
+Second open question, also unverified: whether Vercel treats **every** `api/**/*.rs` as a
+function entry point. If it does, `api/src/*` and `api/tests/*` would be picked up as functions.
+In that case the library has to move out of `api/` (for example to `lib/`). That change is
+outside this task's ownership and needs its own decision.
+
+Third risk: Vercel may fail the whole build when a `functions` pattern matches no detected
+function ("doesn't match any Serverless Functions"). **Unverified.** If it does, the `functions`
+block in `vercel.json` also breaks the static site's deploy until the root `Cargo.toml` exists.
+**Do not merge `vercel.json` ahead of the layout decision.**
+
+None of this has been tested against a real Vercel build.
 
 ## Sources and findings
 
@@ -56,7 +66,7 @@ work. Items marked **unverified** could not be checked without an account or a r
 | 12 | Upstash's Vercel integration page does not name the Redis variables (it names only QStash, Vector and Search). A redeploy is required after adding them | https://upstash.com/docs/redis/howto/vercelintegration |
 | 13 | rustup installer flags, verified from source: `-y`/`--yes`, `--default-toolchain`, `--profile`, `-t`/`--target` (comma list), `--no-modify-path` | https://raw.githubusercontent.com/rust-lang/rustup/master/src/cli/setup_mode.rs |
 | 14 | Stable Rust is **1.100.0** (released 2026-11-12). The pinned toolchain matches the local one | https://static.rust-lang.org/dist/channel-rust-stable.toml |
-| 15 | The `rustup-init` Linux x86_64 binary's SHA-256 is `b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55`. It matches the published `.sha256` and is pinned in `installCommand` | https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init.sha256 |
+| 15 | Current rustup is **1.29.3** (`release-stable.toml`). The versioned archive `rustup/archive/1.29.3/x86_64-unknown-linux-gnu/rustup-init` has SHA-256 `b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55`, which matches its published `.sha256` and the pin in `installCommand`. The unversioned `rustup/dist/…/rustup-init` always serves the newest release, so using it would break the pin on the next rustup release | https://static.rust-lang.org/rustup/release-stable.toml ; https://static.rust-lang.org/rustup/archive/1.29.3/x86_64-unknown-linux-gnu/rustup-init.sha256 |
 | 16 | `'wasm-unsafe-eval'` is the CSP keyword that lets WebAssembly compile under `script-src` without enabling JS `eval`. Seen in search results (the sqlite.org CSP guide, not fetched). Browser support was **checked only in Chromium** (see CSP section) | https://sqlite.org/wasm/doc/tip/csp.md (search snippet) |
 
 ### Pinned dependencies (versions resolved from the crates.io index)
@@ -149,10 +159,17 @@ Choices the contract left open, recorded here so they can be reviewed:
 
 `installCommand` (in `vercel.json`):
 
-1. `curl` the `rustup-init` binary from `static.rust-lang.org`.
+1. `curl` the pinned `rustup-init` **1.29.3** from `static.rust-lang.org/rustup/archive/1.29.3/…`.
 2. Check its SHA-256 against the pinned value (fails the build on mismatch).
 3. Run `rustup-init -y --profile minimal --default-toolchain 1.100.0 -t wasm32-unknown-unknown --no-modify-path`.
 4. `npm ci`.
+
+The builder is **assumed to be x86_64** (Amazon Linux 2023). If it is aarch64, step 1 fetches a
+binary of the wrong architecture and the build fails loudly. This is unverified.
+
+**Bumping rustup**: on every rustup release, read `https://static.rust-lang.org/rustup/release-stable.toml`,
+download `archive/<ver>/x86_64-unknown-linux-gnu/rustup-init` and its `.sha256`, check the hash, then
+update the version in the URL and the SHA in `vercel.json`. Do this in its own commit.
 
 `buildCommand`: `export PATH="$HOME/.cargo/bin:$PATH" && npm run build`. The build runs
 `cargo build --target wasm32-unknown-unknown` through `scripts/build-wasm.mjs`, then
@@ -166,6 +183,10 @@ including the toolchain download and the wasm target, is slower. **Unverified**:
 
 Risk: `lto = "fat"` with `codegen-units = 1` is the slowest setting. Switch to `"thin"` if
 preview builds approach the build timeout.
+
+Local macOS note: `ring` compiles C code. Without the Xcode SDK on the C compiler's path,
+`cargo test --manifest-path api/Cargo.toml` fails with `TargetConditionals.h not found`. Run
+it with `SDKROOT="$(xcrun --show-sdk-path)"` set. Linux CI and Vercel are not affected.
 
 ## Replay cost
 
@@ -252,6 +273,9 @@ Caching:
 
 ## Unverifiable here
 
+- Builder architecture: assumed x86_64 (the rustup pin is x86_64 only).
+- Whether Vercel treats every `api/**/*.rs` as a function, and whether a `functions`
+  pattern with no match fails the whole deploy (see "Decision needed").
 - Vercel's build with the rustup install, the wasm target and the Rust function build
   (no account, no build run).
 - Whether the Rust runtime accepts `api/Cargo.toml` in place of a root manifest (the docs say
