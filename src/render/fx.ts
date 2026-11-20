@@ -98,11 +98,10 @@ export class FxPool {
     scene.add(this.flash);
   }
 
-  /** Flash quad at a world position; also usable for enemy muzzle blazes. */
-  muzzle(worldPos: THREE.Vector3): void {
+  /** Flash quad at a world position; `size` (metres) is per weapon, the shotgun's is the largest. */
+  muzzle(worldPos: THREE.Vector3, size = 0.24): void {
     this.flash.position.copy(worldPos);
-    const s = 0.24 + Math.random() * 0.12;
-    this.flash.scale.set(s, s, 1);
+    this.flash.scale.set(size, size, 1);
     this.flashLife = FLASH_LIFE;
     this.flash.visible = true;
   }

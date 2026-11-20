@@ -346,7 +346,7 @@ export class Renderer {
       switch (ev.type) {
         case EVT.shot: {
           this.viewmodel.muzzleWorld(weapon, this.muzzleWorld);
-          this.fx.muzzle(this.muzzleWorld);
+          this.fx.muzzle(this.muzzleWorld, this.viewmodel.flashSize(weapon));
           this.pendingOrigin.copy(this.muzzleWorld);
           this.pendingValid = true;
           break;
