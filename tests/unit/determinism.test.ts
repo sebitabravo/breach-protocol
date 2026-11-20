@@ -6,6 +6,13 @@ import { I, INPUT_LEN, MODE } from '../../src/wasm/protocol';
 /** Mismo valor que `GOLDEN_HASH` en core/src/replay.rs: lo fija el test nativo. */
 const GOLDEN_TICKS = 4000;
 const GOLDEN_HASH = 6051080362437244339n;
+/** Escenarios 0..3 de `replay::scenario_hash` (core/src/replay.rs), con los mismos valores. */
+const SCENARIO_HASHES = [
+  6051080362437244339n,
+  8473981006168998935n,
+  14559882121426080077n,
+  1992019841316245935n,
+];
 
 let engine: Engine;
 
@@ -45,6 +52,31 @@ describe('cross-target determinism (native cargo vs wasm in this runtime)', () =
       expect(log.length).toBeGreaterThan(16);
       expect(engine.replayHash(log)).toBe(live);
     }
+  });
+
+  it('overflow and daily runs replay to the live hash', () => {
+    const cases = [
+      { mode: MODE.overflow, map: 2, seed: 77, aimAssist: false, autoReload: true },
+      { mode: MODE.daily, map: 0, seed: 20261120, aimAssist: false, autoReload: true },
+    ];
+    for (const options of cases) {
+      expect(engine.start(options)).toBe(true);
+      const input = new Float32Array(INPUT_LEN);
+      for (let t = 0; t < 1800; t += 1) {
+        scriptedInput(t, input);
+        engine.tick(input);
+      }
+      expect(engine.replayHash(engine.encodeLog())).toBe(hashSnapshot(engine.state.float));
+    }
+  });
+
+  it('scenario hashes match the native pins, including the new content', async () => {
+    const bytes = readFileSync(new URL('../../public/bp_core.wasm', import.meta.url));
+    const { instance } = await WebAssembly.instantiate(bytes as BufferSource, {});
+    const scenarioHash = instance.exports.bp_scenario_hash as (id: number, ticks: number) => bigint;
+    SCENARIO_HASHES.forEach((pinned, id) => {
+      expect(BigInt.asUintN(64, scenarioHash(id, GOLDEN_TICKS))).toBe(pinned);
+    });
   });
 
   it('a corrupted log is rejected instead of simulated', () => {
