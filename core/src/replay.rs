@@ -575,6 +575,24 @@ mod tests {
     }
 
     #[test]
+    fn restarting_a_used_game_equals_a_fresh_game() {
+        let play = |g: &mut Game| {
+            g.start(MODE_MISSION, 1, 77, FLAG_AUTO_RELOAD);
+            for t in 0..900 {
+                g.step(golden_input(t));
+            }
+            hash_snapshot(g)
+        };
+        let mut used = Game::new(1);
+        used.start(MODE_MISSION, 2, 5, 0);
+        for t in 0..600 {
+            used.step(golden_input(t + 31));
+        }
+        let mut fresh = Game::new(1);
+        assert_eq!(play(&mut used), play(&mut fresh));
+    }
+
+    #[test]
     fn golden_hash_is_pinned() {
         // Si este valor cambia, cambió el comportamiento de la simulación o la
         // aritmética dejó de ser reproducible. El mismo número lo comprueba

@@ -6,15 +6,12 @@
 //!
 //! Contract (see `src/wasm/protocol.ts`):
 //!   bp_init(seed)                      -> protocol version
-//!   bp_reset(seed)                     -> starts a new match
-//!   bp_tick(dt, input_ptr)             -> tick count
+//!   bp_start(mode, map, seed, flags)   -> 1 on success; also arms the input recorder
+//!   bp_tick_fixed(input_ptr)           -> tick count (fixed step, host never picks dt)
 //!   bp_snapshot_ptr() / bp_snapshot_len()
-//!   bp_set_arena(ptr, count)           -> boxes loaded
-//!   bp_set_nodes(ptr, count)
-//!   bp_set_spawns(ptr, count)
-//!   bp_set_player_start(x, z, yaw)
-//!   bp_set_aim_assist(flag)
-//!   bp_set_practice(flag)
+//!   bp_map_data_ptr() / bp_map_data_len() / bp_load_map(id)
+//!   bp_log_encode() / bp_log_ptr() / bp_log_truncated()
+//!   bp_replay_hash(ptr, len) / bp_golden_hash(ticks)
 //!   bp_note_dropped(n)
 //!   bp_alloc(len) / bp_free(ptr, len)
 

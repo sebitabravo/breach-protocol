@@ -312,6 +312,11 @@ impl Game {
         self.interacting = -1;
         self.event_head = 0;
         self.event_count = 0;
+        // Estado de eventos viejo no debe sobrevivir a una partida nueva: el replay del
+        // servidor arranca de cero y los hashes tienen que coincidir.
+        self.event_seq = 0;
+        self.snapshot = [0.0; SNAPSHOT_LEN];
+        self.input = Input::default();
         self.waves.begin(1);
         self.push_event(ev::WAVE_START, 1.0, 0.0, 0.0, 0.0);
         self.write_snapshot();
