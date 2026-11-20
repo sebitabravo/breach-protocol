@@ -11,7 +11,8 @@ import { createRobotMesh } from './entities';
 import { Telegraph } from './telegraph';
 
 const EYE_HEX = 0xff5b6b;
-const HOT_HEX = 0xffe1e4;
+/** Telegrama de embestida: rojo intenso, no blanco, para no quemar el halo. */
+const HOT_HEX = 0xff9aa3;
 const PLAYER_CHEST_OFFSET = 1.1;
 const SENTINEL_MUZZLE = { x: 0.36, y: 1.05, z: 0.5 } as const;
 
@@ -67,7 +68,7 @@ export function robotLook(kind: number, state: number): RobotLook {
     case ENEMY_STATE.charge:
       if (interceptor) {
         look.lean += 0.3;
-        look.glow = 2.6;
+        look.glow = 2.2;
         look.hex = HOT_HEX;
       }
       break;

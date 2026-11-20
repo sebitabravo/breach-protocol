@@ -16,9 +16,9 @@ const IDENTITY = new THREE.Matrix4();
  * BELOW the HUD and never becomes the brightest object in the frame, ONE
  * mint accent stripe so it reads as foreground geometry, not UI. */
 const W = {
-  dark: 0x161b21,
-  body: 0x232b33,
-  border: 0x313a43,
+  dark: 0x1f262e,
+  body: 0x3a4753,
+  border: 0x4a5865,
   accent: 0x5ce08b,
   sight: 0x5ce08b,
 } as const;
