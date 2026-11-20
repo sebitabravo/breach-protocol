@@ -10,7 +10,7 @@ import {
 
 const LOG = new Uint8Array([0x42, 0x50, 0x4c, 0x31, 1, 0, 2, 255]);
 
-function reply(status: number, body: unknown): Response {
+function reply(status: number, body?: unknown): Response {
   return new Response(body === undefined ? 'not json' : JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json' },
@@ -78,14 +78,19 @@ describe('boardFor', () => {
   });
 });
 
+function decodeBase64(text: string): Uint8Array {
+  return Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
+}
+
 describe('encodeLogBase64', () => {
   it('is standard base64 of the raw bytes', () => {
-    expect(encodeLogBase64(LOG)).toBe(Buffer.from(LOG).toString('base64'));
+    expect(encodeLogBase64(LOG)).toBe('QlBMMQEAAv8=');
+    expect(decodeBase64(encodeLogBase64(LOG))).toEqual(LOG);
   });
 
   it('handles logs far larger than the call-stack argument limit', () => {
     const big = new Uint8Array(1_000_000).map((_, i) => i * 31);
-    const decoded = Buffer.from(encodeLogBase64(big), 'base64');
+    const decoded = decodeBase64(encodeLogBase64(big));
     expect(decoded.length).toBe(big.length);
     expect(decoded[999_999]).toBe(big[999_999]);
   });
