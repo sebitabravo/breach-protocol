@@ -16,6 +16,7 @@
 //!   bp_alloc(len) / bp_free(ptr, len)
 
 mod arena;
+mod daily;
 mod enemy;
 mod maps;
 mod math;
@@ -173,6 +174,17 @@ pub unsafe extern "C" fn bp_replay_hash(ptr: *const u8, len: usize) -> u64 {
     }
     let bytes = core::slice::from_raw_parts(ptr, len);
     replay::run_bytes(bytes).map_or(0, |o| o.hash)
+}
+
+/// Mapa y mutador del desafío de la fecha `yyyymmdd`, empaquetados como `map | mutator << 8`.
+/// Devuelve 0 si la fecha no es válida (el mutador 0 nunca aplica al diario).
+#[no_mangle]
+pub extern "C" fn bp_daily_config(date: u32) -> u32 {
+    if !daily::is_valid_date(date) {
+        return 0;
+    }
+    let (map, mutator) = daily::daily_config(date);
+    map as u32 | (mutator as u32) << 8
 }
 
 /// Hash de la partida dorada: la misma constante la fija un test nativo.

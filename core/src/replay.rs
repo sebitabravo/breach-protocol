@@ -8,9 +8,10 @@
 //! Límite conocido: un replay impide puntajes falsificados, no impide un bot
 //! que apunte perfecto. La entrada sigue siendo "humana" solo por confianza.
 
+use crate::daily;
 use crate::player::{quantize_axis, quantize_look, Input, LOOK_UNITS_PER_RAD};
 use crate::protocol::phase;
-use crate::sim::{Game, MODE_PRACTICE};
+use crate::sim::{Game, MODE_DAILY, MODE_PRACTICE};
 
 pub const MAGIC: [u8; 4] = *b"BPL1";
 pub const LOG_VERSION: u8 = 1;
@@ -267,6 +268,7 @@ pub fn decode(bytes: &[u8]) -> Result<Log, ReplayError> {
         return Err(ReplayError::BadField);
     }
     let seed = c.u32()?;
+    check_daily_header(mode, map, seed)?;
     let ticks = c.u32()?;
     if ticks > MAX_TICKS {
         return Err(ReplayError::TooManyTicks);
@@ -371,8 +373,24 @@ pub fn outcome_of(g: &Game, ticks: u32) -> Outcome {
     }
 }
 
+/// En el diario la semilla es la fecha: el mapa del encabezado debe ser el de esa fecha.
+/// Un encabezado con otro mapa o una fecha inválida no es una partida del desafío.
+fn check_daily_header(mode: u8, map: u8, seed: u32) -> Result<(), ReplayError> {
+    if mode != MODE_DAILY {
+        return Ok(());
+    }
+    if !daily::is_valid_date(seed) {
+        return Err(ReplayError::BadField);
+    }
+    if map != daily::daily_config(seed).0 {
+        return Err(ReplayError::BadMap);
+    }
+    Ok(())
+}
+
 /// Re-simula un registro completo y devuelve el resultado calculado localmente.
 pub fn run(log: &Log) -> Result<Outcome, ReplayError> {
+    check_daily_header(log.header.mode, log.header.map, log.header.seed)?;
     let mut g = Game::new(log.header.seed);
     if !g.start(
         log.header.mode,
@@ -444,7 +462,7 @@ pub fn golden_hash(ticks: u32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::{FLAG_AUTO_RELOAD, MODE_MISSION};
+    use crate::sim::{FLAG_AUTO_RELOAD, FLAG_SHOTGUN, MODE_MISSION};
 
     fn record(mode: u8, map: u8, seed: u32, flags: u8, ticks: u32) -> (Vec<u8>, Outcome) {
         let mut g = Game::new(seed);
@@ -460,7 +478,7 @@ mod tests {
         }
         let header = Header {
             mode,
-            map,
+            map: g.map_id,
             flags,
             seed,
             ticks: rec.ticks(),
@@ -600,6 +618,73 @@ mod tests {
         // aritmética dejó de ser reproducible. El mismo número lo comprueba
         // vitest contra el wasm (tests/unit/determinism.test.ts).
         assert_eq!(golden_hash(GOLDEN_TICKS), GOLDEN_HASH);
+    }
+
+    #[test]
+    fn daily_replay_reproduces_the_live_run_for_every_mutator() {
+        use crate::daily::{date_with_mutator, MUTATOR_GLASS, MUTATOR_IRONHIDE, MUTATOR_SWARM};
+        for mutator in [MUTATOR_SWARM, MUTATOR_GLASS, MUTATOR_IRONHIDE] {
+            // El mapa que se pasa no importa: el desafío usa el de la fecha.
+            let (bytes, live) = record(
+                MODE_DAILY,
+                0,
+                date_with_mutator(mutator),
+                FLAG_AUTO_RELOAD,
+                1500,
+            );
+            assert_eq!(
+                run_bytes(&bytes).expect("valid daily log"),
+                live,
+                "mutator {mutator}"
+            );
+        }
+    }
+
+    #[test]
+    fn daily_header_with_another_map_is_rejected() {
+        let date = 20261120;
+        let (mut bytes, _) = record(MODE_DAILY, 0, date, 0, 200);
+        let correct = crate::daily::daily_config(date).0;
+        // Encabezado: magic(4) version(1) mode(1) map(1) flags(1) seed(4) ticks(4).
+        bytes[6] = (correct + 1) % crate::maps::MAP_COUNT;
+        assert_eq!(decode(&bytes).err(), Some(ReplayError::BadMap));
+        assert_eq!(run_bytes(&bytes).err(), Some(ReplayError::BadMap));
+    }
+
+    #[test]
+    fn daily_seed_must_be_a_real_date() {
+        let (mut bytes, _) = record(MODE_DAILY, 0, 20261120, 0, 200);
+        bytes[8..12].copy_from_slice(&20261332u32.to_le_bytes());
+        assert_eq!(decode(&bytes).err(), Some(ReplayError::BadField));
+    }
+
+    #[test]
+    fn a_reused_game_after_daily_runs_matches_a_fresh_game() {
+        // El cliente reutiliza una instancia; el servidor siempre usa una nueva.
+        use crate::daily::{date_with_mutator, MUTATOR_GLASS, MUTATOR_IRONHIDE};
+        let play = |g: &mut Game| {
+            g.start(MODE_MISSION, 1, 77, FLAG_AUTO_RELOAD);
+            for t in 0..900 {
+                g.step(golden_input(t));
+            }
+            hash_snapshot(g)
+        };
+        let mut used = Game::new(1);
+        assert!(used.start(
+            MODE_DAILY,
+            0,
+            date_with_mutator(MUTATOR_GLASS),
+            FLAG_SHOTGUN
+        ));
+        for t in 0..400 {
+            used.step(golden_input(t));
+        }
+        assert!(used.start(MODE_DAILY, 0, date_with_mutator(MUTATOR_IRONHIDE), 0));
+        for t in 0..400 {
+            used.step(golden_input(t));
+        }
+        let mut fresh = Game::new(1);
+        assert_eq!(play(&mut used), play(&mut fresh));
     }
 
     const GOLDEN_TICKS: u32 = 4000;

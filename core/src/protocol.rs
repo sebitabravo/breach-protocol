@@ -56,7 +56,8 @@ pub const H_ADS: usize = 45;
 pub const H_EVENTS_HEAD: usize = 46;
 pub const H_EVENTS_COUNT: usize = 47;
 // 48 libre (sin uso desde protocol 1).
-pub const H_RESERVED_LAST: usize = 49;
+/// Id del mutador del desafío diario (0 = ninguno). Mirror: `H.mutator` en protocol.ts.
+pub const H_MUTATOR: usize = 49;
 
 pub const HEADER_LEN: usize = 64;
 
@@ -154,7 +155,7 @@ const _: () = {
     assert!(ENEMY_BASE + ENEMY_BLOCK_LEN <= NODE_BASE);
     assert!(NODE_BASE + NODE_BLOCK_LEN <= EVENT_BASE);
     assert!(EVENT_BASE + EVENT_BLOCK_LEN <= SNAPSHOT_LEN);
-    assert!(H_RESERVED_LAST < HEADER_LEN);
+    assert!(H_MUTATOR < HEADER_LEN);
 };
 
 #[cfg(test)]

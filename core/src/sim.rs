@@ -4,6 +4,7 @@
 //! no WebGL, no allocations inside `tick`.
 
 use crate::arena::Arena;
+use crate::daily;
 use crate::enemy::{self, Action, Enemy, EnemyContext, EMPTY_ENEMY};
 use crate::math::{clamp, forward_from_yaw, right_from_yaw, v3, V3};
 use crate::player::{Input, Player, EYE_HEIGHT, HEIGHT, RADIUS};
@@ -98,6 +99,8 @@ pub struct Game {
     pub practice: bool,
     pub auto_reload: bool,
     pub shotgun_unlocked: bool,
+    /// Mutador activo (solo el desafío diario lo tiene; ver `daily.rs`).
+    pub mutator: u8,
     pub map_id: u8,
     pub mode: u8,
     pub input: Input,
@@ -146,6 +149,7 @@ impl Game {
             practice: false,
             auto_reload: true,
             shotgun_unlocked: false,
+            mutator: daily::MUTATOR_NONE,
             map_id: 0,
             mode: MODE_MISSION,
             input: Input::default(),
@@ -205,10 +209,23 @@ impl Game {
 
     /// Inicia una partida completa. Es el único punto de entrada que reproduce el servidor.
     pub fn start(&mut self, mode: u8, map: u8, seed: u32, flags: u8) -> bool {
-        if mode > MODE_PRACTICE || !self.load_map(map) {
+        if mode > MODE_PRACTICE {
+            return false;
+        }
+        // En el diario la semilla es la fecha: ella fija el mapa y el mutador, no el argumento `map`.
+        let (map, mutator) = if mode == MODE_DAILY {
+            if !daily::is_valid_date(seed) {
+                return false;
+            }
+            daily::daily_config(seed)
+        } else {
+            (map, daily::MUTATOR_NONE)
+        };
+        if !self.load_map(map) {
             return false;
         }
         self.mode = mode;
+        self.mutator = mutator;
         self.practice = mode == MODE_PRACTICE;
         self.aim_assist = flags & FLAG_AIM_ASSIST != 0;
         self.auto_reload = flags & FLAG_AUTO_RELOAD != 0;
@@ -296,6 +313,10 @@ impl Game {
         self.seed = seed;
         self.rng = Rng::new(seed);
         self.player = Player::new(self.player_start, self.player_start_yaw);
+        let rules = daily::rules(self.mutator);
+        self.player.hp_max = rules.player_hp_max;
+        self.player.hp = rules.player_hp_max;
+        self.player.reserve = self.player.reserve.saturating_mul(rules.reserve_mult);
         for e in self.enemies.iter_mut() {
             *e = EMPTY_ENEMY;
         }
@@ -329,7 +350,7 @@ impl Game {
 
     /// Arranca la oleada `wave` con la composición del sector actual.
     fn begin_wave(&mut self, wave: u32) {
-        let comp = mission_composition(self.map_id, wave);
+        let comp = daily::rules(self.mutator).scale(mission_composition(self.map_id, wave));
         self.waves.begin(wave, comp);
     }
 
@@ -432,6 +453,8 @@ impl Game {
             && unlocked
             && self.player.equip(input.switch)
         {
+            let reserve_mult = daily::rules(self.mutator).reserve_mult;
+            self.player.reserve = self.player.reserve.saturating_mul(reserve_mult);
             self.push_event(ev::RELOAD_END, self.player.weapon as f32, 0.0, 0.0, 0.0);
         }
 
@@ -742,6 +765,10 @@ impl Game {
         );
         let yaw = enemy::dir_to_yaw(v3(self.player.pos.x - x, 0.0, self.player.pos.z - z));
         self.enemies[idx] = Enemy::spawn(v3(x, 0.0, z), kind, yaw, (self.waves.spawned % 7) as u8);
+        let hp_scale = daily::rules(self.mutator).enemy_hp_pct as f32 / 100.0;
+        let spawned = &mut self.enemies[idx];
+        spawned.hp *= hp_scale;
+        spawned.hp_max = spawned.hp;
         self.push_event(ev::SPAWN, x, 0.0, z, kind as f32);
     }
 
@@ -841,6 +868,7 @@ impl Game {
         s[H_ADS] = self.player.ads;
         s[H_EVENTS_HEAD] = self.event_head as f32;
         s[H_EVENTS_COUNT] = self.event_count as f32;
+        s[H_MUTATOR] = self.mutator as f32;
 
         for (i, e) in self.enemies.iter().enumerate() {
             let base = ENEMY_BASE + i * ENEMY_STRIDE;
@@ -1296,5 +1324,78 @@ mod tests {
             enemy::SCOUT.hp - g.enemies[0].hp >= 12.0,
             "fewer than two pellets reached the target; the regression is not exercised"
         );
+    }
+
+    fn daily_game(mutator: u8) -> Game {
+        let mut g = Game::new(1);
+        assert!(g.start(MODE_DAILY, 0, crate::daily::date_with_mutator(mutator), 0));
+        g
+    }
+
+    #[test]
+    fn glass_halves_the_player_health() {
+        let g = daily_game(daily::MUTATOR_GLASS);
+        assert_eq!(g.player.hp_max, 50.0);
+        assert_eq!(g.player.hp, 50.0);
+    }
+
+    #[test]
+    fn ironhide_doubles_the_reserve_and_hardens_enemies() {
+        let mut g = daily_game(daily::MUTATOR_IRONHIDE);
+        assert_eq!(g.player.reserve, weapons::SIDEARM.reserve * 2);
+        g.spawn_one();
+        let scout = g
+            .enemies
+            .iter()
+            .find(|e| e.is_alive())
+            .expect("one spawned");
+        assert!(
+            (scout.hp - enemy::SCOUT.hp * 1.5).abs() < 1e-4,
+            "{}",
+            scout.hp
+        );
+    }
+
+    #[test]
+    fn swarm_queues_more_enemies_and_makes_them_weaker() {
+        let mut g = daily_game(daily::MUTATOR_SWARM);
+        let expected = daily::rules(daily::MUTATOR_SWARM).scale(mission_composition(g.map_id, 1));
+        assert_eq!(g.waves.queued() as u32, expected.total());
+        assert!(expected.total() > mission_composition(g.map_id, 1).total());
+        g.spawn_one();
+        let scout = g
+            .enemies
+            .iter()
+            .find(|e| e.is_alive())
+            .expect("one spawned");
+        assert!(
+            (scout.hp - enemy::SCOUT.hp * 0.7).abs() < 1e-4,
+            "{}",
+            scout.hp
+        );
+    }
+
+    #[test]
+    fn the_active_mutator_is_exposed_in_the_snapshot_header() {
+        let g = daily_game(daily::MUTATOR_GLASS);
+        assert_eq!(g.snapshot[H_MUTATOR], daily::MUTATOR_GLASS as f32);
+        let mut mission = Game::new(1);
+        assert!(mission.start(MODE_MISSION, 0, 1, 0));
+        assert_eq!(mission.snapshot[H_MUTATOR], 0.0);
+    }
+
+    #[test]
+    fn daily_takes_its_map_from_the_date_not_from_the_argument() {
+        let date = crate::daily::date_with_mutator(daily::MUTATOR_SWARM);
+        let wanted = crate::daily::daily_config(date).0;
+        let mut g = Game::new(1);
+        assert!(g.start(MODE_DAILY, (wanted + 1) % 3, date, 0));
+        assert_eq!(g.map_id, wanted);
+    }
+
+    #[test]
+    fn daily_rejects_a_seed_that_is_not_a_date() {
+        let mut g = Game::new(1);
+        assert!(!g.start(MODE_DAILY, 0, 20261332, 0));
     }
 }
