@@ -5,12 +5,18 @@ on:
     branches: [main]
     paths:
       - "api/**"
+      - "server/**"
       - "core/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/api.yml"
   pull_request:
     paths:
       - "api/**"
+      - "server/**"
       - "core/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/api.yml"
 
 permissions:
@@ -22,7 +28,7 @@ concurrency:
 
 jobs:
   api:
-    name: API crate (fmt, clippy, tests)
+    name: API workspace (fmt, clippy, tests)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -32,11 +38,9 @@ jobs:
           rustup toolchain install 1.100.0 --profile minimal --component rustfmt --component clippy
           rustup default 1.100.0
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: api
       - name: Format check
-        run: cargo fmt --manifest-path api/Cargo.toml --check
+        run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy --manifest-path api/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
-        run: cargo test --manifest-path api/Cargo.toml --locked
+        run: cargo test --workspace --locked
