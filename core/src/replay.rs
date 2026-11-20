@@ -307,7 +307,7 @@ pub fn decode(bytes: &[u8]) -> Result<Log, ReplayError> {
         if frames.len() + count > ticks as usize {
             return Err(ReplayError::TickMismatch);
         }
-        frames.extend(std::iter::repeat(f).take(count));
+        frames.extend(std::iter::repeat_n(f, count));
     }
     if c.at != bytes.len() {
         return Err(ReplayError::TrailingBytes);
@@ -411,14 +411,14 @@ pub fn golden_input(t: u32) -> Input {
         look_dx: (((t * 7) % 13) as i32 - 6) as f32 / LOOK_UNITS_PER_RAD * 40.0,
         look_dy: (((t * 5) % 7) as i32 - 3) as f32 / LOOK_UNITS_PER_RAD * 12.0,
         fire_held: t % 90 < 40,
-        fire_pressed: t % 90 == 0,
+        fire_pressed: t.is_multiple_of(90),
         jump: t % 150 == 149,
         interact: t % 300 > 250,
         reload: t % 400 == 399,
-        run: phase % 5 == 0,
+        run: phase.is_multiple_of(5),
         switch: if t % 500 == 250 {
             2
-        } else if t % 500 == 0 {
+        } else if t.is_multiple_of(500) {
             1
         } else {
             0

@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn sidearm_is_semianutomatic() {
-        assert!(wants_shot(&SIDEARM, true, false) == false);
+        assert!(!wants_shot(&SIDEARM, true, false));
         assert!(wants_shot(&SIDEARM, false, true));
     }
 

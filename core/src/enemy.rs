@@ -286,11 +286,7 @@ impl Enemy {
                     }
                 }
             }
-            ST_RECOVER => {
-                if self.state_time >= d.cooldown * 0.55 {
-                    self.set_state(ST_CHASE);
-                }
-            }
+            ST_RECOVER if self.state_time >= d.cooldown * 0.55 => self.set_state(ST_CHASE),
             _ => {}
         }
 
@@ -475,10 +471,7 @@ mod tests {
             }
         }
         assert!(windups >= 1, "telegraph must precede damage");
-        assert!(
-            melee_hits >= 1 && melee_hits <= 2,
-            "melee hits: {melee_hits}"
-        );
+        assert!((1..=2).contains(&melee_hits), "melee hits: {melee_hits}");
     }
 
     #[test]
