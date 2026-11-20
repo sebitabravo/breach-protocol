@@ -8,6 +8,7 @@
  */
 import { I, INPUT_LEN } from '../wasm/protocol';
 import type { Settings } from '../core/settings';
+import { KeyboardState, shouldPreventDefault } from './keyboard';
 
 const MOUSE_RAD_PER_PX = 0.0021;
 const TOUCH_RAD_PER_PX = 0.0034;
@@ -17,6 +18,8 @@ export interface InputHooks {
   onPause(): void;
   onEngineering(): void;
   onPointerLockLost(): void;
+  onPointerLockError(): void;
+  isPlaying(): boolean;
   onTouchDetected(): void;
   getWeapon(): number;
 }
@@ -34,7 +37,7 @@ interface TrackedPointer {
 export class InputManager {
   readonly buffer = new Float32Array(INPUT_LEN);
 
-  private keys = new Set<string>();
+  private kb = new KeyboardState();
   private lookX = 0;
   private lookY = 0;
   private fireHeld = false;
@@ -104,6 +107,7 @@ export class InputManager {
     this.stick?.addEventListener('pointermove', this.onStickMove);
     this.stick?.addEventListener('pointerup', this.onStickUp);
     this.stick?.addEventListener('pointercancel', this.onStickUp);
+    this.stick?.addEventListener('lostpointercapture', this.onStickUp);
   }
 
   detach(): void {
@@ -128,6 +132,7 @@ export class InputManager {
     this.stick?.removeEventListener('pointermove', this.onStickMove);
     this.stick?.removeEventListener('pointerup', this.onStickUp);
     this.stick?.removeEventListener('pointercancel', this.onStickUp);
+    this.stick?.removeEventListener('lostpointercapture', this.onStickUp);
   }
 
   // --------------------------------------------------------------- frame api
@@ -137,9 +142,9 @@ export class InputManager {
     this.frameLookX = this.lookX;
     this.frameLookY = this.lookY;
     this.frameFirePressed = this.firePressed;
-    this.frameJumpPressed = this.jumpPressed;
-    this.frameReloadPressed = this.reloadPressed;
-    this.frameSwitch = this.switchTo;
+    this.frameJumpPressed = this.jumpPressed || this.kb.consumeJump();
+    this.frameReloadPressed = this.reloadPressed || this.kb.consumeReload();
+    this.frameSwitch = this.switchTo || this.kb.consumeSwitch();
     this.lookX = 0;
     this.lookY = 0;
     this.firePressed = false;
@@ -147,7 +152,7 @@ export class InputManager {
     this.reloadPressed = false;
     this.switchTo = 0;
 
-    const keys = this.keys;
+    const keys = this.kb;
     let mx = 0;
     let mz = 0;
     if (keys.has('KeyW') || keys.has('ArrowUp')) mz += 1;
@@ -175,16 +180,16 @@ export class InputManager {
     target[I.fireHeld] = this.fireHeld || this.touchFire ? 1 : 0;
     target[I.firePressed] = first && this.frameFirePressed ? 1 : 0;
     target[I.jump] = first && this.frameJumpPressed ? 1 : 0;
-    target[I.interact] = this.keys.has('KeyE') || this.touchInteract ? 1 : 0;
+    target[I.interact] = this.kb.has('KeyE') || this.touchInteract ? 1 : 0;
     target[I.reload] = first && this.frameReloadPressed ? 1 : 0;
-    target[I.run] = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 1 : 0;
+    target[I.run] = this.kb.has('ShiftLeft') || this.kb.has('ShiftRight') ? 1 : 0;
     target[I.switch] = first ? this.frameSwitch : 0;
     target[I.ads] = this.adsHeld ? 1 : 0;
   }
 
   /** Clears every held state: used on pause, blur and orientation change. */
   reset(): void {
-    this.keys.clear();
+    this.kb.clear();
     this.pointers.clear();
     this.lookX = 0;
     this.lookY = 0;
@@ -228,31 +233,26 @@ export class InputManager {
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
-    if (event.repeat) {
-      return;
-    }
     const code = event.code;
     if (code === 'Escape') {
-      this.hooks.onPause();
+      if (!event.repeat) this.hooks.onPause();
       return;
     }
     if (code === 'F3') {
       event.preventDefault();
-      this.hooks.onEngineering();
+      if (!event.repeat) this.hooks.onEngineering();
       return;
     }
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(code)) {
-      if (document.activeElement === document.body || code !== 'Tab') event.preventDefault();
+    const target = event.target as HTMLElement | null;
+    const formTarget = target?.closest?.('input, select, textarea, button') != null;
+    if (shouldPreventDefault(code, { playing: this.hooks.isPlaying(), formTarget })) {
+      event.preventDefault();
     }
-    this.keys.add(code);
-    if (code === 'Space') this.jumpPressed = true;
-    if (code === 'KeyR') this.reloadPressed = true;
-    if (code === 'Digit1') this.switchTo = 1;
-    if (code === 'Digit2') this.switchTo = 2;
+    this.kb.keyDown(code, event.repeat);
   };
 
   private onKeyUp = (event: KeyboardEvent): void => {
-    this.keys.delete(event.code);
+    this.kb.keyUp(event.code);
   };
 
   private onBlur = (): void => {
@@ -288,7 +288,7 @@ export class InputManager {
 
   private onPointerLockError = (): void => {
     this.pointerLocked = false;
-    this.hooks.onPointerLockLost();
+    this.hooks.onPointerLockError();
   };
 
   private markTouch(event: PointerEvent): void {

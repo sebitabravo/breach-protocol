@@ -8,7 +8,7 @@
 import { Engine, type Snapshot, type WorldEvent } from '../wasm/bridge';
 import { EVT, H, PHASE, WEAPON } from '../wasm/protocol';
 import { Renderer } from '../render/renderer';
-import { InputManager } from '../input/input';
+import { InputManager, type InputHooks } from '../input/input';
 import { AudioManager } from '../audio/audio';
 import { Hud } from '../ui/hud';
 import { Engineering } from '../ui/engineering';
@@ -23,9 +23,16 @@ import {
 } from './settings';
 import { bestScore, grade, saveScore, type RunResult } from './scores';
 import { PLAYER_START, colliderData, nodeData, spawnData } from '../world/layout';
-
-type Screen = 'boot' | 'menu' | 'calibrate' | 'about' | 'playing' | 'pause' | 'result' | 'fallback';
-type Mode = 'run' | 'practice';
+import {
+  escapeAction,
+  pauseSubtitle,
+  pointerLockErrorAction,
+  pointerLockLostAction,
+  type Mode,
+  type PauseOrigin,
+  type Screen,
+  type ScreenState,
+} from './screens';
 
 const ENGINE_URL = `${import.meta.env.BASE_URL}bp_core.wasm`;
 
@@ -57,7 +64,7 @@ export class GameApp {
 
   private screen: Screen = 'boot';
   private mode: Mode = 'run';
-  private pauseOrigin: 'game' | 'menu' = 'game';
+  private pauseOrigin: PauseOrigin = 'game';
   private lastSeq = 0;
   private events: WorldEvent[] = [];
   private frameSamples: number[] = [];
@@ -186,6 +193,8 @@ export class GameApp {
     this.audio.unlock();
     this.audio.resume();
     this.finished = false;
+    this.mode = mode;
+    this.pauseOrigin = 'game';
 
     this.engine.setPractice(mode === 'practice');
     this.engine.setAimAssist(this.settings.aimAssistTouch && this.input.usingTouch);
@@ -204,14 +213,13 @@ export class GameApp {
     void this.input.requestPointerLock();
   }
 
-  private pause(origin: 'game' | 'menu' = this.pauseOrigin): void {
+  private pause(origin: PauseOrigin = this.pauseOrigin): void {
     if (this.screen !== 'playing') return;
     this.pauseOrigin = origin;
     this.input?.reset();
     this.input?.releasePointerLock();
     this.setScreen('pause');
-    el('pause-sub').textContent =
-      this.mode === 'practice' ? 'Campo de práctica · sin límite' : 'Sector 01 · protocolo en curso';
+    el('pause-sub').textContent = pauseSubtitle(this.mode);
     const resume = this.app.querySelector<HTMLElement>('[data-action="resume"]');
     if (resume) resume.textContent = 'Continuar ▸';
     this.audio.suspend();
@@ -422,22 +430,28 @@ export class GameApp {
 
   // ------------------------------------------------------------- UI wiring
 
-  private inputHooks(): {
-    onPause: () => void;
-    onEngineering: () => void;
-    onPointerLockLost: () => void;
-    onTouchDetected: () => void;
-    getWeapon: () => number;
-  } {
+  private screenState(): ScreenState {
+    return { screen: this.screen, mode: this.mode, pauseOrigin: this.pauseOrigin };
+  }
+
+  private inputHooks(): InputHooks {
     return {
       onPause: () => {
-        if (this.screen === 'playing') this.pause('game');
-        else if (this.screen === 'pause') this.resume();
+        const action = escapeAction(this.screenState());
+        if (action === 'pause') this.pause('game');
+        else if (action === 'resume') this.resume();
+        else if (action === 'menu') this.goToMenu();
       },
       onEngineering: () => this.toggleEngineering(),
       onPointerLockLost: () => {
-        if (this.screen === 'playing' && !this.input?.usingTouch) this.pause('game');
+        if (pointerLockLostAction(this.screenState(), this.input?.usingTouch ?? false) === 'pause') {
+          this.pause('game');
+        }
       },
+      onPointerLockError: () => {
+        if (pointerLockErrorAction(this.screenState()) === 'hint') this.toast('clic para capturar el mouse');
+      },
+      isPlaying: () => this.screen === 'playing',
       onTouchDetected: () => {
         this.app.classList.add('is-touch');
         this.applySettings();
