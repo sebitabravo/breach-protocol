@@ -72,3 +72,23 @@ fn overflow_past_the_tick_limit_marks_the_log_truncated_but_still_decodes() {
     let log = decode(&g.log_out).expect("a truncated log is well formed");
     assert_eq!(log.header.ticks, MAX_TICKS);
 }
+
+#[test]
+fn a_capped_log_replays_to_the_cap_with_the_run_still_playing() {
+    // El operador de Overflow solo sobrevive con el arnés, y su vida no se graba: su replay
+    // divergería. Práctica nunca termina y no usa arnés, así que prueba la señal del servidor:
+    // header.ticks == MAX_TICKS con la partida todavía en PLAYING.
+    let mut g = Game::new(5);
+    g.enable_recording();
+    assert!(g.start(MODE_PRACTICE, 0, 5, 0));
+    for _ in 0..=MAX_TICKS {
+        g.step(Input::default());
+    }
+    assert!(g.log_truncated());
+    g.encode_log();
+    let log = decode(&g.log_out).expect("the capped log decodes");
+    assert_eq!(log.header.ticks, MAX_TICKS);
+    let outcome = run(&log).expect("the capped prefix replays");
+    assert_eq!(outcome.ticks, MAX_TICKS);
+    assert_eq!(outcome.phase, phase::PLAYING as u8);
+}

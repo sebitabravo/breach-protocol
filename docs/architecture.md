@@ -109,15 +109,20 @@ y `bp_core::MAX_TICKS` son la misma constante. El host llama `enable_recording()
 - Overflow no tiene temporizador ni tope de oleadas: solo la muerte la termina. Por eso
   una partida puede superar el techo.
 - Al tick 72 001, `Recorder::push` marca el registro como truncado y deja de grabar. La
-  simulación sigue en vivo, pero el registro ya no describe la partida completa.
-- `Game::log_truncated()` y `bp_log_truncated()` devuelven `true` desde ese momento.
-  `encode_log` codifica los primeros 72 000 ticks: el registro es bien formado y `decode`
-  lo acepta, pero `run` produce un resultado distinto del vivo.
-- Un registro truncado **no es verificable**. El servidor debe rechazarlo, o marcar la
-  partida como no clasificable, al ver `log_truncated`, aunque el registro decodifique.
-  Un registro de Overflow que termina antes de 72 000 ticks no tiene este problema.
-- El núcleo no ofrece hoy un estado "truncado pero verificable". Si la API quiere
-  clasificar esas partidas, tendrá que definir ese criterio.
+  simulación sigue en vivo, pero lo que no quedó grabado no existe para el servidor.
+- El encabezado no lleva ninguna marca de truncamiento. Un registro truncado es idéntico
+  a una partida que terminó sola en 72 000 ticks con el jugador vivo. El servidor no ve
+  `log_truncated`; solo ve el encabezado y el resultado de re-simularlo.
+- El servidor re-simula los primeros 72 000 ticks de forma exacta. Lo que no puede
+  verificar es la parte no grabada. Su señal es: `header.ticks == MAX_TICKS` y un
+  resultado con `phase` = PLAYING (o EXTRACTION). Esa partida se puntúa como "termina al
+  final del registro", según `docs/api-contract.md`.
+- El cliente sí conoce el truncamiento. `Game::log_truncated()` y `bp_log_truncated()`
+  devuelven `true` desde el tick 72 001. Conviene comprobarlo antes de enviar, y avisar
+  al jugador de que el tiempo posterior a 20 minutos no cuenta.
+- El núcleo no tiene un estado distinto para estas partidas. El criterio "tope
+  alcanzado" lo aplica el servidor.
+- Una partida que termina antes de 72 000 ticks no tiene este caso.
 
 ## El loop de paso fijo
 
