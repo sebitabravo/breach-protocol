@@ -11,14 +11,18 @@ puntos reales de extensión con sus rutas.
 ```
 core/src/               Rust — núcleo de simulación (solo std, sin dependencias)
   math.rs               vectores, AABB, raycasts, utilidades deterministas
-  arena.rs              geometría de SECTOR_01, colisiones y líneas de visión
+  arena.rs              colisiones y líneas de visión sobre los sólidos del sector
+  maps.rs               sectores 0-2: sólidos, terminales, puntos de aparición
   player.rs             controlador del jugador: movimiento, salto, colisión
-  weapons.rs            PB-01 y AR-04: hitscan, dispersión, recarga, retroceso
-  enemy.rs              FSMs deterministas (Scout, Sentinel), decisión a 12 Hz
-  waves.rs              composición y timing de las 5 oleadas
-  sim.rs                Game: integra todo, avanza 1 paso fijo y serializa
+  weapons.rs            PB-01, AR-04 y SG-08: hitscan, dispersión, recarga, caída de daño
+  enemy.rs              FSMs deterministas (Scout, Sentinel, Interceptor), decisión a 12 Hz
+  waves.rs              composición de oleadas por sector, modo infinito y cola
+  daily.rs              desafío diario: fecha UTC → mapa y mutador, solo enteros
+  sim.rs                Game: modos (misión, overflow, diario, práctica), tick y snapshot
+  replay.rs             registro BPL1, re-simulación y hashes de escenarios fijados
   protocol.rs           contrato binario (offsets del snapshot y del input)
   rng.rs                RNG con semilla, determinista
+  lib.rs                exportaciones C planas (sin wasm-bindgen)
 
 src/
   main.ts               composition root: instancia GameApp y arranca el boot
@@ -66,9 +70,10 @@ wasm-bindgen porque:
 - **Cero copia y cero GC en el camino caliente.** El shell lee posiciones,
   salud, munición y eventos directamente sobre la memoria lineal; ningún
   objeto cruza la frontera, así que no hay allocations por frame.
-- **Superficie mínima.** Las exportaciones son `bp_init`, `bp_reset`,
-  `bp_tick`, `bp_snapshot_ptr`, `bp_set_arena`, `bp_alloc`, `bp_free` y
-  `memory`; el binario queda en ~70 KiB.
+- **Superficie mínima.** Las exportaciones son las de `core/src/lib.rs`
+  (`bp_init`, `bp_start`, `bp_tick_fixed`, `bp_snapshot_ptr`, `bp_load_map`,
+  `bp_replay_hash`, `bp_daily_config`, `bp_scenario_hash`, entre otras) y
+  `memory`; el binario queda en ~80 KiB.
 - **El contrato es verificable.** `SNAPSHOT_LEN = 620` y los offsets están
   pineados por tests en ambos lados (`snapshot_layout_is_stable` en Rust y
   `tests/unit/protocol.test.ts` en TS); `assertProtocol` corta el boot si el
@@ -84,7 +89,7 @@ Un buffer de 620 `f32` en tres bloques contiguos:
 
 | Bloque | Rango | Contenido |
 | --- | --- | --- |
-| Header | `[0, 64)` | versión, tiempo, fase, oleada, puntaje, salud, pose del jugador, arma, nodos, ticks, contadores de eventos |
+| Header | `[0, 64)` | versión, tiempo, fase, oleada, puntaje, salud, pose del jugador, arma, nodos, ticks, contadores de eventos, mutador del diario (slot 49) |
 | Enemigos | `[64, 320)` | 32 × 8: `x y z yaw hp state kind anim` |
 | Terminales | `[320, 332)` | 3 × 4: `x z progress active` |
 | Eventos | `[332, 620)` | 48 × 6: `type a b c d seq` (cola circular con head/count en el header) |
@@ -93,6 +98,31 @@ El input es otro buffer de 16 `f32` (offsets en `protocol.rs::I_*`): movimiento,
 look deltas, fire held/pressed, salto, interactuar, recargar, correr, cambiar
 arma, ADS. Los eventos son efímeros (audio y feed del HUD); el shell consume
 hasta el último `seq` visto por frame.
+
+## Registro de partidas y truncamiento de Overflow
+
+Un registro `BPL1` guarda las entradas cuantizadas de cada tick que consumió la
+simulación. Su techo es `MAX_TICKS` = 72 000 ticks (20 min a 60 Hz); `replay::MAX_TICKS`
+y `bp_core::MAX_TICKS` son la misma constante. El host llama `enable_recording()` antes de
+`start()`: sin registro armado, `encode_log` no graba nada (`bp_start` lo hace así).
+
+- Overflow no tiene temporizador ni tope de oleadas: solo la muerte la termina. Por eso
+  una partida puede superar el techo.
+- Al tick 72 001, `Recorder::push` marca el registro como truncado y deja de grabar. La
+  simulación sigue en vivo, pero lo que no quedó grabado no existe para el servidor.
+- El encabezado no lleva ninguna marca de truncamiento. Un registro truncado es idéntico
+  a una partida que terminó sola en 72 000 ticks con el jugador vivo. El servidor no ve
+  `log_truncated`; solo ve el encabezado y el resultado de re-simularlo.
+- El servidor re-simula los primeros 72 000 ticks de forma exacta. Lo que no puede
+  verificar es la parte no grabada. Su señal es: `header.ticks == MAX_TICKS` y un
+  resultado con `phase` = PLAYING (o EXTRACTION). Esa partida se puntúa como "termina al
+  final del registro", según `docs/api-contract.md`.
+- El cliente sí conoce el truncamiento. `Game::log_truncated()` y `bp_log_truncated()`
+  devuelven `true` desde el tick 72 001. Conviene comprobarlo antes de enviar, y avisar
+  al jugador de que el tiempo posterior a 20 minutos no cuenta.
+- El núcleo no tiene un estado distinto para estas partidas. El criterio "tope
+  alcanzado" lo aplica el servidor.
+- Una partida que termina antes de 72 000 ticks no tiene este caso.
 
 ## El loop de paso fijo
 

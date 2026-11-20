@@ -3,6 +3,7 @@
  * record kept apart per mode and input device so comparisons stay honest.
  */
 import type { StorageLike } from './settings';
+import type { Mode } from './screens';
 
 export const SCORES_KEY = 'bp.scores.v1';
 const MAX_ENTRIES = 10;
@@ -15,7 +16,7 @@ export interface RunResult {
   timeLeft: number;
   damage: number;
   durationMs: number;
-  mode: 'run' | 'practice';
+  mode: Mode;
   input: 'mouse' | 'touch';
   difficulty: 'operator';
   won: boolean;

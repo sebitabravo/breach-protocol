@@ -23,6 +23,14 @@ export interface InputHooks {
   onTouchDetected(): void;
   onMouseDetected(): void;
   getWeapon(): number;
+  unlockedWeapons(): readonly number[];
+}
+
+/** Siguiente arma desbloqueada en orden de ids; si la actual está bloqueada, vuelve a la primera. */
+export function nextWeapon(current: number, unlocked: readonly number[]): number {
+  if (unlocked.length === 0) return 0;
+  const index = unlocked.indexOf(current);
+  return unlocked[(index + 1) % unlocked.length];
 }
 
 type PointerKind = 'stick' | 'look';
@@ -139,7 +147,9 @@ export class InputManager {
     this.frameFirePressed = this.firePressed;
     this.frameJumpPressed = this.jumpPressed || this.kb.consumeJump();
     this.frameReloadPressed = this.reloadPressed || this.kb.consumeReload();
-    this.frameSwitch = this.switchTo || this.kb.consumeSwitch();
+    const keyboardSwitch = this.kb.consumeSwitch();
+    const requested = this.switchTo || keyboardSwitch;
+    this.frameSwitch = this.hooks.unlockedWeapons().includes(requested) ? requested : 0;
     this.lookX = 0;
     this.lookY = 0;
     this.firePressed = false;
@@ -407,7 +417,7 @@ export class InputManager {
         this.touchInteract = true;
         break;
       case 'switch':
-        this.switchTo = this.hooks.getWeapon() === 1 ? 2 : 1;
+        this.switchTo = nextWeapon(this.hooks.getWeapon(), this.hooks.unlockedWeapons());
         break;
       case 'ads':
         this.adsHeld = true;

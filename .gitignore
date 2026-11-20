@@ -28,3 +28,6 @@ public/bp_core.build.json
 
 # Personal agent tooling
 .atl/
+
+# Agent worktrees
+.claude/worktrees/

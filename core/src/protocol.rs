@@ -55,8 +55,9 @@ pub const H_WAVE_ENEMIES_LEFT: usize = 44;
 pub const H_ADS: usize = 45;
 pub const H_EVENTS_HEAD: usize = 46;
 pub const H_EVENTS_COUNT: usize = 47;
-pub const H_ELAPSED_MS: usize = 48;
-pub const H_RESERVED_LAST: usize = 49;
+// 48 libre (sin uso desde protocol 1).
+/// Id del mutador del desafío diario (0 = ninguno). Mirror: `H.mutator` en protocol.ts.
+pub const H_MUTATOR: usize = 49;
 
 pub const HEADER_LEN: usize = 64;
 
@@ -120,7 +121,7 @@ pub mod ev {
     pub const SPAWN: f32 = 12.0;
     pub const RELOAD_START: f32 = 13.0;
     pub const RELOAD_END: f32 = 14.0;
-    pub const NODE_PROGRESS: f32 = 15.0;
+    // 15 reservado: el shell lo declara en `EVT.nodeProgress`, pero el núcleo no lo emite.
     pub const EMPTY_MAG: f32 = 16.0;
     pub const ENEMY_WINDUP: f32 = 17.0;
 }
@@ -149,6 +150,14 @@ pub const I_SWITCH: usize = 10;
 pub const I_ADS: usize = 11;
 pub const INPUT_LEN: usize = 16;
 
+// Un solapamiento de bloques es un error de compilación, no un fallo de test.
+const _: () = {
+    assert!(ENEMY_BASE + ENEMY_BLOCK_LEN <= NODE_BASE);
+    assert!(NODE_BASE + NODE_BLOCK_LEN <= EVENT_BASE);
+    assert!(EVENT_BASE + EVENT_BLOCK_LEN <= SNAPSHOT_LEN);
+    assert!(H_MUTATOR < HEADER_LEN);
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,13 +171,5 @@ mod tests {
         assert_eq!(NODE_BASE, 320);
         assert_eq!(EVENT_BASE, 332);
         assert_eq!(SNAPSHOT_LEN, 620);
-    }
-
-    #[test]
-    fn blocks_do_not_overlap() {
-        assert!(ENEMY_BASE + ENEMY_BLOCK_LEN <= NODE_BASE);
-        assert!(NODE_BASE + NODE_BLOCK_LEN <= EVENT_BASE);
-        assert!(EVENT_BASE + EVENT_BLOCK_LEN <= SNAPSHOT_LEN);
-        assert!(H_RESERVED_LAST < HEADER_LEN);
     }
 }

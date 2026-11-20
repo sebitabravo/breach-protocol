@@ -4,12 +4,12 @@
 //! every fixed step, which keeps 30+ agents cheap without making them twitchy.
 
 use crate::arena::Arena;
-use crate::math::{clamp, forward_from_yaw, v3, wrap_pi, Aabb, V3};
+use crate::math::{clamp, cos, forward_from_yaw, sin, v3, wrap_pi, Aabb, V3};
 use crate::rng::Rng;
 
 pub const KIND_SCOUT: u8 = 0;
 pub const KIND_SENTINEL: u8 = 1;
-/// Reservado para el Interceptor (SPEC §3.5); la FSM llega con el contenido del sector 2.
+/// Interceptor (SPEC §3.5): flanquea, telegrafía la embestida y se retira.
 pub const KIND_INTERCEPTOR: u8 = 2;
 
 pub const ST_SPAWN: u8 = 0;
@@ -24,6 +24,19 @@ pub const ST_CHARGE: u8 = 8;
 
 const THINK_HZ: f32 = 12.0;
 const GRAVITY: f32 = 21.0;
+
+/// Interceptor: la carga arranca a lo sumo `CHARGE_REACH` más allá del anillo de flanqueo.
+const CHARGE_REACH: f32 = 1.2;
+/// Coseno del ángulo frente al jugador. Por debajo (60°) el enemigo está en el costado o la espalda.
+const FLANK_ARC_COS: f32 = 0.5;
+/// Paso angular de la órbita por tick de decisión (rad, a 12 Hz equivale a ~29° por paso).
+const ORBIT_STEP: f32 = 0.5;
+/// Tiempo máximo flanqueando; pasado este plazo carga aunque no esté en el costado.
+const FLANK_MAX: f32 = 6.0;
+/// Tiempo tras el telegrafo en que la embestida sigue viva antes de cortarse (pared o jugador esquivado).
+const DASH_MAX: f32 = 0.9;
+/// La embestida apunta un tramo más allá del jugador para que el contacto siempre ocurra.
+const DASH_OVERSHOOT: f32 = 1.5;
 
 #[derive(Clone, Copy, Debug)]
 pub struct KindDef {
@@ -40,6 +53,10 @@ pub struct KindDef {
     pub burst: u8,
     pub burst_interval: f32,
     pub spawn_grace: f32,
+    /// Velocidad de la embestida; 0 para los tipos que no cargan.
+    pub dash_speed: f32,
+    /// Radio del anillo donde el interceptor orbita al jugador; 0 para los demás.
+    pub flank_radius: f32,
 }
 
 pub const SCOUT: KindDef = KindDef {
@@ -56,6 +73,8 @@ pub const SCOUT: KindDef = KindDef {
     burst: 1,
     burst_interval: 0.0,
     spawn_grace: 0.55,
+    dash_speed: 0.0,
+    flank_radius: 0.0,
 };
 
 pub const SENTINEL: KindDef = KindDef {
@@ -72,11 +91,32 @@ pub const SENTINEL: KindDef = KindDef {
     burst: 3,
     burst_interval: 0.14,
     spawn_grace: 0.6,
+    dash_speed: 0.0,
+    flank_radius: 0.0,
+};
+
+pub const INTERCEPTOR: KindDef = KindDef {
+    hp: 28.0,
+    speed: 5.5,
+    radius: 0.40,
+    height: 1.75,
+    discover: 26.0,
+    attack_range: 1.4,
+    preferred_range: 0.0,
+    damage: 18.0,
+    telegraph: 0.45,
+    cooldown: 1.6,
+    burst: 0,
+    burst_interval: 0.0,
+    spawn_grace: 0.5,
+    dash_speed: 12.0,
+    flank_radius: 3.2,
 };
 
 pub fn def(kind: u8) -> &'static KindDef {
     match kind {
         KIND_SENTINEL => &SENTINEL,
+        KIND_INTERCEPTOR => &INTERCEPTOR,
         _ => &SCOUT,
     }
 }
@@ -100,6 +140,8 @@ pub struct EnemyContext<'a> {
     pub arena: &'a Arena,
     pub player_eye: V3,
     pub player_feet: V3,
+    /// Frente horizontal del jugador (vector unitario en XZ).
+    pub player_forward: V3,
     pub player_radius: f32,
     pub player_height: f32,
 }
@@ -125,6 +167,9 @@ pub struct Enemy {
     pub avoid_dir: f32,
     pub los: bool,
     pub dist: f32,
+    /// Punto de la embestida, fijado al terminar el telegrafo.
+    pub dash_target: V3,
+    pub dash_locked: bool,
 }
 
 pub const EMPTY_ENEMY: Enemy = Enemy {
@@ -147,6 +192,8 @@ pub const EMPTY_ENEMY: Enemy = Enemy {
     avoid_dir: 1.0,
     los: false,
     dist: 0.0,
+    dash_target: V3::ZERO,
+    dash_locked: false,
 };
 
 pub fn dir_to_yaw(d: V3) -> f32 {
@@ -210,6 +257,7 @@ impl Enemy {
     fn set_state(&mut self, state: u8) {
         self.state = state;
         self.state_time = 0.0;
+        self.dash_locked = false;
     }
 
     pub fn tick(&mut self, dt: f32, ctx: &EnemyContext, rng: &mut Rng) -> Option<Action> {
@@ -235,7 +283,12 @@ impl Enemy {
             }
             ST_PATROL => {
                 if self.dist < d.discover && self.los {
-                    self.set_state(ST_CHASE);
+                    let next = if self.kind == KIND_INTERCEPTOR {
+                        ST_FLANK
+                    } else {
+                        ST_CHASE
+                    };
+                    self.set_state(next);
                 }
             }
             ST_CHASE => {
@@ -244,6 +297,23 @@ impl Enemy {
                 if in_range && ready && (self.kind == KIND_SCOUT || self.los) {
                     self.set_state(ST_AIM);
                     action = Some(Action::Windup);
+                }
+            }
+            ST_FLANK => {
+                if self.ready_to_charge(&d, ctx) {
+                    self.set_state(ST_CHARGE);
+                    action = Some(Action::Windup);
+                }
+            }
+            ST_CHARGE if self.state_time >= d.telegraph => {
+                if !self.dash_locked {
+                    self.lock_dash(ctx);
+                }
+                if self.dist <= d.attack_range {
+                    self.set_state(ST_STRIKE);
+                } else if self.state_time >= d.telegraph + DASH_MAX {
+                    self.set_state(ST_RECOVER);
+                    self.fire_cd = d.cooldown;
                 }
             }
             ST_AIM => {
@@ -258,7 +328,7 @@ impl Enemy {
                 }
             }
             ST_STRIKE => {
-                if self.kind == KIND_SCOUT {
+                if self.kind != KIND_SENTINEL {
                     // Melee lands on the frame the windup ends, if still in reach.
                     if self.dist <= d.attack_range + 0.6 && self.los {
                         action = Some(Action::Melee { damage: d.damage });
@@ -286,10 +356,13 @@ impl Enemy {
                     }
                 }
             }
-            ST_RECOVER => {
-                if self.state_time >= d.cooldown * 0.55 {
-                    self.set_state(ST_CHASE);
-                }
+            ST_RECOVER if self.state_time >= d.cooldown * 0.55 => {
+                let next = if self.kind == KIND_INTERCEPTOR {
+                    ST_FLANK
+                } else {
+                    ST_CHASE
+                };
+                self.set_state(next);
             }
             _ => {}
         }
@@ -316,18 +389,21 @@ impl Enemy {
                 let away = (self.pos - ctx.player_feet).norm_or(forward_from_yaw(self.yaw));
                 self.pos + away * 3.0
             }
+            ST_FLANK => self.flank_target(&d, ctx),
             _ => self.pos,
         };
 
         let speed = match self.state {
             ST_PATROL => d.speed * 0.45,
-            ST_CHASE => d.speed,
+            ST_CHASE | ST_FLANK => d.speed,
             ST_RECOVER => d.speed * 0.6,
             ST_AIM | ST_STRIKE => d.speed * 0.1,
             _ => 0.0,
         };
 
-        if speed > 0.01 {
+        if self.state == ST_CHARGE && self.state_time >= d.telegraph {
+            self.dash(self.dash_target, d.dash_speed, dt, ctx.arena);
+        } else if speed > 0.01 {
             self.steer(target, speed, dt, ctx.arena);
         } else {
             self.apply_gravity(dt, ctx.arena);
@@ -343,6 +419,56 @@ impl Enemy {
         }
 
         action
+    }
+
+    /// Unit direction from the player to the enemy on the ground.
+    fn outward(&self, ctx: &EnemyContext) -> V3 {
+        (self.pos - ctx.player_feet)
+            .flat()
+            .norm_or(-ctx.player_forward)
+    }
+
+    /// Punto de órbita sobre el anillo de flanqueo; lejos del anillo, se acerca en línea recta.
+    fn flank_target(&self, d: &KindDef, ctx: &EnemyContext) -> V3 {
+        let out = self.outward(ctx);
+        if self.dist > d.flank_radius * 2.0 {
+            return ctx.player_feet + out * d.flank_radius;
+        }
+        let s = sin(ORBIT_STEP) * self.avoid_dir;
+        let c = cos(ORBIT_STEP);
+        let rot = v3(out.x * c - out.z * s, 0.0, out.x * s + out.z * c);
+        ctx.player_feet + rot * d.flank_radius
+    }
+
+    /// Posición de carga: en el costado o la espalda, a distancia de embestida y con disparo listo.
+    fn ready_to_charge(&self, d: &KindDef, ctx: &EnemyContext) -> bool {
+        if !self.los || self.fire_cd > 0.0 || self.dist > d.flank_radius + CHARGE_REACH {
+            return false;
+        }
+        let on_side = self.outward(ctx).dot(ctx.player_forward) < FLANK_ARC_COS;
+        on_side || self.state_time >= FLANK_MAX
+    }
+
+    fn lock_dash(&mut self, ctx: &EnemyContext) {
+        let toward = (ctx.player_feet - self.pos)
+            .flat()
+            .norm_or(ctx.player_forward);
+        self.dash_target = ctx.player_feet + toward * DASH_OVERSHOOT;
+        self.dash_locked = true;
+    }
+
+    /// Embestida en línea recta hacia el punto fijado. Sin desvío lateral: el telegrafo
+    /// anuncia una trayectoria real. Las paredes la frenan y `DASH_MAX` la corta.
+    fn dash(&mut self, target: V3, speed: f32, dt: f32, arena: &Arena) {
+        let d = *def(self.kind);
+        let dir = (target - self.pos)
+            .flat()
+            .norm_or(forward_from_yaw(self.yaw));
+        let mut vel = dir * speed;
+        vel.y = self.vy - GRAVITY * dt;
+        arena.move_body(&mut self.pos, &mut vel, d.radius, d.height, dt, 0.3);
+        self.vy = vel.y;
+        self.face_towards(target, dt, 12.0);
     }
 
     fn patrol_target(&self) -> V3 {
@@ -414,6 +540,7 @@ mod tests {
             arena,
             player_eye: v3(player.x, player.y + 1.62, player.z),
             player_feet: player,
+            player_forward: v3(0.0, 0.0, -1.0),
             player_radius: 0.36,
             player_height: 1.8,
         }
@@ -475,10 +602,7 @@ mod tests {
             }
         }
         assert!(windups >= 1, "telegraph must precede damage");
-        assert!(
-            melee_hits >= 1 && melee_hits <= 2,
-            "melee hits: {melee_hits}"
-        );
+        assert!((1..=2).contains(&melee_hits), "melee hits: {melee_hits}");
     }
 
     #[test]
@@ -536,5 +660,121 @@ mod tests {
             e.tick(1.0 / 60.0, &c, &mut rng);
         }
         assert!(e.pos.y.abs() < 1e-3, "{:?}", e.pos);
+    }
+
+    #[test]
+    fn interceptor_ids_match_the_shell_mirror() {
+        // src/wasm/protocol.ts declares the same numbers; change both sides together.
+        assert_eq!(KIND_INTERCEPTOR, 2);
+        assert_eq!(ST_FLANK, 7);
+        assert_eq!(ST_CHARGE, 8);
+    }
+
+    #[test]
+    fn interceptor_orbits_to_the_side_before_charging() {
+        let arena = flat();
+        let mut e = Enemy::spawn(v3(0.0, 0.0, -6.0), KIND_INTERCEPTOR, 0.0, 0);
+        e.state = ST_FLANK;
+        let mut rng = Rng::new(9);
+        let c = ctx(&arena, v3(0.0, 0.0, 0.0));
+        let mut charged = false;
+        for _ in 0..(6 * 60) {
+            e.tick(1.0 / 60.0, &c, &mut rng);
+            if e.state == ST_CHARGE {
+                charged = true;
+                break;
+            }
+        }
+        assert!(charged, "interceptor never charged");
+        // El jugador mira hacia -z: la carga debe salir fuera del cono frontal.
+        let cos_from_front = -e.pos.z / (e.pos.x * e.pos.x + e.pos.z * e.pos.z).sqrt();
+        assert!(
+            cos_from_front < FLANK_ARC_COS,
+            "charged from the front at {:?}",
+            e.pos
+        );
+    }
+
+    #[test]
+    fn interceptor_telegraphs_before_the_dash_and_strikes_once_per_charge() {
+        let arena = flat();
+        let mut e = Enemy::spawn(v3(3.2, 0.0, 0.0), KIND_INTERCEPTOR, 0.0, 0);
+        e.state = ST_FLANK;
+        let mut rng = Rng::new(4);
+        let c = ctx(&arena, v3(0.0, 0.0, 0.0));
+        let (mut windups, mut melees) = (0u32, 0u32);
+        let (mut first_windup, mut first_melee) = (None, None);
+        for t in 0..(8 * 60) {
+            match e.tick(1.0 / 60.0, &c, &mut rng) {
+                Some(Action::Windup) => {
+                    windups += 1;
+                    first_windup.get_or_insert(t);
+                }
+                Some(Action::Melee { .. }) => {
+                    melees += 1;
+                    first_melee.get_or_insert(t);
+                }
+                _ => {}
+            }
+        }
+        assert!(windups >= 2, "expected repeated charges, got {windups}");
+        assert!(melees >= 1, "stationary player was never hit");
+        assert!(
+            melees <= windups,
+            "{melees} hits for {windups} charges: more than one hit per charge"
+        );
+        let gap = first_melee.unwrap() - first_windup.unwrap();
+        let telegraph_ticks = (INTERCEPTOR.telegraph * 60.0).round() as u32;
+        assert!(
+            gap + 1 >= telegraph_ticks,
+            "damage landed {gap} ticks after the windup, telegraph is {telegraph_ticks}"
+        );
+    }
+
+    #[test]
+    fn interceptor_dash_gives_up_when_a_low_wall_blocks_the_path() {
+        let mut arena = Arena::new();
+        // Muro de 0.9 m: frena al andar (escalón máximo 0.32 m) pero deja pasar la vista a la altura de los ojos.
+        arena.load(&[
+            -40.0, -1.0, -40.0, 40.0, 0.0, 40.0, 1.0, //
+            -18.0, 0.0, -2.2, 18.0, 0.9, -1.8, 0.0,
+        ]);
+        let mut e = Enemy::spawn(v3(0.0, 0.0, -4.0), KIND_INTERCEPTOR, 0.0, 0);
+        e.state = ST_CHARGE;
+        e.state_time = INTERCEPTOR.telegraph;
+        let mut rng = Rng::new(8);
+        let c = ctx(&arena, v3(0.0, 0.0, 0.0));
+        let mut melees = 0;
+        for _ in 0..72 {
+            if let Some(Action::Melee { .. }) = e.tick(1.0 / 60.0, &c, &mut rng) {
+                melees += 1;
+            }
+        }
+        assert_eq!(melees, 0, "dash went through the wall");
+        assert!(e.pos.z < -1.8, "enemy crossed the wall: {:?}", e.pos);
+        assert_eq!(e.state, ST_RECOVER, "blocked dash must end in retreat");
+    }
+
+    #[test]
+    fn interceptor_retreats_then_reflanks_and_never_chases() {
+        let arena = flat();
+        let mut e = Enemy::spawn(v3(3.2, 0.0, 0.0), KIND_INTERCEPTOR, 0.0, 0);
+        e.state = ST_FLANK;
+        let mut rng = Rng::new(6);
+        let c = ctx(&arena, v3(0.0, 0.0, 0.0));
+        let mut seq: Vec<u8> = Vec::new();
+        for _ in 0..(6 * 60) {
+            e.tick(1.0 / 60.0, &c, &mut rng);
+            if seq.last() != Some(&e.state) {
+                seq.push(e.state);
+            }
+        }
+        assert!(!seq.contains(&ST_CHASE), "fell back to chase: {seq:?}");
+        let strike = seq
+            .iter()
+            .position(|&s| s == ST_STRIKE)
+            .expect("the interceptor struck");
+        assert_eq!(seq.get(strike + 1), Some(&ST_RECOVER), "{seq:?}");
+        assert_eq!(seq.get(strike + 2), Some(&ST_FLANK), "{seq:?}");
     }
 }
