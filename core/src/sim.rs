@@ -5,7 +5,7 @@
 
 use crate::arena::Arena;
 use crate::enemy::{self, Action, Enemy, EnemyContext, EMPTY_ENEMY};
-use crate::math::{clamp, dir_from_yaw_pitch, right_from_yaw, v3, V3};
+use crate::math::{clamp, right_from_yaw, v3, V3};
 use crate::player::{Input, Player, EYE_HEIGHT, HEIGHT, RADIUS};
 use crate::protocol::*;
 use crate::rng::Rng;
@@ -872,6 +872,7 @@ impl Game {
 }
 
 /// Convenience for tests: run `steps` fixed ticks with a constant input.
+#[cfg(test)]
 pub fn run_steps(game: &mut Game, steps: u32, input: Input) {
     for _ in 0..steps {
         game.tick(1.0 / 60.0, input);
