@@ -8,9 +8,6 @@ export default defineConfig({
   timeout: 60_000,
   fullyParallel: false,
   retries: 0,
-  // Keep artifacts cheap: screenshots only when something breaks.
-  screenshot: 'only-on-failure',
-  trace: 'retain-on-failure',
   reporter: [['list']],
   projects: [
     {
@@ -21,6 +18,9 @@ export default defineConfig({
         // Pointer lock is unavailable headless; touch is a first-class path.
         hasTouch: true,
         viewport: { width: 1280, height: 800 },
+        // Artefactos baratos: solo cuando algo falla.
+        screenshot: 'only-on-failure',
+        trace: 'retain-on-failure',
       },
     },
   ],
