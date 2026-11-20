@@ -462,6 +462,11 @@ pub fn golden_hash(ticks: u32) -> u64 {
 /// Escenarios fijados. La partida dorada no pisa interceptores, escopeta ni mutadores; estos
 /// sí. El escenario 0 es la dorada. Ids desconocidos caen en la dorada.
 pub fn scenario_hash(id: u32, ticks: u32) -> u64 {
+    hash_snapshot(&run_scenario(id, ticks, |_| {}))
+}
+
+/// Corre un escenario y entrega cada tick a `watch`, para comprobar qué contenido toca.
+fn run_scenario(id: u32, ticks: u32, mut watch: impl FnMut(&Game)) -> Game {
     use crate::sim::{FLAG_AUTO_RELOAD, FLAG_SHOTGUN, MODE_DAILY, MODE_MISSION, MODE_OVERFLOW};
     let (mode, map, seed, flags) = match id {
         1 => (
@@ -481,8 +486,20 @@ pub fn scenario_hash(id: u32, ticks: u32) -> u64 {
             break;
         }
         g.step(scenario_input(id, t));
+        if id != 0 {
+            // Arnés: el operador scripteado no sobrevive ni despeja oleadas. Cada 10 s se
+            // despeja la oleada y el jugador queda con vida llena, para que la partida llegue a
+            // composiciones posteriores (interceptores desde la oleada 2).
+            g.player.hp = g.player.hp_max;
+            if t % 600 == 599 {
+                for e in g.enemies.iter_mut() {
+                    e.hurt(f32::MAX);
+                }
+            }
+        }
+        watch(&g);
     }
-    hash_snapshot(&g)
+    g
 }
 
 /// Igual que `golden_input`, salvo el escenario 1: equipa la escopeta (switch 3) y vuelve a la pistola.
@@ -724,6 +741,10 @@ mod tests {
         for t in 0..400 {
             used.step(golden_input(t));
         }
+        assert!(used.start(MODE_OVERFLOW, 1, 3, FLAG_AUTO_RELOAD));
+        for t in 0..400 {
+            used.step(golden_input(t));
+        }
         let mut fresh = Game::new(1);
         assert_eq!(play(&mut used), play(&mut fresh));
     }
@@ -753,11 +774,45 @@ mod tests {
         }
     }
 
+    #[test]
+    fn scenarios_really_exercise_the_content_they_claim() {
+        use crate::enemy::KIND_INTERCEPTOR;
+        use crate::weapons::ID_SHOTGUN;
+        for id in 1..=3 {
+            let (mut interceptor_ticks, mut max_wave, mut scatter_shots) = (0u32, 0u32, 0u32);
+            let mut shots_before = 0;
+            run_scenario(id, GOLDEN_TICKS, |g| {
+                if g.enemies
+                    .iter()
+                    .any(|e| e.is_alive() && e.kind == KIND_INTERCEPTOR)
+                {
+                    interceptor_ticks += 1;
+                }
+                max_wave = max_wave.max(g.waves.wave);
+                if g.player.weapon == ID_SHOTGUN && g.shots > shots_before {
+                    scatter_shots += 1;
+                }
+                shots_before = g.shots;
+            });
+            assert!(
+                interceptor_ticks > 0,
+                "scenario {id} never met an interceptor"
+            );
+            assert!(
+                max_wave >= 2,
+                "scenario {id} never reached wave 2 (max {max_wave})"
+            );
+            if id == 1 {
+                assert!(scatter_shots > 0, "scenario 1 never fired the scatter");
+            }
+        }
+    }
+
     const SCENARIO_PINS: [u64; 4] = [
         6051080362437244339,
-        10290377329398245135,
-        14917908633056250358,
-        14807544573109845086,
+        8473981006168998935,
+        14559882121426080077,
+        1992019841316245935,
     ];
     const GOLDEN_TICKS: u32 = 4000;
     const GOLDEN_HASH: u64 = 6051080362437244339;
