@@ -12,6 +12,7 @@ function sectorMap(): MapData {
   return {
     id: 0,
     theme: 'control',
+    mutator: 'none',
     start: { x: 0, z: 13, yaw: 0 },
     halfX: 18,
     halfZ: 18,

@@ -9,6 +9,7 @@ function room(theme: ThemeName, extra: MapData['solids'], halfX = 18, halfZ = 18
   return {
     id: theme === 'control' ? 0 : theme === 'cryo' ? 1 : 2,
     theme,
+    mutator: 'none',
     start: { x: 0, z: 13, yaw: 0 },
     halfX,
     halfZ,
