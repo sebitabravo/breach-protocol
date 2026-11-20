@@ -5,10 +5,14 @@
  * It is a thin facade: arena, viewmodel, camera rig, textures and themes live
  * in their own modules.
  *
- * Note on MSAA: WebGL only lets a canvas hold one context, so antialias is
- * fixed when the context is created. `init()` creates it (called from boot so a
- * WebGL failure reaches the fallback screen) using the AA requirement of the
- * last `setQuality` — antialias on for `high` only.
+ * Note on MSAA: the canvas context is created with `antialias: false`. The
+ * browser fixes that flag at context creation, and `init()` runs before the
+ * first `setQuality`, so a per-preset canvas AA could never take effect. On
+ * medium and high the composer target carries the MSAA samples instead
+ * (docs/adr/0004-bloom-postprocessing.md). `low` renders without AA.
+ *
+ * Draw calls: `info.autoReset` is off and the facade resets it once per frame,
+ * so `calls` covers every pass (shadow map, scene, bloom, output).
  */
 import * as THREE from 'three';
 import { arenaBoxes } from '../world/layout';
@@ -21,6 +25,7 @@ import { createRobotMesh, disposeRobotAssets } from './entities';
 import { FxPool } from './fx';
 import { PoseInterpolator } from './interp';
 import { PRESETS, type QualityName, type QualityPreset } from './presets';
+import { PostFx } from './postfx';
 import { PALETTE } from './themes';
 import { Viewmodel } from './viewmodel';
 
@@ -47,9 +52,11 @@ export class Renderer {
   private sectorTextures: THREE.Texture[] = [];
 
   private renderer: THREE.WebGLRenderer | null = null;
-  private wantAntialias = false; // antialias on for `high` only
+  private postfx: PostFx | null = null;
   private presetValue: QualityPreset = PRESETS.medium;
   private dprValue = 1;
+  private cssWidth = 1;
+  private cssHeight = 1;
   private lastCalls = 0;
   private lastTriangles = 0;
   private disposed = false;
@@ -128,7 +135,6 @@ export class Renderer {
   setQuality(preset: QualityName, dprCap?: number): void {
     const p = PRESETS[preset] ?? PRESETS.medium;
     this.presetValue = p;
-    this.wantAntialias = p.name === 'high';
     this.dirLight.castShadow = p.shadows;
     const size = shadowMapSize(p.name);
     if (this.dirLight.shadow.mapSize.x !== size) {
@@ -173,11 +179,14 @@ export class Renderer {
     if (w > 0 && h > 0) {
       this.camera.aspect = w / h;
       this.camera.updateProjectionMatrix();
+      this.cssWidth = w;
+      this.cssHeight = h;
     }
     const r = this.renderer;
     if (r) {
       r.setPixelRatio(this.dprValue);
       if (w > 0 && h > 0) r.setSize(w, h, false);
+      this.postfx?.configure(this.presetValue.name, this.dprValue, this.cssWidth, this.cssHeight);
     }
   }
 
@@ -187,8 +196,7 @@ export class Renderer {
     const r = this.ensureRenderer();
     this.rig.orbit(this.camera, dt);
     this.viewmodel.hide();
-    r.render(this.scene, this.camera);
-    this.captureMetrics(r);
+    this.draw(r);
   }
 
   /**
@@ -222,14 +230,15 @@ export class Renderer {
     this.fx.update(dt);
 
     // 6. render + metrics
-    r.render(this.scene, this.camera);
-    this.captureMetrics(r);
+    this.draw(r);
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.fx.dispose();
+    this.postfx?.dispose();
+    this.postfx = null;
     const geoms = new Set<THREE.BufferGeometry>();
     const mats = new Set<THREE.Material>();
     this.scene.traverse((obj) => {
@@ -262,14 +271,16 @@ export class Renderer {
     if (this.renderer) return this.renderer;
     const r = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: this.wantAntialias, // on for `high` only
+      antialias: false, // MSAA lives on the composer target, see header note
       powerPreference: 'high-performance',
       alpha: false,
     });
     r.toneMapping = THREE.NoToneMapping; // the ladder is authored in raw sRGB
     r.shadowMap.enabled = this.presetValue.shadows;
     r.shadowMap.type = THREE.PCFShadowMap;
+    r.info.autoReset = false; // draw() resets once per frame, not per pass
     this.renderer = r;
+    this.postfx = new PostFx(r, this.scene, this.camera);
     // three.js ya hace preventDefault en 'webglcontextlost' y reinicia estado en
     // 'webglcontextrestored'; el shell solo necesita enterarse para pausar.
     this.canvas.addEventListener('webglcontextlost', this.onContextLost);
@@ -291,11 +302,16 @@ export class Renderer {
 
   private onContextRestored = (): void => {
     this.contextLost = false;
+    this.postfx?.rebuild();
     this.resize();
     this.hooks.onContextRestored?.();
   };
 
-  private captureMetrics(r: THREE.WebGLRenderer): void {
+  /** One frame: reset the counters once, render through the composer or directly, record metrics. */
+  private draw(r: THREE.WebGLRenderer): void {
+    r.info.reset();
+    if (this.postfx) this.postfx.render();
+    else r.render(this.scene, this.camera);
     this.lastCalls = r.info.render.calls;
     this.lastTriangles = r.info.render.triangles;
   }
