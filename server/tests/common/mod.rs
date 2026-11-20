@@ -8,10 +8,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use bp_core::Game;
 
-pub const MODE_MISSION: u8 = 0;
-pub const MODE_OVERFLOW: u8 = 1;
-pub const MODE_DAILY: u8 = 2;
-pub const MODE_PRACTICE: u8 = 3;
+pub use bp_core::{MODE_DAILY, MODE_MISSION, MODE_OVERFLOW, MODE_PRACTICE};
 
 pub const FLAG_AUTO_RELOAD: u8 = 2;
 
@@ -19,11 +16,11 @@ pub const FLAG_AUTO_RELOAD: u8 = 2;
 pub const NOW_UNIX: u64 = 1_795_132_800 + 12 * 3600;
 
 /// Espejo de `phase::PLAYING` y `phase::EXTRACTION` (`core/src/protocol.rs`), que no están exportados.
-const PHASE_PLAYING: f32 = 1.0;
-const PHASE_EXTRACTION: f32 = 2.0;
+const PHASE_PLAYING: f32 = bp_core::PLAYING;
+const PHASE_EXTRACTION: f32 = bp_core::EXTRACTION;
 
 /// Techo de ticks de un registro verificable (`bp_core` lo rechaza por encima).
-const MAX_TICKS: u32 = 72_000;
+const MAX_TICKS: u32 = bp_core::MAX_TICKS;
 
 /// Graba una partida hasta que termina o se alcanza `cap` ticks. `fire` aprieta el gatillo
 /// en un patrón fijo para que haya disparos y, con suerte, puntaje distinto de cero.
