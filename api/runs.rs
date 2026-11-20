@@ -2,11 +2,11 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bp_api::client::{client_ip, client_key};
-use bp_api::error::ApiError;
-use bp_api::submit::{submit, Submission};
-use bp_api::upstash::Upstash;
-use bp_api::wire::{error_response, header_value, json_response, read_capped};
+use bp_server::client::{client_ip, client_key};
+use bp_server::error::ApiError;
+use bp_server::submit::{submit, Submission};
+use bp_server::upstash::Upstash;
+use bp_server::wire::{error_response, header_value, json_response, read_capped};
 use vercel_runtime::{run, service_fn, Error, Request, Response};
 
 #[tokio::main]

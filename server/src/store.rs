@@ -1,5 +1,8 @@
 //! Puerto de almacenamiento y su implementación en memoria. El orden replica Redis:
 //! puntaje descendente y, en empate, miembro descendente (como `ZREVRANGE`).
+//!
+//! Un miembro es el hash del replay (`hash16`), no el nombre: una misma corrida verificada
+//! tiene una sola entrada por tablero, sin importar bajo qué nombre se envíe.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -7,6 +10,17 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub member: String,
+    pub name: String,
+    pub score: u32,
+    pub at: u64,
+}
+
+/// Una corrida verificada lista para entrar a un tablero.
+#[derive(Debug, Clone, Copy)]
+pub struct Candidate<'a> {
+    /// `hash16`: hash del estado final re-simulado.
+    pub member: &'a str,
+    pub name: &'a str,
     pub score: u32,
     pub at: u64,
 }
@@ -17,9 +31,9 @@ pub enum StoreError {
 }
 
 pub trait Store: Send + Sync {
-    /// Agrega `member` con `score` solo si no existe, y guarda `at` la primera vez.
-    /// Devuelve `true` si el miembro es nuevo.
-    fn zadd_nx(&self, board: &str, member: &str, score: u32, at: u64) -> Result<bool, StoreError>;
+    /// Inserta `candidate` solo si su miembro no existe. Si ya existe no cambia nada: ni puntaje,
+    /// ni nombre, ni hora. Devuelve `true` si la entrada es nueva.
+    fn zadd_nx(&self, board: &str, candidate: &Candidate<'_>) -> Result<bool, StoreError>;
     /// Posición 1-based en el orden descendente del tablero.
     fn rank(&self, board: &str, member: &str) -> Result<Option<u64>, StoreError>;
     fn total(&self, board: &str) -> Result<u64, StoreError>;
@@ -29,16 +43,23 @@ pub trait Store: Send + Sync {
     fn rate_limit_hit(&self, bucket: &str) -> Result<u64, StoreError>;
 }
 
-type Scores = HashMap<String, (u32, u64)>;
+#[derive(Debug, Clone)]
+struct Stored {
+    name: String,
+    score: u32,
+    at: u64,
+}
+
+type Board = HashMap<String, Stored>;
 
 #[derive(Default)]
 pub struct MemoryStore {
-    boards: Mutex<HashMap<String, Scores>>,
+    boards: Mutex<HashMap<String, Board>>,
     buckets: Mutex<HashMap<String, u64>>,
 }
 
 impl MemoryStore {
-    fn boards(&self) -> MutexGuard<'_, HashMap<String, Scores>> {
+    fn boards(&self) -> MutexGuard<'_, HashMap<String, Board>> {
         self.boards.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -48,34 +69,38 @@ impl MemoryStore {
 }
 
 /// Orden de ranking de Redis: score descendente, luego miembro descendente en bytes.
-fn ranked(scores: &Scores) -> Vec<(&String, u32, u64)> {
-    let mut rows: Vec<_> = scores
-        .iter()
-        .map(|(member, &(score, at))| (member, score, at))
-        .collect();
-    rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.0.cmp(a.0)));
+fn ranked(board: &Board) -> Vec<(&String, &Stored)> {
+    let mut rows: Vec<_> = board.iter().collect();
+    rows.sort_by(|a, b| b.1.score.cmp(&a.1.score).then_with(|| b.0.cmp(a.0)));
     rows
 }
 
 impl Store for MemoryStore {
-    fn zadd_nx(&self, board: &str, member: &str, score: u32, at: u64) -> Result<bool, StoreError> {
+    fn zadd_nx(&self, board: &str, candidate: &Candidate<'_>) -> Result<bool, StoreError> {
         let mut boards = self.boards();
-        let scores = boards.entry(board.to_string()).or_default();
-        if scores.contains_key(member) {
+        let entries = boards.entry(board.to_string()).or_default();
+        if entries.contains_key(candidate.member) {
             return Ok(false);
         }
-        scores.insert(member.to_string(), (score, at));
+        entries.insert(
+            candidate.member.to_string(),
+            Stored {
+                name: candidate.name.to_string(),
+                score: candidate.score,
+                at: candidate.at,
+            },
+        );
         Ok(true)
     }
 
     fn rank(&self, board: &str, member: &str) -> Result<Option<u64>, StoreError> {
         let boards = self.boards();
-        let Some(scores) = boards.get(board) else {
+        let Some(entries) = boards.get(board) else {
             return Ok(None);
         };
-        Ok(ranked(scores)
+        Ok(ranked(entries)
             .iter()
-            .position(|(candidate, _, _)| candidate.as_str() == member)
+            .position(|(candidate, _)| candidate.as_str() == member)
             .map(|index| index as u64 + 1))
     }
 
@@ -83,21 +108,22 @@ impl Store for MemoryStore {
         Ok(self
             .boards()
             .get(board)
-            .map_or(0, |scores| scores.len() as u64))
+            .map_or(0, |entries| entries.len() as u64))
     }
 
     fn top(&self, board: &str, limit: usize) -> Result<Vec<Entry>, StoreError> {
         let boards = self.boards();
-        let Some(scores) = boards.get(board) else {
+        let Some(entries) = boards.get(board) else {
             return Ok(Vec::new());
         };
-        Ok(ranked(scores)
+        Ok(ranked(entries)
             .into_iter()
             .take(limit)
-            .map(|(member, score, at)| Entry {
+            .map(|(member, stored)| Entry {
                 member: member.clone(),
-                score,
-                at,
+                name: stored.name.clone(),
+                score: stored.score,
+                at: stored.at,
             })
             .collect())
     }
@@ -114,51 +140,65 @@ impl Store for MemoryStore {
 mod tests {
     use super::*;
 
+    fn cand<'a>(member: &'a str, name: &'a str, score: u32, at: u64) -> Candidate<'a> {
+        Candidate {
+            member,
+            name,
+            score,
+            at,
+        }
+    }
+
     #[test]
     fn ranks_by_score_descending() {
         let store = MemoryStore::default();
-        store.zadd_nx("b", "low|1", 10, 1).unwrap();
-        store.zadd_nx("b", "high|2", 90, 2).unwrap();
-        store.zadd_nx("b", "mid|3", 50, 3).unwrap();
-        assert_eq!(store.rank("b", "high|2").unwrap(), Some(1));
-        assert_eq!(store.rank("b", "mid|3").unwrap(), Some(2));
-        assert_eq!(store.rank("b", "low|1").unwrap(), Some(3));
+        store.zadd_nx("b", &cand("0a", "low", 10, 1)).unwrap();
+        store.zadd_nx("b", &cand("0b", "high", 90, 2)).unwrap();
+        store.zadd_nx("b", &cand("0c", "mid", 50, 3)).unwrap();
+        assert_eq!(store.rank("b", "0b").unwrap(), Some(1));
+        assert_eq!(store.rank("b", "0c").unwrap(), Some(2));
+        assert_eq!(store.rank("b", "0a").unwrap(), Some(3));
     }
 
     #[test]
     fn breaks_score_ties_by_member_descending_like_zrevrange() {
         let store = MemoryStore::default();
-        store.zadd_nx("b", "aaa|1", 7, 1).unwrap();
-        store.zadd_nx("b", "zzz|2", 7, 1).unwrap();
+        store.zadd_nx("b", &cand("aa", "x", 7, 1)).unwrap();
+        store.zadd_nx("b", &cand("zz", "y", 7, 1)).unwrap();
         let top = store.top("b", 10).unwrap();
-        assert_eq!(top[0].member, "zzz|2");
-        assert_eq!(top[1].member, "aaa|1");
-        assert_eq!(store.rank("b", "zzz|2").unwrap(), Some(1));
+        assert_eq!(top[0].member, "zz");
+        assert_eq!(top[1].member, "aa");
+        assert_eq!(store.rank("b", "zz").unwrap(), Some(1));
     }
 
     #[test]
     fn zadd_nx_never_overwrites_an_existing_member() {
         let store = MemoryStore::default();
-        assert!(store.zadd_nx("b", "m|1", 5, 100).unwrap());
-        assert!(!store.zadd_nx("b", "m|1", 999, 200).unwrap());
+        assert!(store.zadd_nx("b", &cand("m1", "first", 5, 100)).unwrap());
+        assert!(!store.zadd_nx("b", &cand("m1", "second", 999, 200)).unwrap());
         let top = store.top("b", 1).unwrap();
-        assert_eq!((top[0].score, top[0].at), (5, 100));
+        assert_eq!(
+            (top[0].name.as_str(), top[0].score, top[0].at),
+            ("first", 5, 100)
+        );
     }
 
     #[test]
     fn boards_are_independent() {
         let store = MemoryStore::default();
-        store.zadd_nx("overflow", "m|1", 5, 1).unwrap();
+        store.zadd_nx("overflow", &cand("m1", "x", 5, 1)).unwrap();
         assert_eq!(store.total("overflow").unwrap(), 1);
         assert_eq!(store.total("mission:s01").unwrap(), 0);
-        assert_eq!(store.rank("mission:s01", "m|1").unwrap(), None);
+        assert_eq!(store.rank("mission:s01", "m1").unwrap(), None);
     }
 
     #[test]
     fn top_respects_the_limit() {
         let store = MemoryStore::default();
         for n in 0..5 {
-            store.zadd_nx("b", &format!("p{n}|x"), n, 1).unwrap();
+            store
+                .zadd_nx("b", &cand(&format!("m{n}"), "p", n, 1))
+                .unwrap();
         }
         assert_eq!(store.top("b", 2).unwrap().len(), 2);
         assert_eq!(store.top("missing", 2).unwrap(), Vec::new());

@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use crate::store::{Entry, Store, StoreError};
+use crate::store::{Candidate, Entry, Store, StoreError};
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 /// Ventana del límite de tasa: `EXPIRE 60` según el contrato.
@@ -146,15 +146,35 @@ fn times_key(board: &str) -> String {
     format!("lbat:{board}")
 }
 
+fn names_key(board: &str) -> String {
+    format!("lbname:{board}")
+}
+
+/// `HMGET key miembro…`: un comando que devuelve un valor por miembro, en el mismo orden.
+fn hmget(key: &str, members: &[String]) -> Value {
+    let mut command = vec![json!("HMGET"), json!(key)];
+    command.extend(members.iter().map(|member| json!(member)));
+    Value::Array(command)
+}
+
 fn integer(value: &Value) -> Result<u64, StoreError> {
     value.as_u64().ok_or(StoreError::Unavailable)
 }
 
 impl<T: Transport> Store for Upstash<T> {
-    fn zadd_nx(&self, board: &str, member: &str, score: u32, at: u64) -> Result<bool, StoreError> {
+    fn zadd_nx(&self, board: &str, candidate: &Candidate<'_>) -> Result<bool, StoreError> {
+        // Una sola transacción: el miembro, su hora y su nombre entran juntos o no entran.
+        // HSETNX deja el nombre y la hora de la primera entrega.
         let results = self.transaction(vec![
-            json!(["ZADD", board_key(board), "NX", score, member]),
-            json!(["HSETNX", times_key(board), member, at]),
+            json!([
+                "ZADD",
+                board_key(board),
+                "NX",
+                candidate.score,
+                candidate.member
+            ]),
+            json!(["HSETNX", times_key(board), candidate.member, candidate.at]),
+            json!(["HSETNX", names_key(board), candidate.member, candidate.name]),
         ])?;
         Ok(integer(&results[0])? == 1)
     }
@@ -198,10 +218,13 @@ impl<T: Transport> Store for Upstash<T> {
             return Ok(Vec::new());
         }
 
-        let mut hmget = vec![json!("HMGET"), json!(times_key(board))];
-        hmget.extend(rows.iter().map(|(member, _)| json!(member)));
-        let times = self.pipeline(vec![Value::Array(hmget)])?;
-        let times = times[0].as_array().ok_or(StoreError::Unavailable)?;
+        let members: Vec<String> = rows.iter().map(|(member, _)| member.clone()).collect();
+        let lookups = self.pipeline(vec![
+            hmget(&times_key(board), &members),
+            hmget(&names_key(board), &members),
+        ])?;
+        let times = lookups[0].as_array().ok_or(StoreError::Unavailable)?;
+        let names = lookups[1].as_array().ok_or(StoreError::Unavailable)?;
 
         Ok(rows
             .into_iter()
@@ -212,7 +235,18 @@ impl<T: Transport> Store for Upstash<T> {
                     .and_then(Value::as_str)
                     .and_then(|text| text.parse::<u64>().ok())
                     .unwrap_or(0);
-                Entry { member, score, at }
+                // Un miembro sin nombre no debería existir; si pasa, se muestra vacío.
+                let name = names
+                    .get(index)
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                Entry {
+                    member,
+                    name,
+                    score,
+                    at,
+                }
             })
             .collect())
     }
@@ -271,31 +305,54 @@ mod tests {
         Ok(json!([{ "result": value }]))
     }
 
+    fn candidate<'a>(member: &'a str, name: &'a str, score: u32, at: u64) -> Candidate<'a> {
+        Candidate {
+            member,
+            name,
+            score,
+            at,
+        }
+    }
+
     #[test]
-    fn zadd_nx_runs_zadd_and_hsetnx_in_one_transaction() {
-        let transport = Scripted::with(vec![Ok(json!([{ "result": 1 }, { "result": 1 }]))]);
+    fn zadd_nx_writes_member_time_and_name_in_one_transaction() {
+        let transport = Scripted::with(vec![Ok(json!([
+            { "result": 1 },
+            { "result": 1 },
+            { "result": 1 }
+        ]))]);
         let store = Upstash::new(transport);
-        assert!(store
-            .zadd_nx("overflow", "SEB|00ff", 2310, 1_766_000_000)
-            .unwrap());
+        let added = store
+            .zadd_nx("overflow", &candidate("00ff", "SEB", 2310, 1_766_000_000))
+            .unwrap();
+        assert!(added);
         let sent = store.transport.sent();
         assert_eq!(sent[0].0, "/multi-exec");
         assert_eq!(
             sent[0].1[0],
-            json!(["ZADD", "lb:overflow", "NX", 2310, "SEB|00ff"])
+            json!(["ZADD", "lb:overflow", "NX", 2310, "00ff"])
         );
         assert_eq!(
             sent[0].1[1],
-            json!(["HSETNX", "lbat:overflow", "SEB|00ff", 1_766_000_000u64])
+            json!(["HSETNX", "lbat:overflow", "00ff", 1_766_000_000u64])
+        );
+        assert_eq!(
+            sent[0].1[2],
+            json!(["HSETNX", "lbname:overflow", "00ff", "SEB"])
         );
     }
 
     #[test]
     fn zadd_nx_reports_a_duplicate_as_not_added() {
-        let transport = Scripted::with(vec![Ok(json!([{ "result": 0 }, { "result": 0 }]))]);
-        assert!(!Upstash::new(transport)
-            .zadd_nx("overflow", "SEB|00ff", 1, 1)
-            .unwrap());
+        let transport = Scripted::with(vec![Ok(json!([
+            { "result": 0 },
+            { "result": 0 },
+            { "result": 0 }
+        ]))]);
+        let added = Upstash::new(transport)
+            .zadd_nx("overflow", &candidate("00ff", "OTRO", 1, 1))
+            .unwrap();
+        assert!(!added);
     }
 
     #[test]
@@ -317,22 +374,24 @@ mod tests {
     }
 
     #[test]
-    fn top_joins_members_scores_and_submission_times() {
+    fn top_joins_members_names_scores_and_submission_times() {
         let store = Upstash::new(Scripted::with(vec![
-            ok(json!(["A|1", "900", "B|2", "800"])),
-            ok(json!(["10", null])),
+            ok(json!(["aa", "900", "bb", "800"])),
+            Ok(json!([{ "result": ["10", null] }, { "result": ["SEB", "OTRO"] }])),
         ]));
         let top = store.top("overflow", 2).unwrap();
         assert_eq!(
             top,
             vec![
                 Entry {
-                    member: "A|1".into(),
+                    member: "aa".into(),
+                    name: "SEB".into(),
                     score: 900,
                     at: 10
                 },
                 Entry {
-                    member: "B|2".into(),
+                    member: "bb".into(),
+                    name: "OTRO".into(),
                     score: 800,
                     at: 0
                 },
@@ -343,9 +402,10 @@ mod tests {
             sent[0].1[0],
             json!(["ZREVRANGE", "lb:overflow", 0, 1, "WITHSCORES"])
         );
+        assert_eq!(sent[1].1[0], json!(["HMGET", "lbat:overflow", "aa", "bb"]));
         assert_eq!(
-            sent[1].1[0],
-            json!(["HMGET", "lbat:overflow", "A|1", "B|2"])
+            sent[1].1[1],
+            json!(["HMGET", "lbname:overflow", "aa", "bb"])
         );
     }
 

@@ -19,7 +19,7 @@ pub fn read(store: &dyn Store, query: Option<&str>) -> Result<Value, ApiError> {
         .map(|(index, entry)| {
             json!({
                 "rank": index + 1,
-                "name": name_of(&entry.member),
+                "name": entry.name,
                 "score": entry.score,
                 "at": entry.at,
             })
@@ -59,11 +59,6 @@ pub fn parse_query(query: Option<&str>) -> Result<(String, usize), ApiError> {
     Ok((board, limit))
 }
 
-/// El miembro es `nombre|hash16`; el nombre nunca contiene `|` porque el saneado lo quita.
-fn name_of(member: &str) -> &str {
-    member.rsplit_once('|').map_or(member, |(name, _)| name)
-}
-
 /// Decodifica `%XX` (y `+` como espacio) de un valor de query. `None` si no es UTF-8 válido.
 fn percent_decode(raw: &str) -> Option<String> {
     let bytes = raw.as_bytes();
@@ -87,6 +82,7 @@ fn percent_decode(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::Candidate;
 
     #[test]
     fn decodes_a_plain_board_key() {
@@ -144,23 +140,20 @@ mod tests {
     }
 
     #[test]
-    fn strips_the_hash_suffix_from_members() {
-        assert_eq!(name_of("SEBITA|00ff00ff00ff00ff"), "SEBITA");
-        assert_eq!(name_of("Ñuñoa 2|0000000000000001"), "Ñuñoa 2");
-    }
-
-    #[test]
     fn lists_entries_in_rank_order_with_name_score_and_time() {
         let store = crate::store::MemoryStore::default();
-        store
-            .zadd_nx("overflow", "LOW|0000000000000001", 10, 100)
-            .unwrap();
-        store
-            .zadd_nx("overflow", "HIGH|0000000000000002", 90, 200)
-            .unwrap();
-        store
-            .zadd_nx("overflow", "MID|0000000000000003", 50, 300)
-            .unwrap();
+        let add = |member: &'static str, name: &'static str, score: u32, at: u64| {
+            let candidate = Candidate {
+                member,
+                name,
+                score,
+                at,
+            };
+            store.zadd_nx("overflow", &candidate).unwrap();
+        };
+        add("0000000000000001", "LOW", 10, 100);
+        add("0000000000000002", "HIGH", 90, 200);
+        add("0000000000000003", "MID", 50, 300);
         let body = read(&store, Some("board=overflow&limit=2")).unwrap();
         assert_eq!(body["board"], "overflow");
         assert_eq!(body["total"], 3);

@@ -39,6 +39,22 @@ dependencies = [
 name = "bp-api"
 version = "0.1.0"
 dependencies = [
+ "bp-server",
+ "tokio",
+ "vercel_runtime",
+]
+
+[[package]]
+name = "bp-core"
+version = "0.1.0"
+dependencies = [
+ "libm",
+]
+
+[[package]]
+name = "bp-server"
+version = "0.1.0"
+dependencies = [
  "base64 0.22.1",
  "bp-core",
  "bytes",
@@ -50,13 +66,6 @@ dependencies = [
  "tokio",
  "ureq",
  "vercel_runtime",
-]
-
-[[package]]
-name = "bp-core"
-version = "0.1.0"
-dependencies = [
- "libm",
 ]
 
 [[package]]

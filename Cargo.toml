@@ -1,0 +1,42 @@
+[package]
+name = "bp-api"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "BREACH PROTOCOL: funciones de Vercel para el tablero (api/runs.rs, api/leaderboard.rs)"
+license = "MIT"
+# Vercel descubre las funciones por sus [[bin]]; no queremos targets implícitos.
+autobins = false
+autotests = false
+autoexamples = false
+autobenches = false
+
+# Vercel Rust runtime: cada archivo de api/ es una función con su propio [[bin]].
+[[bin]]
+name = "runs"
+path = "api/runs.rs"
+
+[[bin]]
+name = "leaderboard"
+path = "api/leaderboard.rs"
+
+[dependencies]
+bp-server = { path = "server" }
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
+vercel_runtime = "2.4.1"
+
+# server/ es miembro del workspace. core/ queda fuera: tiene su propio Cargo.toml y Cargo.lock.
+[workspace]
+members = ["server"]
+exclude = ["core"]
+
+# Perfil de release según la plantilla de Vercel para Rust.
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = 3
+strip = "symbols"
+
+# Los tests re-simulan partidas completas; sin esto cada test tarda varios segundos.
+[profile.dev.package.bp-core]
+opt-level = 2

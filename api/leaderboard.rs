@@ -1,9 +1,9 @@
 //! `GET /api/leaderboard`: entradas de un tablero, con el límite acotado a 1..=50.
 
-use bp_api::error::ApiError;
-use bp_api::leaderboard::read;
-use bp_api::upstash::Upstash;
-use bp_api::wire::{error_response, json_response};
+use bp_server::error::ApiError;
+use bp_server::leaderboard::read;
+use bp_server::upstash::Upstash;
+use bp_server::wire::{error_response, json_response};
 use vercel_runtime::{run, service_fn, Error, Request, Response};
 
 #[tokio::main]

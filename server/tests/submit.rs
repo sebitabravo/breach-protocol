@@ -2,10 +2,10 @@
 
 mod common;
 
-use bp_api::error::ApiError;
-use bp_api::store::{Entry, MemoryStore, Store, StoreError};
-use bp_api::submit::{submit, Submission};
-use bp_api::MAX_BODY_BYTES;
+use bp_server::error::ApiError;
+use bp_server::store::{Candidate, Entry, MemoryStore, Store, StoreError};
+use bp_server::submit::{submit, Submission};
+use bp_server::MAX_BODY_BYTES;
 use common::*;
 
 const CLIENT: &str = "client-hash-a";
@@ -26,7 +26,7 @@ fn verified(log: &[u8]) -> bp_core::Outcome {
 struct FailingStore;
 
 impl Store for FailingStore {
-    fn zadd_nx(&self, _: &str, _: &str, _: u32, _: u64) -> Result<bool, StoreError> {
+    fn zadd_nx(&self, _: &str, _: &Candidate<'_>) -> Result<bool, StoreError> {
         Err(StoreError::Unavailable)
     }
     fn rank(&self, _: &str, _: &str) -> Result<Option<u64>, StoreError> {
@@ -183,11 +183,12 @@ fn resubmitting_the_same_run_with_the_same_name_is_idempotent() {
 }
 
 #[test]
-fn same_run_under_another_name_is_a_separate_entry() {
+fn same_run_under_another_name_returns_the_existing_entry() {
     let store = MemoryStore::default();
-    let _ = submit(&store, &sub(&body("SEBITA", &logs().overflow_fire), CLIENT));
+    let first =
+        submit(&store, &sub(&body("SEBITA", &logs().overflow_fire), CLIENT)).expect("first");
     let other = submit(&store, &sub(&body("OTRO", &logs().overflow_fire), CLIENT)).expect("other");
-    assert_eq!(other.total, 2);
+    assert_eq!((other.rank, other.total), (first.rank, first.total));
 }
 
 #[test]
@@ -196,7 +197,7 @@ fn name_is_sanitised_before_it_is_stored() {
     let payload = body("  Seb<i>ta!  ", &logs().overflow_fire);
     submit(&store, &sub(&payload, CLIENT)).expect("valid");
     let top = store.top("overflow", 10).expect("top");
-    assert_eq!(top[0].member.split_once('|').unwrap().0, "Sebita");
+    assert_eq!(top[0].name, "Sebita");
 }
 
 #[test]
