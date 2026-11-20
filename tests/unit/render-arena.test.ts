@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { ArenaBuild, litColour, perimeterFaces } from '../../src/render/arena';
+import { ArenaBuild, litColour } from '../../src/render/arena';
 import { mulberry32 } from '../../src/render/random';
 import { lookFor, MATERIAL_COLORS } from '../../src/render/themes';
+import { perimeterFaces } from '../../src/render/walls';
 import { arenaBoxes } from '../../src/world/layout';
 import type { MapData } from '../../src/world/map';
 
