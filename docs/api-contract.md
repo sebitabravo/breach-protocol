@@ -34,7 +34,7 @@ Boards (`board` field):
 |---|---|---|
 | mission | `mission:s01` / `mission:s02` / `mission:s03` | the run is a WIN |
 | overflow | `overflow` | always (ends on death or at log end) |
-| daily | `daily:YYYY-MM-DD` | the run ended (WIN or LOSE); seed must equal the UTC date as `YYYYMMDD` for today or yesterday |
+| daily | `daily:YYYY-MM-DD` | the run ended (WIN or LOSE), or it reached the tick cap still playing (see "Tick cap"); seed must equal the UTC date as `YYYYMMDD` for today or yesterday |
 | practice | never | never |
 
 Response `200`:
@@ -68,7 +68,7 @@ Error body: `{ "ok": false, "error": "<code>" }`.
 | 400 | `bad_base64` | `log` is not standard base64 |
 | 405 | `method_not_allowed` | Wrong verb; response carries an `Allow` header |
 | 413 | `body_too_large` | Body over 1 MiB |
-| 422 | `log_invalid` | Decodes, but re-simulation fails (for example frames after the match ended) |
+| 422 | `log_invalid` | Decodes, but re-simulation fails: frames after the match ended, or a daily seed that is not a real calendar date (the core refuses to start it) |
 | 422 | `not_qualified` | Verified, but counts for no board: practice, mission loss, daily from another day, or a run still in progress |
 | 429 | `rate_limited` | More than 10 submissions per minute from one client |
 | 500 | `internal` | Task panic or join failure |
@@ -83,6 +83,26 @@ version, truncation, trailing bytes) gives `400 malformed_log`. Damage that deco
 fails re-simulation (for example, a log padded after the match ended) gives
 `422 log_invalid`.
 
+### Tick cap
+
+The replay format stops at `MAX_TICKS` = 72 000 ticks (20 minutes at 60 Hz). An overflow run
+can outlive that cap: it has no timer, and only death ends it. The core stops recording at
+tick 72 001, and the header carries no mark of the truncation. So a log is only ever
+`header.ticks == MAX_TICKS` with the run still playing when it was cut short.
+
+The server applies this rule, in `server/src/board.rs` (`ended_for_scoring`): **a log whose
+header is at `MAX_TICKS` and whose run is still playing (PLAYING or EXTRACTION) is scored as
+ending at the log end.** The score is the one the core computes at that tick, and it counts
+for the board the mode allows:
+
+- overflow: always counts, as before.
+- daily: counts, because the run is treated as ended. This is the only board whose rule the
+  cap changes.
+- mission: still needs a WIN. A cut-short run is not a win.
+- practice: never counts.
+
+A log one tick shorter than the cap, still playing, does not count for daily.
+
 ## `GET /api/leaderboard?board=<key>&limit=<1..50>`
 
 ```json
@@ -90,9 +110,10 @@ fails re-simulation (for example, a log padded after the match ended) gives
   "entries": [{ "rank": 1, "name": "SEBITA", "score": 9100, "at": 1766000000 }] }
 ```
 
-- `board` is required. Accepted keys: `overflow`, `mission:s01`, `mission:s02`,
-  `mission:s03`, and `daily:YYYY-MM-DD` for any real calendar date. Anything else is
-  `400 bad_board`. Keys are percent-decoded, so `mission%3As01` works.
+- `board` is required. Accepted keys: `overflow`, `mission:s01` to `mission:s03` (one per
+  core map, `MAP_COUNT` = 3), and `daily:YYYY-MM-DD` for any real calendar date from 2000 to
+  2999, the range the core accepts. Anything else is `400 bad_board`. Keys are
+  percent-decoded, so `mission%3As01` works.
 - `limit` defaults to 10. A value that is not an integer is `400 bad_limit`. Integers
   outside 1 to 50 are clamped into that range.
 - `name` is the submitter's name at first acceptance. `at` is the Unix time (seconds)
@@ -148,5 +169,10 @@ version of this document.
 6. Names: letters are Unicode, a name over 16 characters is rejected instead of truncated.
 7. `limit` defaults to 10 and is clamped into 1 to 50. A non-integer is a `400`.
 8. The rate limit runs before body parsing, so malformed requests also count toward it.
-9. Daily boards: any real calendar date is accepted on `GET`, and only runs that ended
-   count on `POST`.
+9. Daily boards: any real calendar date from 2000 to 2999 is accepted on `GET`. On `POST`
+   a run counts once it ended, or once it reached the tick cap still playing (see "Tick
+   cap"). The cap rule is a server decision, approved with the core's overflow rule.
+10. Core constants are used directly from `bp_core` (`MODE_*`, `MAP_COUNT`, `MAX_TICKS`,
+    `WIN`, `LOSE`, `is_valid_date`, `Header`). The server no longer keeps its own copies.
+    Daily seed validity comes from the core: `Game::start` refuses a seed that is not a real
+    date.

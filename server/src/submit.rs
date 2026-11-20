@@ -6,7 +6,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Value};
 
-use crate::board::{derive_board, RunHeader};
+use crate::board::derive_board;
 use crate::error::ApiError;
 use crate::name::sanitize_name;
 use crate::store::{Candidate, Store};
@@ -73,12 +73,7 @@ pub fn submit(store: &dyn Store, input: &Submission<'_>) -> Result<Accepted, Api
     let log = bp_core::decode(&bytes).map_err(|_| ApiError::MalformedLog)?;
     let outcome = bp_core::run(&log).map_err(|_| ApiError::LogInvalid)?;
 
-    let header = RunHeader {
-        mode: log.header.mode,
-        map: log.header.map,
-        seed: log.header.seed,
-    };
-    let board = derive_board(header, &outcome, input.now_unix)?;
+    let board = derive_board(&log.header, &outcome, input.now_unix)?;
 
     // `hash16`: el hash del estado final que calculó el servidor. Identifica la corrida, no a
     // quien la envía; por eso una misma corrida no puede entrar dos veces al mismo tablero.

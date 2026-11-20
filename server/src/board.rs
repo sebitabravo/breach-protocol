@@ -1,49 +1,31 @@
 //! Derivación del tablero desde la cabecera verificada y el resultado. Sin reloj: la hora
 //! llega como `now_unix` para que los tests sean deterministas.
 
-use bp_core::Outcome;
+use bp_core::{
+    Header, Outcome, LOSE, MAP_COUNT, MAX_TICKS, MODE_DAILY, MODE_MISSION, MODE_OVERFLOW, WIN,
+};
 
 use crate::error::ApiError;
 
-// Espejo de `core/src/sim.rs` y `core/src/protocol.rs`: esas constantes no están exportadas.
-pub const MODE_MISSION: u8 = 0;
-pub const MODE_OVERFLOW: u8 = 1;
-pub const MODE_DAILY: u8 = 2;
-pub const MODE_PRACTICE: u8 = 3;
-const PHASE_WIN: u8 = 3;
-const PHASE_LOSE: u8 = 4;
+// Las fases llegan como `f32` desde el núcleo; el resultado las guarda como `u8`.
+const PHASE_WIN: u8 = WIN as u8;
+const PHASE_LOSE: u8 = LOSE as u8;
 
-const MISSION_BOARDS: [&str; 3] = ["mission:s01", "mission:s02", "mission:s03"];
 const OVERFLOW_BOARD: &str = "overflow";
 const SECONDS_PER_DAY: u64 = 86_400;
 
-/// Campos de la cabecera BPL1 que deciden el tablero.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RunHeader {
-    pub mode: u8,
-    pub map: u8,
-    pub seed: u32,
-}
-
 /// Tablero de una partida verificada. Práctica y derrotas de misión no cuentan.
-pub fn derive_board(
-    header: RunHeader,
-    outcome: &Outcome,
-    now_unix: u64,
-) -> Result<String, ApiError> {
+pub fn derive_board(header: &Header, outcome: &Outcome, now_unix: u64) -> Result<String, ApiError> {
     match header.mode {
         MODE_MISSION => {
             if !outcome.won {
                 return Err(ApiError::NotQualified);
             }
-            MISSION_BOARDS
-                .get(usize::from(header.map))
-                .map(|key| (*key).to_string())
-                .ok_or(ApiError::NotQualified)
+            mission_key(header.map).ok_or(ApiError::NotQualified)
         }
         MODE_OVERFLOW => Ok(OVERFLOW_BOARD.to_string()),
         MODE_DAILY => {
-            if outcome.phase != PHASE_WIN && outcome.phase != PHASE_LOSE {
+            if !ended_for_scoring(header, outcome) {
                 return Err(ApiError::NotQualified);
             }
             daily_board(header.seed, now_unix)
@@ -53,12 +35,40 @@ pub fn derive_board(
     }
 }
 
+/// Regla del techo (`docs/architecture.md`, "Registro de partidas y truncamiento"). Un registro
+/// que llega a `MAX_TICKS` con la partida todavía en curso se puntúa como terminado al final del
+/// registro. Eso no convierte una partida en victoria: misión sigue exigiendo `won`.
+fn ended_for_scoring(header: &Header, outcome: &Outcome) -> bool {
+    outcome.phase == PHASE_WIN || outcome.phase == PHASE_LOSE || header.ticks == MAX_TICKS
+}
+
+fn mission_key(map: u8) -> Option<String> {
+    (map < MAP_COUNT).then(|| format!("mission:s{:02}", u32::from(map) + 1))
+}
+
 /// Claves válidas para `GET /api/leaderboard`.
 pub fn is_known_board(key: &str) -> bool {
-    if key == OVERFLOW_BOARD || MISSION_BOARDS.contains(&key) {
+    if key == OVERFLOW_BOARD {
         return true;
     }
-    key.strip_prefix("daily:").is_some_and(is_real_date)
+    if (0..MAP_COUNT).any(|map| mission_key(map).as_deref() == Some(key)) {
+        return true;
+    }
+    key.strip_prefix("daily:")
+        .is_some_and(|date| seed_of_date(date).is_some())
+}
+
+/// `YYYY-MM-DD` a la semilla `YYYYMMDD`, solo si es una fecha que el núcleo acepta.
+fn seed_of_date(text: &str) -> Option<u32> {
+    if text.len() != 10 || text.get(4..5) != Some("-") || text.get(7..8) != Some("-") {
+        return None;
+    }
+    let compact = [text.get(0..4)?, text.get(5..7)?, text.get(8..10)?].concat();
+    if !compact.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let seed = compact.parse::<u32>().ok()?;
+    bp_core::is_valid_date(seed).then_some(seed)
 }
 
 /// La semilla diaria es la fecha UTC como `YYYYMMDD`, y solo vale hoy o ayer.
@@ -66,46 +76,20 @@ fn daily_board(seed: u32, now_unix: u64) -> Result<String, ApiError> {
     let today = i64::try_from(now_unix / SECONDS_PER_DAY).map_err(|_| ApiError::NotQualified)?;
     for days in [today, today - 1] {
         let (year, month, day) = civil_from_days(days);
-        if year_month_day_to_seed(year, month, day) == seed {
+        if yyyymmdd(year, month, day) == Some(seed) {
             return Ok(format!("daily:{year:04}-{month:02}-{day:02}"));
         }
     }
     Err(ApiError::NotQualified)
 }
 
-fn year_month_day_to_seed(year: i64, month: u32, day: u32) -> u32 {
-    // Año < 0 no ocurre en el rango que aceptamos; el cast a u32 no puede envolver aquí.
-    u32::try_from(year).unwrap_or(0) * 10_000 + month * 100 + day
+fn yyyymmdd(year: i64, month: u32, day: u32) -> Option<u32> {
+    let year = u32::try_from(year).ok()?;
+    Some(year * 10_000 + month * 100 + day)
 }
 
-fn is_real_date(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
-        return false;
-    }
-    let parse = |range: std::ops::Range<usize>| text.get(range).and_then(|s| s.parse::<u32>().ok());
-    let (Some(year), Some(month), Some(day)) = (parse(0..4), parse(5..7), parse(8..10)) else {
-        return false;
-    };
-    if !(1..=12).contains(&month) || day == 0 {
-        return false;
-    }
-    let days = days_from_civil(i64::from(year), month, day);
-    civil_from_days(days) == (i64::from(year), month, day)
-}
-
-/// Días desde 1970-01-01 (algoritmo de Howard Hinnant, dominio público).
-pub fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
-    let y = if month <= 2 { year - 1 } else { year };
-    let era = y.div_euclid(400);
-    let yoe = y.rem_euclid(400);
-    let mp = i64::from(if month > 2 { month - 3 } else { month + 9 });
-    let doy = (153 * mp + 2) / 5 + i64::from(day) - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
-
-/// Inverso de `days_from_civil`: (año, mes, día) en UTC.
+/// Inverso de la conversión a días desde 1970-01-01 (algoritmo de Howard Hinnant, dominio
+/// público): (año, mes, día) en UTC.
 pub fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
@@ -122,6 +106,7 @@ pub fn civil_from_days(days: i64) -> (i64, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bp_core::MODE_PRACTICE;
 
     /// 2026-11-20T12:00:00Z
     const NOW: u64 = 1_795_132_800 + 12 * 3600;
@@ -144,19 +129,33 @@ mod tests {
         }
     }
 
-    fn header(mode: u8, map: u8, seed: u32) -> RunHeader {
-        RunHeader { mode, map, seed }
+    /// Cabecera con un registro corto (lejos del techo).
+    fn header(mode: u8, map: u8, seed: u32) -> Header {
+        Header {
+            mode,
+            map,
+            flags: 0,
+            seed,
+            ticks: 1_200,
+        }
     }
 
+    /// Cabecera de un registro que llegó al techo de `MAX_TICKS`.
+    fn at_cap(mode: u8, map: u8, seed: u32) -> Header {
+        Header {
+            ticks: MAX_TICKS,
+            ..header(mode, map, seed)
+        }
+    }
+
+    const PLAYING: u8 = bp_core::PLAYING as u8;
+    const EXTRACTION: u8 = bp_core::EXTRACTION as u8;
+
     #[test]
-    fn civil_dates_round_trip_known_points() {
+    fn civil_dates_match_known_points() {
         assert_eq!(civil_from_days(0), (1970, 1, 1));
         assert_eq!(civil_from_days(11_017), (2000, 3, 1));
-        assert_eq!(days_from_civil(2000, 3, 1), 11_017);
-        assert_eq!(
-            civil_from_days(days_from_civil(2026, 11, 20)),
-            (2026, 11, 20)
-        );
+        assert_eq!(civil_from_days(20_777), (2026, 11, 20));
     }
 
     #[test]
@@ -169,11 +168,11 @@ mod tests {
     fn mission_counts_only_wins_and_maps_to_its_sector() {
         let won = outcome(PHASE_WIN, true);
         assert_eq!(
-            derive_board(header(MODE_MISSION, 0, 1), &won, NOW),
+            derive_board(&header(MODE_MISSION, 0, 1), &won, NOW),
             Ok("mission:s01".into())
         );
         assert_eq!(
-            derive_board(header(MODE_MISSION, 2, 1), &won, NOW),
+            derive_board(&header(MODE_MISSION, 2, 1), &won, NOW),
             Ok("mission:s03".into())
         );
     }
@@ -182,7 +181,7 @@ mod tests {
     fn mission_loss_does_not_qualify() {
         let lost = outcome(PHASE_LOSE, false);
         assert_eq!(
-            derive_board(header(MODE_MISSION, 0, 1), &lost, NOW),
+            derive_board(&header(MODE_MISSION, 0, 1), &lost, NOW),
             Err(ApiError::NotQualified)
         );
     }
@@ -191,21 +190,21 @@ mod tests {
     fn mission_on_an_unknown_sector_does_not_qualify() {
         let won = outcome(PHASE_WIN, true);
         assert_eq!(
-            derive_board(header(MODE_MISSION, 3, 1), &won, NOW),
+            derive_board(&header(MODE_MISSION, MAP_COUNT, 1), &won, NOW),
             Err(ApiError::NotQualified)
         );
     }
 
     #[test]
     fn overflow_counts_whether_it_ends_in_death_or_at_log_end() {
-        let playing = outcome(1, false);
+        let playing = outcome(PLAYING, false);
         let lost = outcome(PHASE_LOSE, false);
         assert_eq!(
-            derive_board(header(MODE_OVERFLOW, 0, 1), &playing, NOW),
+            derive_board(&header(MODE_OVERFLOW, 0, 1), &playing, NOW),
             Ok("overflow".into())
         );
         assert_eq!(
-            derive_board(header(MODE_OVERFLOW, 0, 1), &lost, NOW),
+            derive_board(&header(MODE_OVERFLOW, 0, 1), &lost, NOW),
             Ok("overflow".into())
         );
     }
@@ -215,11 +214,11 @@ mod tests {
         let won = outcome(PHASE_WIN, true);
         let lost = outcome(PHASE_LOSE, false);
         assert_eq!(
-            derive_board(header(MODE_DAILY, 0, 20_261_120), &won, NOW),
+            derive_board(&header(MODE_DAILY, 0, 20_261_120), &won, NOW),
             Ok("daily:2026-11-20".into())
         );
         assert_eq!(
-            derive_board(header(MODE_DAILY, 0, 20_261_120), &lost, NOW),
+            derive_board(&header(MODE_DAILY, 0, 20_261_120), &lost, NOW),
             Ok("daily:2026-11-20".into())
         );
     }
@@ -228,7 +227,7 @@ mod tests {
     fn daily_accepts_yesterday_and_names_the_board_after_the_seed_date() {
         let lost = outcome(PHASE_LOSE, false);
         assert_eq!(
-            derive_board(header(MODE_DAILY, 0, 20_261_119), &lost, NOW),
+            derive_board(&header(MODE_DAILY, 0, 20_261_119), &lost, NOW),
             Ok("daily:2026-11-19".into())
         );
     }
@@ -238,7 +237,7 @@ mod tests {
         let lost = outcome(PHASE_LOSE, false);
         for seed in [20_260_101, 20_261_118, 20_261_121] {
             assert_eq!(
-                derive_board(header(MODE_DAILY, 0, seed), &lost, NOW),
+                derive_board(&header(MODE_DAILY, 0, seed), &lost, NOW),
                 Err(ApiError::NotQualified)
             );
         }
@@ -248,16 +247,16 @@ mod tests {
     fn daily_rejects_seeds_that_are_not_calendar_dates() {
         let lost = outcome(PHASE_LOSE, false);
         assert_eq!(
-            derive_board(header(MODE_DAILY, 0, 20_261_132), &lost, NOW),
+            derive_board(&header(MODE_DAILY, 0, 20_261_132), &lost, NOW),
             Err(ApiError::NotQualified)
         );
     }
 
     #[test]
-    fn daily_run_still_playing_at_log_end_does_not_count() {
-        let playing = outcome(1, false);
+    fn daily_run_still_playing_below_the_cap_does_not_count() {
+        let playing = outcome(PLAYING, false);
         assert_eq!(
-            derive_board(header(MODE_DAILY, 0, 20_261_120), &playing, NOW),
+            derive_board(&header(MODE_DAILY, 0, 20_261_120), &playing, NOW),
             Err(ApiError::NotQualified)
         );
     }
@@ -267,11 +266,64 @@ mod tests {
         let won = outcome(PHASE_WIN, true);
         let lost = outcome(PHASE_LOSE, false);
         assert_eq!(
-            derive_board(header(MODE_PRACTICE, 0, 1), &won, NOW),
+            derive_board(&header(MODE_PRACTICE, 0, 1), &won, NOW),
             Err(ApiError::NotQualified)
         );
         assert_eq!(
-            derive_board(header(MODE_PRACTICE, 0, 1), &lost, NOW),
+            derive_board(&header(MODE_PRACTICE, 0, 1), &lost, NOW),
+            Err(ApiError::NotQualified)
+        );
+    }
+
+    #[test]
+    fn cap_rule_counts_a_daily_still_playing_at_the_tick_cap() {
+        let playing = outcome(PLAYING, false);
+        assert_eq!(
+            derive_board(&at_cap(MODE_DAILY, 0, 20_261_120), &playing, NOW),
+            Ok("daily:2026-11-20".into())
+        );
+    }
+
+    #[test]
+    fn cap_rule_counts_an_extraction_still_running_at_the_cap() {
+        let extracting = outcome(EXTRACTION, false);
+        assert_eq!(
+            derive_board(&at_cap(MODE_DAILY, 0, 20_261_120), &extracting, NOW),
+            Ok("daily:2026-11-20".into())
+        );
+    }
+
+    #[test]
+    fn cap_rule_is_only_for_logs_that_reach_the_cap() {
+        let playing = outcome(PLAYING, false);
+        let one_short = Header {
+            ticks: MAX_TICKS - 1,
+            ..header(MODE_DAILY, 0, 20_261_120)
+        };
+        assert_eq!(
+            derive_board(&one_short, &playing, NOW),
+            Err(ApiError::NotQualified)
+        );
+    }
+
+    #[test]
+    fn cap_rule_does_not_turn_a_mission_still_playing_into_a_win() {
+        let playing = outcome(PLAYING, false);
+        assert_eq!(
+            derive_board(&at_cap(MODE_MISSION, 0, 1), &playing, NOW),
+            Err(ApiError::NotQualified)
+        );
+    }
+
+    #[test]
+    fn cap_rule_leaves_overflow_and_practice_as_they_were() {
+        let playing = outcome(PLAYING, false);
+        assert_eq!(
+            derive_board(&at_cap(MODE_OVERFLOW, 0, 1), &playing, NOW),
+            Ok("overflow".into())
+        );
+        assert_eq!(
+            derive_board(&at_cap(MODE_PRACTICE, 0, 1), &playing, NOW),
             Err(ApiError::NotQualified)
         );
     }
@@ -282,7 +334,7 @@ mod tests {
         let just_after_midnight = 1_795_132_800 + 60;
         assert_eq!(
             derive_board(
-                header(MODE_DAILY, 0, 20_261_120),
+                &header(MODE_DAILY, 0, 20_261_120),
                 &lost,
                 just_after_midnight
             ),
@@ -291,7 +343,7 @@ mod tests {
         let just_before_midnight = 1_795_132_800 - 1;
         assert_eq!(
             derive_board(
-                header(MODE_DAILY, 0, 20_261_119),
+                &header(MODE_DAILY, 0, 20_261_119),
                 &lost,
                 just_before_midnight
             ),
@@ -299,7 +351,7 @@ mod tests {
         );
         assert_eq!(
             derive_board(
-                header(MODE_DAILY, 0, 20_261_120),
+                &header(MODE_DAILY, 0, 20_261_120),
                 &lost,
                 just_before_midnight
             ),
@@ -322,10 +374,14 @@ mod tests {
         for key in [
             "practice",
             "mission:s04",
+            "mission:s00",
             "daily:2026-02-29",
             "daily:2026-13-01",
             "daily:2026-11-2",
             "daily:2026-11-20T",
+            "daily:1999-01-01",
+            "daily:+026-11-20",
+            "daily:2026-1+-20",
             "Overflow",
             "",
         ] {
