@@ -203,7 +203,7 @@ export class GameApp {
 
   // ------------------------------------------------------------- match flow
 
-  private async startMatch(mode: Mode, mapId = 0): Promise<void> {
+  async startMatch(mode: Mode, mapId = 0): Promise<void> {
     if (!this.engine || !this.renderer || !this.input) return;
     this.audio.unlock();
     this.audio.resume();
