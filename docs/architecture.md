@@ -99,6 +99,26 @@ look deltas, fire held/pressed, salto, interactuar, recargar, correr, cambiar
 arma, ADS. Los eventos son efímeros (audio y feed del HUD); el shell consume
 hasta el último `seq` visto por frame.
 
+## Registro de partidas y truncamiento de Overflow
+
+Un registro `BPL1` guarda las entradas cuantizadas de cada tick que consumió la
+simulación. Su techo es `MAX_TICKS` = 72 000 ticks (20 min a 60 Hz); `replay::MAX_TICKS`
+y `bp_core::MAX_TICKS` son la misma constante. El host llama `enable_recording()` antes de
+`start()`: sin registro armado, `encode_log` no graba nada (`bp_start` lo hace así).
+
+- Overflow no tiene temporizador ni tope de oleadas: solo la muerte la termina. Por eso
+  una partida puede superar el techo.
+- Al tick 72 001, `Recorder::push` marca el registro como truncado y deja de grabar. La
+  simulación sigue en vivo, pero el registro ya no describe la partida completa.
+- `Game::log_truncated()` y `bp_log_truncated()` devuelven `true` desde ese momento.
+  `encode_log` codifica los primeros 72 000 ticks: el registro es bien formado y `decode`
+  lo acepta, pero `run` produce un resultado distinto del vivo.
+- Un registro truncado **no es verificable**. El servidor debe rechazarlo, o marcar la
+  partida como no clasificable, al ver `log_truncated`, aunque el registro decodifique.
+  Un registro de Overflow que termina antes de 72 000 ticks no tiene este problema.
+- El núcleo no ofrece hoy un estado "truncado pero verificable". Si la API quiere
+  clasificar esas partidas, tendrá que definir ese criterio.
+
 ## El loop de paso fijo
 
 `src/core/loop.ts`: acumulador clásico con tres salvaguardas.
