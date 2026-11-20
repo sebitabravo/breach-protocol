@@ -416,10 +416,11 @@ impl Game {
             self.player.reserve = 999;
         }
 
-        if input.switch != 0 && input.switch != self.player.weapon {
-            if self.player.equip(input.switch) {
-                self.push_event(ev::RELOAD_END, self.player.weapon as f32, 0.0, 0.0, 0.0);
-            }
+        if input.switch != 0
+            && input.switch != self.player.weapon
+            && self.player.equip(input.switch)
+        {
+            self.push_event(ev::RELOAD_END, self.player.weapon as f32, 0.0, 0.0, 0.0);
         }
 
         if input.reload && self.player.start_reload() {
@@ -464,10 +465,12 @@ impl Game {
         self.player
             .add_recoil(def.recoil_pitch, self.rng.signed(def.recoil_yaw));
 
-        if self.auto_reload && self.player.ammo == 0 && self.player.reserve > 0 {
-            if self.player.start_reload() {
-                self.push_event(ev::RELOAD_START, self.player.weapon as f32, 0.0, 0.0, 0.0);
-            }
+        if self.auto_reload
+            && self.player.ammo == 0
+            && self.player.reserve > 0
+            && self.player.start_reload()
+        {
+            self.push_event(ev::RELOAD_START, self.player.weapon as f32, 0.0, 0.0, 0.0);
         }
     }
 
@@ -534,11 +537,10 @@ impl Game {
     fn update_enemies(&mut self, dt: f32) {
         let player_eye = self.player.eye();
         let player_feet = self.player.pos;
-        let mut damage_events: [(f32, f32, f32, f32); 8] = [(0.0, 0.0, 0.0, 0.0); 8];
-        let mut damage_len = 0usize;
-
-        for i in 0..MAX_ENEMIES {
-            if !self.enemies[i].is_alive() {
+        // Fase 1: cada enemigo decide con préstamos separados; los efectos van en fase 2.
+        let mut pending: [Option<(Action, V3, u8)>; MAX_ENEMIES] = [None; MAX_ENEMIES];
+        for (slot, enemy) in pending.iter_mut().zip(self.enemies.iter_mut()) {
+            if !enemy.is_alive() {
                 continue;
             }
             let ctx = EnemyContext {
@@ -549,40 +551,42 @@ impl Game {
                 player_height: HEIGHT,
             };
             let mut rng = self.rng;
-            let action = self.enemies[i].tick(dt, &ctx, &mut rng);
+            *slot = enemy
+                .tick(dt, &ctx, &mut rng)
+                .map(|a| (a, enemy.pos, enemy.kind));
             self.rng = rng;
+        }
 
-            let pos = self.enemies[i].pos;
-            let kind = self.enemies[i].kind;
+        let mut damage_events: [(f32, f32, f32, f32); 8] = [(0.0, 0.0, 0.0, 0.0); 8];
+        let mut damage_len = 0usize;
+        for &(action, pos, kind) in pending.iter().flatten() {
             match action {
-                Some(Action::Windup) => {
+                Action::Windup => {
                     self.push_event(ev::ENEMY_WINDUP, pos.x, pos.y, pos.z, kind as f32);
                 }
-                Some(Action::Melee { damage }) => {
+                Action::Melee { damage } => {
                     if damage_len < damage_events.len() {
                         damage_events[damage_len] = (damage, pos.x, pos.y, pos.z);
                         damage_len += 1;
                     }
                 }
-                Some(Action::Shot {
+                Action::Shot {
                     origin,
                     dir,
                     damage,
-                }) => {
+                } => {
                     self.push_event(ev::ENEMY_SHOT, origin.x, origin.y, origin.z, kind as f32);
                     let body = crate::math::Aabb::from_feet(player_feet, RADIUS, HEIGHT);
                     if body.ray(origin, dir, 60.0).is_some() {
                         // The wall must not be closer than the player along this ray.
                         let to_player = body.ray(origin, dir, 60.0).unwrap_or(0.0);
-                        if self.arena.ray(origin, dir, to_player).is_none() {
-                            if damage_len < damage_events.len() {
-                                damage_events[damage_len] = (damage, origin.x, origin.y, origin.z);
-                                damage_len += 1;
-                            }
+                        let clear = self.arena.ray(origin, dir, to_player).is_none();
+                        if clear && damage_len < damage_events.len() {
+                            damage_events[damage_len] = (damage, origin.x, origin.y, origin.z);
+                            damage_len += 1;
                         }
                     }
                 }
-                None => {}
             }
         }
 
@@ -592,8 +596,7 @@ impl Game {
             return;
         }
 
-        for i in 0..damage_len {
-            let (damage, sx, sy, sz) = damage_events[i];
+        for &(damage, sx, sy, sz) in &damage_events[..damage_len] {
             let applied = self.player.take_damage(damage);
             if applied > 0.0 {
                 self.damage_taken += applied;
@@ -638,11 +641,11 @@ impl Game {
 
     fn update_nodes(&mut self, dt: f32, input: Input) {
         self.interacting = -1;
-        for i in 0..MAX_NODES {
-            if self.nodes[i].active {
+        let nodes = self.nodes;
+        for (i, &n) in nodes.iter().enumerate() {
+            if n.active {
                 continue;
             }
-            let n = self.nodes[i];
             let dx = self.player.pos.x - n.x;
             let dz = self.player.pos.z - n.z;
             let dist = (dx * dx + dz * dz).sqrt();
@@ -824,9 +827,8 @@ impl Game {
         s[H_EVENTS_HEAD] = self.event_head as f32;
         s[H_EVENTS_COUNT] = self.event_count as f32;
 
-        for i in 0..MAX_ENEMIES {
+        for (i, e) in self.enemies.iter().enumerate() {
             let base = ENEMY_BASE + i * ENEMY_STRIDE;
-            let e = &self.enemies[i];
             s[base + E_X] = e.pos.x;
             s[base + E_Y] = e.pos.y;
             s[base + E_Z] = e.pos.z;
@@ -841,12 +843,12 @@ impl Game {
             s[base + E_ANIM] = e.anim;
         }
 
-        for i in 0..MAX_NODES {
+        for (i, n) in self.nodes.iter().enumerate() {
             let base = NODE_BASE + i * NODE_STRIDE;
-            s[base + N_X] = self.nodes[i].x;
-            s[base + N_Z] = self.nodes[i].z;
-            s[base + N_PROGRESS] = self.nodes[i].progress;
-            s[base + N_ACTIVE] = if self.nodes[i].active { 1.0 } else { 0.0 };
+            s[base + N_X] = n.x;
+            s[base + N_Z] = n.z;
+            s[base + N_PROGRESS] = n.progress;
+            s[base + N_ACTIVE] = if n.active { 1.0 } else { 0.0 };
         }
     }
 
@@ -1021,8 +1023,8 @@ mod tests {
     #[test]
     fn all_terminals_start_extraction_then_win() {
         let mut g = game_with_arena();
-        for i in 0..3 {
-            g.nodes[i].active = true;
+        for n in g.nodes.iter_mut() {
+            n.active = true;
         }
         g.nodes_active = 3;
         g.tick(1.0 / 60.0, Input::default());
