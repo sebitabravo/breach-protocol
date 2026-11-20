@@ -23,7 +23,7 @@ import { ArenaBuild } from './arena';
 import { CameraRig } from './camera';
 import { disposeRobotAssets } from './entities';
 import { EnemyPool } from './enemies';
-import { FxPool } from './fx';
+import { FxPool, impactColour } from './fx';
 import { PoseInterpolator } from './interp';
 import { PRESETS, type QualityName, type QualityPreset } from './presets';
 import { PostFx } from './postfx';
@@ -52,6 +52,7 @@ export class Renderer {
   private readonly rig = new CameraRig();
   private readonly viewmodel: Viewmodel;
   private sector: ArenaBuild | null = null;
+  private solids: MapData['solids'] = [];
   private elapsed = 0;
 
   private renderer: THREE.WebGLRenderer | null = null;
@@ -270,6 +271,7 @@ export class Renderer {
     this.applyLook(look);
     this.sector = new ArenaBuild(map, arenaBoxes(map), look);
     this.scene.add(this.sector.group);
+    this.solids = map.solids;
   }
 
   // --- internals -----------------------------------------------------------
@@ -354,7 +356,7 @@ export class Renderer {
         case EVT.wallHit: {
           this.tmpVec.set(ev.a, ev.b, ev.c);
           if (this.pendingValid) this.fx.tracer(this.pendingOrigin, this.tmpVec);
-          this.fx.impact(this.tmpVec, PALETTE.impactWall);
+          this.fx.impact(this.tmpVec, impactColour(this.solids, ev.a, ev.b, ev.c));
           this.pendingValid = false;
           break;
         }
@@ -366,8 +368,10 @@ export class Renderer {
           break;
         }
         case EVT.enemyDied: {
+          // dos capas: chispas rojas del cuerpo y menta de la energía que se libera
           this.tmpVec.set(ev.a, ev.b, ev.c);
-          this.fx.burst(this.tmpVec, 26, PALETTE.death);
+          this.fx.burst(this.tmpVec, 22, PALETTE.impactEnemy);
+          this.fx.burst(this.tmpVec, 16, PALETTE.death);
           break;
         }
         case EVT.enemyShot: {

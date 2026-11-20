@@ -18,6 +18,44 @@ const C = {
   flash: 0xd9ffe9,
 } as const;
 
+/** Color de chispa por tipo de superficie (SOLID_KIND en world/map.ts). */
+const SURFACE_SPARK: Record<number, number> = {
+  0: 0x96aaba, // wall: acero pálido
+  1: 0x8a9aa6, // floor: polvo
+  2: 0xffb35c, // crate: ámbar
+  3: 0xbfe9ff, // pillar: cian frío
+  4: 0x5ce08b, // plinth: terminal, menta
+  5: 0xffb35c, // cover: ámbar
+  6: 0x4de3c6, // rack: teal
+  7: 0xffd28a, // deck: cálido
+};
+const SURFACE_DEFAULT = 0x96aaba;
+/** Margen para que un punto sobre la cara de un sólido cuente como dentro. */
+const SURFACE_EPS = 0.05;
+
+/**
+ * Color de chispa según el sólido golpeado. El evento WALL_HIT solo trae el
+ * punto (sin tipo de superficie), así que se busca el sólido que lo contiene.
+ */
+export function impactColour(solids: readonly SurfaceSolid[], x: number, y: number, z: number): number {
+  for (const s of solids) {
+    if (
+      x >= s.min[0] - SURFACE_EPS && x <= s.max[0] + SURFACE_EPS &&
+      y >= s.min[1] - SURFACE_EPS && y <= s.max[1] + SURFACE_EPS &&
+      z >= s.min[2] - SURFACE_EPS && z <= s.max[2] + SURFACE_EPS
+    ) {
+      return SURFACE_SPARK[s.kind] ?? SURFACE_DEFAULT;
+    }
+  }
+  return SURFACE_DEFAULT;
+}
+
+export interface SurfaceSolid {
+  min: readonly [number, number, number];
+  max: readonly [number, number, number];
+  kind: number;
+}
+
 const tmpColor = new THREE.Color();
 
 export class FxPool {
