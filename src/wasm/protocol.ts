@@ -56,6 +56,8 @@ export const H = {
   ads: 45,
   eventsHead: 46,
   eventsCount: 47,
+  /** Mutador del desafío diario (0 = ninguno), mirror de `H_MUTATOR` en protocol.rs. */
+  mutator: 49,
 } as const;
 
 export const HEADER_LEN = 64;
@@ -156,3 +158,6 @@ export function assertProtocol(version: number): void {
 
 /** Modos de juego; deben coincidir con `core/src/sim.rs`. */
 export const MODE = { mission: 0, overflow: 1, daily: 2, practice: 3 } as const;
+
+/** Mutadores del desafío diario; deben coincidir con `core/src/daily.rs`. */
+export const MUTATOR = { none: 0, swarm: 1, glass: 2, ironhide: 3 } as const;
