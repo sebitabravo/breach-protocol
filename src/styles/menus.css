@@ -922,7 +922,7 @@
 /* ============================ tutorial ============================ */
 .tutorial {
   position: absolute;
-  top: calc(96px + var(--safe-t));
+  top: calc(150px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
   width: min(360px, calc(100% - 32px));
@@ -1077,6 +1077,10 @@
 
 /* Viewports bajos (844x390 horizontal): el menú se compacta para que la lista quepa entera. */
 @media (max-height: 500px) {
+  .tutorial {
+    top: calc(56px + var(--safe-t));
+  }
+
   .menu__tagline,
   .menu__list + .menufoot {
     display: none;
