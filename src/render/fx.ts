@@ -145,8 +145,10 @@ export class FxPool {
   update(dt: number): void {
     // tracers fade out
     let anyTracer = false;
+    let tracersTouched = false;
     for (let i = 0; i < MAX_TRACERS; i += 1) {
       if (this.tracerLife[i] <= 0) continue;
+      tracersTouched = true;
       this.tracerLife[i] -= dt;
       const f = Math.max(this.tracerLife[i], 0) / TRACER_LIFE;
       const c = i * 3;
@@ -156,11 +158,14 @@ export class FxPool {
       if (this.tracerLife[i] > 0) anyTracer = true;
     }
     this.tracerLines.visible = anyTracer;
+    if (tracersTouched) this.markTracersDirty();
 
     // sparks integrate + fade
     let anySpark = false;
+    let sparksTouched = false;
     for (let i = 0; i < this.budget; i += 1) {
       if (this.sparkLife[i] <= 0) continue;
+      sparksTouched = true;
       this.sparkLife[i] -= dt;
       const p = i * 3;
       if (this.sparkLife[i] <= 0) {
@@ -180,6 +185,7 @@ export class FxPool {
       anySpark = true;
     }
     this.sparks.visible = anySpark;
+    if (sparksTouched) this.markSparksDirty();
 
     // muzzle flash decay
     if (this.flashLife > 0) {
