@@ -203,7 +203,10 @@ fn director_pacing_with_and_without_fast_objectives() {
             assert_eq!(g.phase, phase::PLAYING);
         }
         let seconds = |ticks: &[u32]| {
-            ticks.iter().map(|&t| f64::from(t) / 60.0).collect::<Vec<_>>()
+            ticks
+                .iter()
+                .map(|&t| f64::from(t) / 60.0)
+                .collect::<Vec<_>>()
         };
         println!(
             "fast={fast} waves(s)={:?} activations(s)={:?} peak_alive={peak_alive} remaining_at_wave_5={}",

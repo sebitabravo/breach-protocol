@@ -142,7 +142,11 @@ pub struct SpawnQueue {
 impl SpawnQueue {
     const fn new() -> Self {
         Self {
-            plans: [Composition { scouts: 0, sentinels: 0, interceptors: 0 }; 1 + MAX_NODES],
+            plans: [Composition {
+                scouts: 0,
+                sentinels: 0,
+                interceptors: 0,
+            }; 1 + MAX_NODES],
             len: 0,
         }
     }

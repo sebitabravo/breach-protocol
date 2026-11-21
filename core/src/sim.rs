@@ -10,7 +10,9 @@ use crate::math::{clamp, forward_from_yaw, right_from_yaw, v3, V3};
 use crate::player::{Input, Player, EYE_HEIGHT, HEIGHT, RADIUS};
 use crate::protocol::*;
 use crate::rng::Rng;
-use crate::waves::{endless_composition, mission_composition, surge_composition, Composition, Waves};
+use crate::waves::{
+    endless_composition, mission_composition, surge_composition, Composition, Waves,
+};
 use crate::weapons;
 
 pub const MATCH_SECONDS: f32 = 180.0;
@@ -578,10 +580,7 @@ impl Game {
         self.player
             .add_recoil(def.recoil_pitch, self.rng.signed(def.recoil_yaw));
 
-        if self.auto_reload
-            && self.player.active_slot().ammo == 0
-            && self.player.start_reload()
-        {
+        if self.auto_reload && self.player.active_slot().ammo == 0 && self.player.start_reload() {
             self.push_event(ev::RELOAD_START, self.player.weapon as f32, 0.0, 0.0, 0.0);
         }
     }
@@ -1212,8 +1211,14 @@ mod tests {
         assert_eq!(g.enemies[0].kind, sentry.kind);
         assert_eq!(g.waves.queued() as usize, kinds.len());
         assert_eq!(g.snapshot[H_ENEMIES_REMAINING], (1 + kinds.len()) as f32);
-        assert_eq!(last_event(&g, ev::WAVE_START).map(|(_, a, b)| (a, b)), Some((3.0, 1.0)));
-        assert!(last_event(&g, ev::NODE_ACTIVATED).unwrap().0 < last_event(&g, ev::WAVE_START).unwrap().0);
+        assert_eq!(
+            last_event(&g, ev::WAVE_START).map(|(_, a, b)| (a, b)),
+            Some((3.0, 1.0))
+        );
+        assert!(
+            last_event(&g, ev::NODE_ACTIVATED).unwrap().0
+                < last_event(&g, ev::WAVE_START).unwrap().0
+        );
         let held = Input {
             interact: true,
             ..Input::default()
@@ -1242,13 +1247,19 @@ mod tests {
         accelerated.waves.queue_head = accelerated.waves.queue_len;
         accelerated.step(Input::default());
         channel_at(&mut accelerated, 0);
-        assert_eq!((accelerated.waves.wave, accelerated.waves.intermission), (2, 0.0));
+        assert_eq!(
+            (accelerated.waves.wave, accelerated.waves.intermission),
+            (2, 0.0)
+        );
         assert_eq!(accelerated.alive_count(), 0);
         run_steps(&mut normal, 239, Input::default());
         assert_eq!(normal.waves.wave, 1);
         run_steps(&mut normal, 2, Input::default());
         assert_eq!(normal.waves.wave, 2);
-        assert_eq!(last_event(&normal, ev::WAVE_START).map(|(_, a, b)| (a, b)), Some((2.0, 0.0)));
+        assert_eq!(
+            last_event(&normal, ev::WAVE_START).map(|(_, a, b)| (a, b)),
+            Some((2.0, 0.0))
+        );
     }
 
     #[test]
@@ -1260,7 +1271,10 @@ mod tests {
         channel_at(&mut g, 0);
         assert_eq!(g.waves.wave, WAVE_TOTAL);
         assert_eq!(g.waves.queued(), queued + 3);
-        assert_eq!(last_event(&g, ev::WAVE_START).map(|(_, a, b)| (a, b)), Some((5.0, 2.0)));
+        assert_eq!(
+            last_event(&g, ev::WAVE_START).map(|(_, a, b)| (a, b)),
+            Some((5.0, 2.0))
+        );
         while g.waves.queued() > 0 {
             g.spawn_one();
             for enemy in &mut g.enemies {
@@ -1275,7 +1289,9 @@ mod tests {
         channel_at(&mut g, 2);
         assert_eq!(g.phase, phase::EXTRACTION);
         assert!((g.extraction - (EXTRACTION_SECONDS - FIXED_DT)).abs() < 0.0001);
-        assert!(last_event(&g, ev::WAVE_START).unwrap().0 < last_event(&g, ev::EXTRACTION).unwrap().0);
+        assert!(
+            last_event(&g, ev::WAVE_START).unwrap().0 < last_event(&g, ev::EXTRACTION).unwrap().0
+        );
         let spawned = g.waves.spawned;
         run_steps(&mut g, 59, Input::default());
         assert_eq!(g.waves.spawned, spawned, "extraction shortened grace");
@@ -1299,7 +1315,10 @@ mod tests {
         g.time_elapsed = MATCH_SECONDS + 1.0;
         g.player.hp = 0.0;
         run_steps(&mut g, 2, Input::default());
-        assert_eq!((g.phase, g.time_left, g.waves.wave), (phase::PLAYING, MATCH_SECONDS, 1));
+        assert_eq!(
+            (g.phase, g.time_left, g.waves.wave),
+            (phase::PLAYING, MATCH_SECONDS, 1)
+        );
         assert!(g.player.hp > 0.0);
         assert!(g.nodes.iter().all(|n| n.active));
     }
@@ -1616,14 +1635,20 @@ mod tests {
         });
         assert_eq!(g.snapshot[H_MAG], f32::from(weapons::CARBINE.mag));
         assert_eq!(g.snapshot[H_AMMO], f32::from(weapons::CARBINE.mag));
-        assert_eq!(g.snapshot[H_RESERVE], f32::from(weapons::CARBINE.reserve * 2));
+        assert_eq!(
+            g.snapshot[H_RESERVE],
+            f32::from(weapons::CARBINE.reserve * 2)
+        );
         g.step(Input {
             switch: weapons::ID_SIDEARM,
             ..Input::default()
         });
         assert_eq!(g.snapshot[H_MAG], f32::from(weapons::SIDEARM.mag));
         assert_eq!(g.snapshot[H_AMMO], f32::from(weapons::SIDEARM.mag - 2));
-        assert_eq!(g.snapshot[H_RESERVE], f32::from(weapons::SIDEARM.reserve * 2));
+        assert_eq!(
+            g.snapshot[H_RESERVE],
+            f32::from(weapons::SIDEARM.reserve * 2)
+        );
     }
 
     #[test]
@@ -1747,7 +1772,10 @@ mod tests {
             },
         );
         assert!(g.nodes[0].active);
-        assert_eq!((g.nodes_active, g.final_score(), g.player.hp), (1, score, 50.0));
+        assert_eq!(
+            (g.nodes_active, g.final_score(), g.player.hp),
+            (1, score, 50.0)
+        );
         assert_eq!(last_event(&g, ev::NODE_ACTIVATED), first_activation);
         assert_eq!(g.waves.wave, 4);
     }
