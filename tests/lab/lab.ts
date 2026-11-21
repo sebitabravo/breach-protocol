@@ -12,6 +12,7 @@ import { MAX_ENEMIES } from '../../src/wasm/bridge';
 import { EnemyPool } from '../../src/render/enemies';
 import { PostFx } from '../../src/render/postfx';
 import { Viewmodel } from '../../src/render/viewmodel';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { E, ENEMY_BASE, ENEMY_KIND, ENEMY_STATE, ENEMY_STRIDE, H, SNAPSHOT_LEN } from '../../src/wasm/protocol';
 
 const LAB_MARKER = 'bp-lab-7f3a';
@@ -95,8 +96,40 @@ function weaponView(id: number): void {
   post.render();
 }
 
+/** Robots con luz de partida (ACES + entorno PMREM) y poses distintas: caminata, apuntar, embestida y caída. */
+function rigView(): void {
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
+  scene.background = new THREE.Color(0x0a1218);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.45;
+  const cyan = new THREE.PointLight(0x4de3c6, 6, 12, 2);
+  cyan.position.set(-2, 3.2, -3);
+  scene.add(cyan);
+  floor(-6);
+  const near = Number(params.get('near') ?? 0);
+  camera.position.set(0, 1.35, near ? -1.2 : 4);
+  camera.lookAt(0, 1.0, -6);
+  const pool = new EnemyPool(scene);
+  const player = { px: 0, py: 0, pz: 4 };
+  const yaw = Math.PI * Number(params.get('yaw') ?? 0);
+  const base = [
+    { slot: 0, x: -5.5, y: 0, z: -6, yaw, state: ENEMY_STATE.chase, kind: ENEMY_KIND.scout },
+    { slot: 1, x: -2.8, y: 0, z: -6, yaw, state: ENEMY_STATE.aim, kind: ENEMY_KIND.scout },
+    { slot: 2, x: 0, y: 0, z: -6, yaw, state: ENEMY_STATE.aim, kind: ENEMY_KIND.sentinel },
+    { slot: 3, x: 2.8, y: 0, z: -6, yaw, state: ENEMY_STATE.chase, kind: ENEMY_KIND.interceptor },
+    { slot: 4, x: 5.6, y: 0, z: -6, yaw, state: ENEMY_STATE.charge, kind: ENEMY_KIND.interceptor },
+  ];
+  // Dos frames con desplazamiento: el pool mide la velocidad y arranca el ciclo de pasos.
+  const step = (t: number) => base.map((s) => (s.state === ENEMY_STATE.chase ? { ...s, z: s.z + t * 3 } : s));
+  for (let i = 0; i <= 12; i += 1) pool.update(fakeState({}, step(i / 60), player), false, camera, i / 60);
+  post.render();
+}
+
 const view = params.get('view') ?? 'robots';
 if (view === 'weapon') weaponView(Number(params.get('id') ?? 1));
+else if (view === 'rig') rigView();
 else robotsView();
 
 console.info(LAB_MARKER, 'calls', renderer.info.render.calls);

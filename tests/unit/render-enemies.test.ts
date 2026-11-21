@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import type { Snapshot } from '../../src/wasm/bridge';
 import { MAX_ENEMIES } from '../../src/wasm/bridge';
-import { createRobotMesh } from '../../src/render/entities';
-import { EnemyPool, robotLook, sentinelMuzzle } from '../../src/render/enemies';
+import { buildRobotGeometry } from '../../src/render/robot-rig';
+import { EnemyPool, robotLook, SENTINEL_MUZZLE, sentinelMuzzle } from '../../src/render/enemies';
 import { E, ENEMY_BASE, ENEMY_KIND, ENEMY_STATE, ENEMY_STRIDE, H, SNAPSHOT_LEN } from '../../src/wasm/protocol';
 
 interface Slot {
@@ -96,40 +96,42 @@ describe('robotLook', () => {
 });
 
 describe('sentinelMuzzle', () => {
-  it('places the barrel tip ahead of the sentinel at yaw 0', () => {
+  it('places the barrel tip ahead of and above the sentinel at yaw 0, at shoulder height', () => {
     const [x, y, z] = sentinelMuzzle(10, 0, 5, 0);
-    expect(x).toBeCloseTo(10.36, 6);
-    expect(y).toBeCloseTo(1.05, 6);
-    expect(z).toBeCloseTo(5.5, 6);
+    expect(x).toBeCloseTo(10 + SENTINEL_MUZZLE.x, 6);
+    expect(z).toBeGreaterThan(5.7);
+    expect(y).toBeGreaterThan(1.3);
+    expect(y).toBeLessThan(1.9);
   });
 
   it('rotates the barrel offset with the sentinel yaw', () => {
     const [x, , z] = sentinelMuzzle(0, 0, 0, Math.PI / 2);
-    expect(x).toBeCloseTo(0.5, 6);
-    expect(z).toBeCloseTo(-0.36, 6);
+    expect(x).toBeCloseTo(SENTINEL_MUZZLE.z, 6);
+    expect(z).toBeCloseTo(-SENTINEL_MUZZLE.x, 6);
   });
 });
 
 describe('robot silhouettes', () => {
-  it('gives each kind its own body geometry', () => {
-    const geos = [0, 1, 2].map((k) => createRobotMesh(k).geometry);
+  it('gives each kind its own geometry with a part index per vertex', () => {
+    const geos = [0, 1, 2].map((k) => buildRobotGeometry(k));
+    for (const geo of geos) {
+      const part = geo.getAttribute('aPart');
+      expect(part.count).toBe(geo.getAttribute('position').count);
+      for (let i = 0; i < part.count; i += 1) expect(part.getX(i)).toBeGreaterThanOrEqual(0);
+    }
     expect(new Set(geos).size).toBe(3);
-  });
-
-  it('reaches furthest forward with the interceptor blade arms', () => {
-    const reach = (kind: number): number => {
-      const geo = createRobotMesh(kind).geometry;
-      geo.computeBoundingBox();
-      return geo.boundingBox?.max.z ?? 0;
-    };
-    expect(reach(ENEMY_KIND.interceptor)).toBeGreaterThan(reach(ENEMY_KIND.sentinel));
-    expect(reach(ENEMY_KIND.interceptor)).toBeGreaterThan(reach(ENEMY_KIND.scout));
   });
 
   it('gives every robot red emissive eyes', () => {
     for (const kind of [ENEMY_KIND.scout, ENEMY_KIND.sentinel, ENEMY_KIND.interceptor]) {
-      const eyes = createRobotMesh(kind).children[0] as THREE.Mesh;
-      expect((eyes.material as THREE.MeshBasicMaterial).color.getHex()).toBe(0xff5b6b);
+      const geo = buildRobotGeometry(kind);
+      const blink = geo.getAttribute('aBlink');
+      const color = geo.getAttribute('color');
+      let red = 0;
+      for (let i = 0; i < blink.count; i += 1) {
+        if (blink.getX(i) > 0 && color.getX(i) > 0.9 && color.getY(i) < 0.1) red += 1;
+      }
+      expect(red).toBeGreaterThan(0);
     }
   });
 });
@@ -141,8 +143,10 @@ describe('EnemyPool', () => {
     const scene = new THREE.Scene();
     const pool = new EnemyPool(scene);
     pool.update(fakeSnapshot([{ slot: 0, x: 4, y: 0, z: 2, yaw: 0, state: ENEMY_STATE.chase, kind: ENEMY_KIND.scout }]), false, camera, 0);
-    const visible = meshesIn(scene).filter((m) => m.visible);
-    expect(visible).toHaveLength(1);
+    expect(pool.visibleCount(ENEMY_KIND.scout)).toBe(1);
+    expect(pool.visibleCount(ENEMY_KIND.sentinel)).toBe(0);
+    expect(pool.visibleCount(ENEMY_KIND.interceptor)).toBe(0);
+    expect(meshesIn(scene).filter((m) => m.visible)).toHaveLength(0);
     pool.dispose();
   });
 
@@ -185,6 +189,30 @@ describe('EnemyPool', () => {
     }
     pool.update(fakeSnapshot(all), false, camera, 0);
     expect(haloIn(scene).count).toBe(MAX_ENEMIES);
+    pool.dispose();
+  });
+});
+
+describe('EnemyPool animation', () => {
+  const camera = new THREE.PerspectiveCamera();
+  const at = (x: number, state: number = ENEMY_STATE.chase) => fakeSnapshot([{ slot: 0, x, y: 0, z: 0, yaw: 0, state, kind: ENEMY_KIND.scout }]);
+
+  it('keeps a robot that just died on screen for its fall, then removes it', () => {
+    const scene = new THREE.Scene();
+    const pool = new EnemyPool(scene);
+    pool.update(at(0), false, camera, 0);
+    pool.update(at(0, ENEMY_STATE.dead), false, camera, 0.05);
+    expect(pool.visibleCount(ENEMY_KIND.scout)).toBe(1);
+    for (let t = 0.1; t < 1.5; t += 0.05) pool.update(at(0, ENEMY_STATE.dead), false, camera, t);
+    expect(pool.visibleCount(ENEMY_KIND.scout)).toBe(0);
+    pool.dispose();
+  });
+
+  it('never draws a robot that was already dead when first seen', () => {
+    const scene = new THREE.Scene();
+    const pool = new EnemyPool(scene);
+    pool.update(at(0, ENEMY_STATE.dead), false, camera, 0);
+    expect(pool.visibleCount(ENEMY_KIND.scout)).toBe(0);
     pool.dispose();
   });
 });

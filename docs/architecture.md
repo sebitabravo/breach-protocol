@@ -35,8 +35,8 @@ src/
   wasm/protocol.ts      espejo TS del contrato binario (protocol.rs)
   render/renderer.ts    Three.js: escena, cámara, presets de calidad, draw calls
   render/arena.ts       geometría estática fusionada en lotes
-  render/entities.ts    geometrías y materiales de robots compartidos por tipo
-  render/enemies.ts     pool de mallas por slot: cuerpo y visor por robot
+  render/robot-rig.ts   robots humanoides articulados: piezas, proporciones y solver de poses
+  render/enemies.ts     un InstancedMesh por tipo; la pose por pieza vive en una textura
   render/telegraph.ts   halos instanciados y miras agrupadas
   render/viewmodel.ts   modelo de arma en primera persona
   render/fx.ts          pool de efectos (impactos, fogonazos)
@@ -193,7 +193,7 @@ drawing buffer (`PLAY_PIXEL_BUDGET` en `src/render/presets.ts`: 154 k, 540 k y
 daño, cadencia, cargador, reserva, dispersión, retroceso), registrarla en el
 protocolo si introduce un id nuevo (`core/src/protocol.rs::WEAPON` ya tiene
 sidearm=1 y carbine=2, espejo en `src/wasm/protocol.ts::WEAPON`), y darle
-malla y sonido al shell: `src/render/entities.ts` (viewmodel) y
+malla y sonido al shell: `src/render/authored-weapon.ts` (viewmodel) y
 `src/audio/audio.ts`. El selector por teclado ya existe en
 `src/input/input.ts` (`Digit1` / `Digit2`).
 
@@ -201,7 +201,7 @@ malla y sonido al shell: `src/render/entities.ts` (viewmodel) y
 se integra en cada paso fijo; la patrulla avanza de waypoint al llegar o a los 4 s), su `kind` en el protocolo (`ENEMY_KIND` en ambos
 lados) y su entrada en la composición de oleadas (`core/src/waves.rs`). El
 shell ya renderiza cualquier enemigo genérico desde el snapshot
-(`src/render/entities.ts`); si necesita silueta propia, ahí va el caso.
+(`src/render/robot-rig.ts`: piezas por tipo en `boxesFor`, proporciones en `RIGS`).
 
 **Agregar una arena** — definir el mapa jugable (sólidos, terminales, spawns,
 arranque y salida) en `core/src/maps.rs`. El shell lee la tabla de mapa con
