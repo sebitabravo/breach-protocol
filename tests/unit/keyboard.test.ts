@@ -25,6 +25,16 @@ describe('KeyboardState', () => {
     expect(kb.consumeSwitch()).toBe(0);
   });
 
+  it('ignores keys pressed outside a match so a menu Space/Enter cannot arm the first tick', () => {
+    const kb = new KeyboardState();
+    kb.keyDown('Space', false, false);
+    kb.keyDown('KeyR', false, false);
+    kb.keyDown('KeyW', false, false);
+    expect(kb.has('KeyW')).toBe(false);
+    expect(kb.consumeJump()).toBe(false);
+    expect(kb.consumeReload()).toBe(false);
+  });
+
   it('clear releases every key', () => {
     const kb = new KeyboardState();
     kb.keyDown('KeyA', false);

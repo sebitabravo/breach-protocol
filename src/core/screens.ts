@@ -75,6 +75,14 @@ export type FlowEvent =
   | { type: 'resume' }
   | { type: 'finish' };
 
+/**
+ * Solo un "Jugar" explícito de un jugador nuevo entra por calibración. Sin intención (la
+ * precarga en reposo terminó sola) la pantalla visible no cambia: el menú sigue siendo el menú.
+ */
+export function routesToCalibration(tutorialSeen: boolean, intentAction: string | undefined, hasIntent: boolean): boolean {
+  return !tutorialSeen && hasIntent && intentAction === 'play';
+}
+
 export const INITIAL_FLOW: FlowState = { screen: 'boot', mode: 'run', pauseOrigin: 'game', mapId: 0 };
 
 const PAGE_SCREENS: readonly Screen[] = ['menu', 'calibrate', 'about', 'sectors', 'briefing', 'leaderboard', 'result'];

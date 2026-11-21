@@ -1,12 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openCalibration, playFromLanding } from './support';
 
 async function startRun(page: Page): Promise<void> {
   await page.goto('/');
-  const app = page.locator('#app');
-  await expect(app).toHaveAttribute('data-screen', /calibrate|menu/, { timeout: 30_000 });
-  const screen = await app.getAttribute('data-screen');
-  await page.locator(`#screen-${screen} [data-action="play"]`).click();
-  await expect(app).toHaveAttribute('data-screen', 'playing');
+  await playFromLanding(page);
 }
 
 test('losing the WebGL context pauses the match and restoring it recovers', async ({ page }) => {
@@ -55,7 +52,7 @@ test('the calibration sheet can be scrolled to START at 320x640', async ({ page 
   await page.setViewportSize({ width: 320, height: 640 });
   await page.goto('/');
   const app = page.locator('#app');
-  await expect(app).toHaveAttribute('data-screen', 'calibrate', { timeout: 30_000 });
+  await openCalibration(page);
   const start = page.locator('#screen-calibrate [data-action="play"]');
   const scrollable = await page.evaluate(() => {
     let node = document.querySelector('#screen-calibrate [data-action="play"]')!.parentElement;

@@ -1,4 +1,5 @@
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
+import { playFromLanding } from './support';
 
 /**
  * Boot smoke: the game must reach a playable state with zero console errors
@@ -28,9 +29,7 @@ test('the game boots, plays and reports real numbers', async ({ page }: { page: 
 
   // 3. Clicking play reveals the HUD (the play button lives on the active
   //    screen; other screens carry hidden copies).
-  const screen = await app.getAttribute('data-screen');
-  await page.locator(`#screen-${screen} [data-action="play"]`).click();
-  await expect(app).toHaveAttribute('data-screen', 'playing');
+  await playFromLanding(page);
   await expect(page.locator('#hud')).toBeVisible();
 
   // 4. One second in, the match timer moved off 3:00 and the counters show

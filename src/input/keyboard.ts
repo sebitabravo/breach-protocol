@@ -11,7 +11,9 @@ export class KeyboardState {
   private switchTo = 0;
 
   /** Una tecla ya presionada que llega como `repeat` igual debe quedar registrada (pausa, blur). */
-  keyDown(code: string, repeat: boolean): void {
+  keyDown(code: string, repeat: boolean, playing = true): void {
+    // Fuera de partida las teclas activan botones (Espacio, Enter): no deben llegar armadas al primer tick.
+    if (!playing) return;
     this.keys.add(code);
     if (repeat) return;
     if (code === 'Space') this.jump = true;

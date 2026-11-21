@@ -62,6 +62,25 @@ export async function screenIs(page: Page, screen: string): Promise<void> {
   await expect(page.locator('#app')).toHaveAttribute('data-screen', screen, { timeout: 30_000 });
 }
 
+/** Primera visita: la precarga en reposo deja el menú; Jugar lleva a calibración. */
+export async function openCalibration(page: Page): Promise<void> {
+  await screenIs(page, 'menu');
+  await page.locator('#screen-menu [data-action="play"]').click();
+  await screenIs(page, 'calibrate');
+}
+
+/** Del arranque a partida, pase o no por la hoja de calibración de primera visita. */
+export async function playFromLanding(page: Page): Promise<void> {
+  const app = page.locator('#app');
+  await expect(app).toHaveAttribute('data-screen', /calibrate|menu/, { timeout: 30_000 });
+  for (let step = 0; step < 2 && (await app.getAttribute('data-screen')) !== 'playing'; step += 1) {
+    const screen = await app.getAttribute('data-screen');
+    await page.locator(`#screen-${screen} [data-action="play"]`).click();
+    await expect(app).toHaveAttribute('data-screen', /calibrate|playing/);
+  }
+  await expect(app).toHaveAttribute('data-screen', 'playing');
+}
+
 /** Tamaño visible de un elemento; cero si no se ve (oculto, sin layout o fuera de pantalla). */
 export async function visibleBox(page: Page, selector: string): Promise<{ x: number; y: number; w: number; h: number } | null> {
   return page.evaluate((sel) => {

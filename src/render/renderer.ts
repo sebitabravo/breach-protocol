@@ -373,6 +373,11 @@ export class Renderer {
     this.renderer = null;
   }
 
+  /** Limpia decals, casquillos y humo: una partida nueva en el mismo mapa no hereda los de la anterior. */
+  resetFeedback(): void {
+    this.feedback.reset();
+  }
+
   /** Reemplaza la geometría y el look del sector (liberando los anteriores). */
   setSector(map: MapData): void {
     this.disposeSector();

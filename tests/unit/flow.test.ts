@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { INITIAL_FLOW, pauseSubtitle, transition, type FlowState } from '../../src/core/screens';
+import { INITIAL_FLOW, pauseSubtitle, routesToCalibration, transition, type FlowState } from '../../src/core/screens';
 
 function at(screen: FlowState['screen'], extra: Partial<FlowState> = {}): FlowState {
   return { ...INITIAL_FLOW, screen, ...extra };
@@ -9,6 +9,16 @@ describe('boot routing', () => {
   it('sends a first visit to calibration and a returning player to the menu', () => {
     expect(transition(INITIAL_FLOW, { type: 'boot-complete', tutorialSeen: false }).screen).toBe('calibrate');
     expect(transition(INITIAL_FLOW, { type: 'boot-complete', tutorialSeen: true }).screen).toBe('menu');
+  });
+
+  it('only an explicit Jugar from a first-time visitor enters through calibration', () => {
+    expect(routesToCalibration(false, 'play', true)).toBe(true);
+    expect(routesToCalibration(true, 'play', true)).toBe(false);
+    expect(routesToCalibration(false, 'overflow', true)).toBe(false);
+  });
+
+  it('an idle preload with no intent never swaps the landing menu for calibration', () => {
+    expect(routesToCalibration(false, undefined, false)).toBe(false);
   });
 
   it('falls back to the error screen when boot fails, and only from boot', () => {

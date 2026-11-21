@@ -49,6 +49,7 @@ import {
   pauseSubtitle,
   pointerLockErrorAction,
   pointerLockLostAction,
+  routesToCalibration,
   transition,
   type FlowEvent,
   type FlowState,
@@ -144,6 +145,7 @@ export class GameApp {
   private tutorialOrigin = { x: 0, z: 0 };
   private pending: PendingRun | null = null;
   private submitting = false;
+  private calibrationOffered = false;
   private boardToken = 0;
   private lastSeq = 0;
   private events: WorldEvent[] = [];
@@ -217,8 +219,9 @@ export class GameApp {
       const intent = takeIntent();
       // A cold Jugar preserves the first-visit route into the simulator. Other
       // choices come from the menu and keep their usual navigation or game mode.
-      const fromMenu = intent !== undefined && intent.dataset.action !== 'play';
-      this.dispatch({ type: 'boot-complete', tutorialSeen: this.progress.state.tutorialSeen || fromMenu });
+      const toCalibration = routesToCalibration(
+        this.progress.state.tutorialSeen, intent?.dataset.action, intent !== undefined);
+      this.dispatch({ type: 'boot-complete', tutorialSeen: !toCalibration });
       if (intent) this.activateControl(intent);
 
       this.lastNow = performance.now();
@@ -254,7 +257,9 @@ export class GameApp {
     if (screen === 'tutorial-handoff') renderTutorialHandoff(flow.outcome, flow.elapsedSeconds);
     this.app.dataset.screen = screen;
     this.objectiveMarker?.invalidate();
+    if (screen === 'calibrate') this.calibrationOffered = true;
     if (screen === 'playing') {
+      this.input?.reset();
       this.canvas.focus({ preventScroll: true });
       return;
     }
@@ -298,7 +303,7 @@ export class GameApp {
   // ------------------------------------------------------------- match flow
 
   async startMatch(mode: Mode, mapId = 0, options: { tutorial?: boolean } = {}): Promise<void> {
-    if (!this.engine || !this.renderer || !this.input) return;
+    if (!this.engine || !this.renderer || !this.input || this.renderer.isContextLost) return;
     if (transitionGame(this.flow, { type: 'start', mode, mapId }) === this.flow) return;
 
     this.audio.unlock();
@@ -322,6 +327,8 @@ export class GameApp {
     this.syncMap();
     this.finished = false;
     this.pending = null;
+    this.submitting = false;
+    this.renderer.resetFeedback();
     this.lastSeq = 0;
     this.events.length = 0;
     this.loop.reset();
@@ -392,7 +399,7 @@ export class GameApp {
   }
 
   private resume(): void {
-    if (!this.engine) return;
+    if (!this.engine || this.renderer?.isContextLost) return;
     if (!this.dispatch({ type: 'resume' })) return;
     this.loop.reset();
     this.lastNow = performance.now();
@@ -520,6 +527,8 @@ export class GameApp {
 
     const result = await submitRun({ name: input.value, log: pending.log });
     this.submitting = false;
+    // La partida terminó o empezó otra mientras tanto: el panel ya pertenece a otra corrida.
+    if (this.pending !== pending) return;
     if (result.status === 'ranked') {
       pending.submitted = true;
       renderBoardPanel({ kind: 'ranked', rank: result.rank, total: result.total, where: boardLabel(result.board) });
@@ -645,7 +654,9 @@ export class GameApp {
 
     if (!this.renderer) return;
 
-    if (this.flow.screen === 'playing' && this.engine && this.input) {
+    if (this.flow.screen === 'playing' && this.renderer.isContextLost) {
+      this.pause('game');
+    } else if (this.flow.screen === 'playing' && this.engine && this.input) {
       const step = this.loop.advance(rawDt);
       if (step.dropped > 0) this.engine.noteDropped(step.dropped);
       if (step.steps > 0) {
@@ -862,7 +873,10 @@ export class GameApp {
         await this.startMatch('practice', 0);
         break;
       case 'play':
-        if (this.flow.screen === 'menu') await this.startMatch('run', recommendedSector(this.progress.state));
+        // El menú sin pasar por calibración (precarga en reposo) conserva la ruta de primera visita.
+        if (this.flow.screen === 'menu' && !this.progress.state.tutorialSeen && !this.calibrationOffered) {
+          this.dispatch({ type: 'open', screen: 'calibrate' });
+        } else if (this.flow.screen === 'menu') await this.startMatch('run', recommendedSector(this.progress.state));
         else await this.startMatch('practice', 0, { tutorial: true });
         break;
       case 'tutorial-replay':

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { VIEWPORTS, mockApi, screenIs, seedStorage, shot, visibleBox, type Viewport } from './support';
+import { VIEWPORTS, mockApi, openCalibration, screenIs, seedStorage, shot, visibleBox, type Viewport } from './support';
 
 const PROGRESS_CLEARED = {
   sectors: [
@@ -162,7 +162,7 @@ for (const viewport of VIEWPORTS) {
       await seedStorage(page, { tutorialSeen: false });
       await mockApi(page, {});
       await page.goto('/');
-      await screenIs(page, 'calibrate');
+      await openCalibration(page);
       await shot(page, viewport, '11-calibrate');
       await page.locator('#screen-calibrate [data-action="play"]').click();
       await screenIs(page, 'playing');

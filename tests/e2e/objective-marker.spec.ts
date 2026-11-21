@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { Engine } from '../../src/wasm/bridge';
 import { I, INPUT_LEN } from '../../src/wasm/protocol';
 import type { Renderer } from '../../src/render/renderer';
-import { screenIs } from './support';
+import { openCalibration, screenIs } from './support';
 
 const marker = '#objective-marker';
 
@@ -12,7 +12,7 @@ async function start(page: Page) {
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
   await page.addInitScript(() => localStorage.setItem('bp.settings', JSON.stringify({ version: 2, quality: 'high', audioEnabled: false })));
   await page.goto('/');
-  await screenIs(page, 'calibrate');
+  await openCalibration(page);
   await page.locator('#screen-calibrate [data-action="play"]').tap();
   await screenIs(page, 'playing');
   return errors;

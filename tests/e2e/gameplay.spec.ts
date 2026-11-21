@@ -3,12 +3,12 @@ import { FIXED_DT } from '../../src/core/loop';
 import { EVT, I, INPUT_LEN } from '../../src/wasm/protocol';
 import type { Engine } from '../../src/wasm/bridge';
 import type { Renderer } from '../../src/render/renderer';
-import { SHOT_DIR, mockApi, screenIs, seedStorage, visibleBox } from './support';
+import { SHOT_DIR, mockApi, openCalibration, screenIs, seedStorage, visibleBox } from './support';
 
 async function startTutorial(page: Page): Promise<void> {
   await seedStorage(page, { tutorialSeen: false });
   await page.goto('/');
-  await screenIs(page, 'calibrate');
+  await openCalibration(page);
   await page.locator('#screen-calibrate [data-action="play"]').tap();
   await screenIs(page, 'playing');
   await expect(page.locator('#tutorial')).toBeVisible();

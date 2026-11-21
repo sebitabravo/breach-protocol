@@ -260,7 +260,7 @@ export class InputManager {
     if (shouldPreventDefault(code, { playing: this.hooks.isPlaying(), formTarget })) {
       event.preventDefault();
     }
-    this.kb.keyDown(code, event.repeat);
+    this.kb.keyDown(code, event.repeat, this.hooks.isPlaying());
   };
 
   private onKeyUp = (event: KeyboardEvent): void => {
