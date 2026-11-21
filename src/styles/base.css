@@ -625,6 +625,15 @@ input[type="range"]::-moz-range-thumb {
   z-index: 60;
 }
 
+/* La región viva queda en el DOM aunque no haya mensaje: un lector de pantalla solo anuncia texto
+   que cambia dentro de una región ya renderizada, no una que pasa de display:none a visible. */
+.toast:empty {
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .mono {
   font-family: var(--mono);
 }

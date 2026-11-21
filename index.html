@@ -535,6 +535,8 @@
               <div class="pane" data-pane="audio">
                 <label class="field field--row" for="set-audio"><span class="field__label">Audio</span><input id="set-audio" class="switch" role="switch" type="checkbox" checked /></label>
                 <label class="field" for="set-volume"><span class="field__label">Volumen <b id="set-volume-val">70%</b></span><input id="set-volume" type="range" min="0" max="1" step="0.05" value="0.7" /></label>
+                <label class="field" for="set-sfx"><span class="field__label">Efectos <b id="set-sfx-val">100%</b></span><input id="set-sfx" type="range" min="0" max="1" step="0.05" value="1" /></label>
+                <label class="field" for="set-ui"><span class="field__label">Interfaz <b id="set-ui-val">100%</b></span><input id="set-ui" type="range" min="0" max="1" step="0.05" value="1" /></label>
                 <p class="mono-dim">Todo el audio se sintetiza con Web Audio API: sin archivos que descargar.</p>
               </div>
               <div class="pane" data-pane="access">
@@ -655,7 +657,7 @@
         <p class="eng__note" id="eng-note">datos reales del renderer y del bucle de simulación.</p>
       </aside>
 
-      <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
       <div id="context-lost" class="ctx-lost" role="alert" hidden>
         <strong>Gráficos interrumpidos</strong>
         <span>El navegador soltó el contexto WebGL. Esperando recuperación…</span>

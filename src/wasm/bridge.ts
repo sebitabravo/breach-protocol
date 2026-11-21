@@ -54,6 +54,13 @@ export interface WorldEvent {
  * A live view over the simulation state. Values are read straight out of
  * WebAssembly memory; nothing is copied or allocated per frame.
  */
+export interface NodeView {
+  x: number;
+  z: number;
+  progress: number;
+  active: boolean;
+}
+
 export class Snapshot {
   private view: Float32Array;
 
@@ -196,14 +203,15 @@ export class Snapshot {
     return this.view[H.node0 + index];
   }
 
-  node(index: number): { x: number; z: number; progress: number; active: boolean } {
+  /** Con `out` reutiliza el objeto en vez de reservar uno nuevo (uso por frame en el render). */
+  node(index: number, out?: NodeView): NodeView {
     const base = NODE_BASE + index * NODE_STRIDE;
-    return {
-      x: this.view[base],
-      z: this.view[base + 1],
-      progress: this.view[base + 2],
-      active: this.view[base + 3] > 0.5,
-    };
+    const target = out ?? { x: 0, z: 0, progress: 0, active: false };
+    target.x = this.view[base];
+    target.z = this.view[base + 1];
+    target.progress = this.view[base + 2];
+    target.active = this.view[base + 3] > 0.5;
+    return target;
   }
 
   enemy(index: number): {

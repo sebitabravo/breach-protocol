@@ -263,6 +263,19 @@
   display: inline-flex;
   align-items: center;
   min-width: 44px;
+  white-space: nowrap;
+}
+
+/* Pie del menú en pantallas angostas: los tres enlaces caben en una fila de 44 px. */
+@media (max-width: 480px) {
+  #app.is-touch .menufoot__links {
+    gap: var(--dist);
+  }
+
+  #app.is-touch .navlink {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+  }
 }
 
 #app.is-touch .iconbtn--sm {

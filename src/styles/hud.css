@@ -766,6 +766,21 @@
   }
 }
 
+/* Tableta (481–1100 px de ancho, alta): el bloque de sector llega hasta ~128 px; terminales y objetivo van debajo. */
+@media (min-width: 481px) and (max-width: 1100px) and (min-height: 561px) {
+  .hud__objective-track {
+    top: calc(136px + var(--safe-t));
+  }
+
+  .hud__block--objective {
+    top: calc(160px + var(--safe-t));
+  }
+
+  .tutorial {
+    top: calc(172px + var(--safe-t));
+  }
+}
+
 @media (max-width: 900px) {
   .hud__minimap {
     width: 108px;
@@ -871,6 +886,24 @@
 
 /* El tutorial usa la franja entre los terminales y la mira. Compactá su HUD
    superior y reservá esa franja para las instrucciones, no para el feed. */
+/* Con el tutorial visible, el objetivo compacto repite la instrucción y la puntuación no importa en práctica. */
+#hud:has(.tutorial:not([hidden])) .hud__block--objective,
+#hud:has(.tutorial:not([hidden])) .hud__feed {
+  display: none;
+}
+
+/* Apaisado bajo: el panel del tutorial ocupa el centro; el sector y el reloj no aportan en práctica. */
+@media (max-height: 500px) {
+  #hud:has(.tutorial:not([hidden])) .hud__block--sector,
+  #hud:has(.tutorial:not([hidden])) .hud__block--right .hud__stat {
+    display: none;
+  }
+
+  #hud .tutorial {
+    width: min(360px, calc(100% - 360px));
+  }
+}
+
 @media (max-width: 480px) and (min-height: 501px) {
   #hud:has(.tutorial:not([hidden])) {
     --hud-zoom: min(var(--hud-scale), 1);
@@ -975,7 +1008,12 @@
   }
 
   #app.is-touch .hud__feed {
-    top: calc(262px + var(--safe-t));
+    top: calc(296px + var(--safe-t));
+  }
+
+  /* Vertical: solo caben las dos líneas más nuevas entre el objetivo y la vida. */
+  #app.is-touch .hud__feed .feedline:nth-last-child(n + 3) {
+    display: none;
   }
 
   #app.is-touch .vitals .bar {
@@ -1035,6 +1073,11 @@
   .hud__objective-track {
     top: calc(12px + var(--safe-t));
     width: min(200px, 26vw);
+  }
+
+  /* Teléfono apaisado angosto: sin la etiqueta caben las barras entre el sector y el reloj. */
+  #app.is-touch .hud__objective-track .hud__kicker {
+    display: none;
   }
 
   .hud__block--objective {

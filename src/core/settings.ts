@@ -27,7 +27,10 @@ export interface Settings {
   /** Atenúa los destellos de daño (fotosensibilidad). Independiente de reduceMotion, que también lo activa. */
   reduceFlashes: boolean;
   audioEnabled: boolean;
+  /** Volumen maestro. Los canales de efectos e interfaz multiplican sobre él. */
   volume: number;
+  sfxVolume: number;
+  uiVolume: number;
   hudScale: number;
   telemetry: boolean;
   tutorialSeen: boolean;
@@ -47,6 +50,8 @@ export const DEFAULT_SETTINGS: Settings = {
   reduceFlashes: false,
   audioEnabled: true,
   volume: 0.7,
+  sfxVolume: 1,
+  uiVolume: 1,
   hudScale: 1,
   telemetry: false,
   tutorialSeen: false,
@@ -90,6 +95,8 @@ export function sanitize(raw: unknown): Settings {
     reduceFlashes: bool(src.reduceFlashes, DEFAULT_SETTINGS.reduceFlashes),
     audioEnabled: bool(src.audioEnabled, DEFAULT_SETTINGS.audioEnabled),
     volume: num(src.volume, DEFAULT_SETTINGS.volume, 0, 1),
+    sfxVolume: num(src.sfxVolume, DEFAULT_SETTINGS.sfxVolume, 0, 1),
+    uiVolume: num(src.uiVolume, DEFAULT_SETTINGS.uiVolume, 0, 1),
     hudScale: num(src.hudScale, DEFAULT_SETTINGS.hudScale, 0.8, 1.4),
     telemetry: bool(src.telemetry, DEFAULT_SETTINGS.telemetry),
     tutorialSeen: bool(src.tutorialSeen, DEFAULT_SETTINGS.tutorialSeen),

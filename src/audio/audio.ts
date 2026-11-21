@@ -22,6 +22,9 @@ export type SoundName =
   | 'win'
   | 'lose';
 
+/** Sonidos del canal de interfaz; el resto va al canal de efectos. */
+const UI_SOUNDS: ReadonlySet<SoundName> = new Set<SoundName>(['ui', 'step']);
+
 const MIN_GAP_MS: Partial<Record<SoundName, number>> = {
   shotSidearm: 40,
   shotCarbine: 28,
@@ -34,6 +37,12 @@ const MIN_GAP_MS: Partial<Record<SoundName, number>> = {
 export class AudioManager {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private sfxBus: GainNode | null = null;
+  private uiBus: GainNode | null = null;
+  /** Destino del sonido que se está armando: `play()` lo fija según el canal del sonido. */
+  private dest: AudioNode | null = null;
+  private sfxLevel = 1;
+  private uiLevel = 1;
   private noise: AudioBuffer | null = null;
   private lastPlayed = new Map<SoundName, number>();
   private enabled = true;
@@ -57,6 +66,15 @@ export class AudioManager {
     }
   }
 
+  setChannelVolumes(sfx: number, ui: number): void {
+    this.sfxLevel = Math.min(1, Math.max(0, sfx));
+    this.uiLevel = Math.min(1, Math.max(0, ui));
+    if (this.ctx && this.sfxBus && this.uiBus) {
+      this.sfxBus.gain.setTargetAtTime(this.sfxLevel, this.ctx.currentTime, 0.02);
+      this.uiBus.gain.setTargetAtTime(this.uiLevel, this.ctx.currentTime, 0.02);
+    }
+  }
+
   /** Must be called from a user gesture. Safe to call repeatedly. */
   unlock(): void {
     if (!this.ctx) {
@@ -70,6 +88,12 @@ export class AudioManager {
       this.master = this.ctx.createGain();
       this.master.gain.value = this.enabled ? this.volume : 0;
       this.master.connect(this.ctx.destination);
+      this.sfxBus = this.ctx.createGain();
+      this.sfxBus.gain.value = this.sfxLevel;
+      this.sfxBus.connect(this.master);
+      this.uiBus = this.ctx.createGain();
+      this.uiBus.gain.value = this.uiLevel;
+      this.uiBus.connect(this.master);
       this.noise = this.makeNoise(this.ctx);
     }
     if (this.ctx.state === 'suspended') {
@@ -112,6 +136,7 @@ export class AudioManager {
     if (!this.enabled) return;
     if (!this.ctx || !this.master || this.ctx.state !== 'running') return;
     if (this.throttled(name)) return;
+    this.dest = (UI_SOUNDS.has(name) ? this.uiBus : this.sfxBus) ?? this.master;
     switch (name) {
       case 'shotSidearm':
         this.noiseBurst({ duration: 0.13, type: 'bandpass', from: 1600, to: 320, gain: 0.5, q: 0.9 });
@@ -205,7 +230,7 @@ export class AudioManager {
     gain.gain.setValueAtTime(0.0001, start);
     gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, opts.gain), start + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + opts.duration);
-    osc.connect(gain).connect(this.master);
+    osc.connect(gain).connect(this.dest ?? this.master);
     osc.start(start);
     osc.stop(start + opts.duration + 0.02);
   }
@@ -238,9 +263,9 @@ export class AudioManager {
     if (opts.pan !== undefined) {
       const panner = ctx.createStereoPanner();
       panner.pan.value = opts.pan;
-      gain.connect(panner).connect(this.master);
+      gain.connect(panner).connect(this.dest ?? this.master);
     } else {
-      gain.connect(this.master);
+      gain.connect(this.dest ?? this.master);
     }
     source.start(start);
     source.stop(start + opts.duration + 0.02);

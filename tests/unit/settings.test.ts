@@ -161,3 +161,16 @@ describe('reduceFlashes', () => {
     expect(sanitize({ reduceFlashes: 'yes' }).reduceFlashes).toBe(false);
   });
 });
+
+describe('volume channels', () => {
+  it('adds effects and interface channels at full level without touching the master volume', () => {
+    const migrated = migrate({ version: 2, volume: 0.4 });
+    expect(migrated.volume).toBe(0.4);
+    expect(migrated.sfxVolume).toBe(1);
+    expect(migrated.uiVolume).toBe(1);
+  });
+
+  it('clamps channels into 0..1', () => {
+    expect(sanitize({ sfxVolume: 4, uiVolume: -1 })).toMatchObject({ sfxVolume: 1, uiVolume: 0 });
+  });
+});

@@ -30,7 +30,11 @@ export interface QualityOptions {
   vsyncOkMs?: number;
   /** p95 del tiempo de CPU del render bajo el cual queda margen para subir de preset. */
   cpuHeadroomMs?: number;
-  /** Tras bajar de un preset por no sostener el presupuesto, no se vuelve a él durante este tiempo. */
+  /**
+   * Tras bajar de un preset por no sostener el presupuesto, la subida por margen de CPU no vuelve a él durante
+   * este tiempo (por defecto, toda la sesión). El CPU no ve la GPU: sin esto, un equipo limitado por GPU subiría
+   * y bajaría con un tirón cada pocos minutos.
+   */
   ceilingMs?: number;
 }
 
@@ -67,7 +71,7 @@ export class QualityController {
     this.cooldownMs = options.cooldownMs ?? 4000;
     this.vsyncOkMs = options.vsyncOkMs ?? 18.5;
     this.cpuHeadroomMs = options.cpuHeadroomMs ?? 4;
-    this.ceilingMs = options.ceilingMs ?? 120_000;
+    this.ceilingMs = options.ceilingMs ?? Number.POSITIVE_INFINITY;
   }
 
   get setting(): QualitySetting {

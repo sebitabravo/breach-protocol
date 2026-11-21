@@ -70,6 +70,8 @@ export class SettingsForm {
     bind('set-telemetry', (node) => this.hooks.onTelemetry(isChecked(node)));
     bind('set-audio', (node) => this.hooks.onPatch({ audioEnabled: isChecked(node) }));
     bind('set-volume', (node) => this.hooks.onPatch({ volume: Number(node.value) }));
+    bind('set-sfx', (node) => this.hooks.onPatch({ sfxVolume: Number(node.value) }));
+    bind('set-ui', (node) => this.hooks.onPatch({ uiVolume: Number(node.value) }));
     bind('set-sens', (node) => {
       this.hooks.onPatch(sensitivityPatch(this.hooks.usingTouch(), Number(node.value)));
     });
@@ -113,6 +115,8 @@ export class SettingsForm {
     set('set-telemetry', view.telemetry);
     set('set-audio', settings.audioEnabled);
     set('set-volume', settings.volume);
+    set('set-sfx', settings.sfxVolume);
+    set('set-ui', settings.uiVolume);
     set('set-sens', calibSens);
     set('set-invert', settings.invertY);
     set('set-hud', settings.hudScale);
@@ -127,6 +131,8 @@ export class SettingsForm {
     byId('calib-sens-val').textContent = `${calibSens.toFixed(2)}×`;
     byId('set-sens-val').textContent = `${calibSens.toFixed(2)}×`;
     byId('set-volume-val').textContent = `${Math.round(settings.volume * 100)}%`;
+    byId('set-sfx-val').textContent = `${Math.round(settings.sfxVolume * 100)}%`;
+    byId('set-ui-val').textContent = `${Math.round(settings.uiVolume * 100)}%`;
     byId('set-hud-val').textContent = `${Math.round(settings.hudScale * 100)}%`;
     byId('gfx-detail').textContent = view.gfxDetail;
 

@@ -265,7 +265,8 @@ test('real enemy damage shows its bearing for at least 500 ms of simulation', as
     cancelAnimationFrame(Reflect.get(app, 'rafId'));
     const neutral = new Float32Array(inputLen);
     const events: Parameters<Engine['state']['readEvents']>[1] = [];
-    for (let i = 0; i < 1800; i += 1) {
+    // Los enemigos patrullan 20 s antes de salir a buscar al jugador (A-13): el primer daño llega más tarde.
+    for (let i = 0; i < 4000; i += 1) {
       const previousHp = engine.state.hp;
       engine.tick(neutral);
       const { hp, px, pz, yaw, tick } = engine.state;

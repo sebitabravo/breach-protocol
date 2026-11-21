@@ -50,7 +50,7 @@ async function enterTerminalStep(page: Page) {
   await page.keyboard.press('Enter');
   await expect(page.locator('#tut-index')).toHaveText('2');
   await page.keyboard.press('Enter');
-  await expect(page.locator('#tut-body')).toHaveText('Seguí el rombo hasta la terminal marcada. Mantené hasta llenar la barra.');
+  await expect(page.locator('#tut-body')).toHaveText('Seguí el rombo hasta la terminal marcada. Mantené el botón Ⓔ hasta llenar la barra.');
   await expect(page.locator(`${marker} [data-objective-name]`)).toHaveText('Terminal 02');
 }
 

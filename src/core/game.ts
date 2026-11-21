@@ -996,12 +996,14 @@ export class GameApp {
     }
   }
 
+  private toastTimer = 0;
+
   private toast(message: string): void {
     const node = byId('toast');
     node.textContent = message;
-    node.hidden = false;
-    window.setTimeout(() => {
-      node.hidden = true;
+    window.clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => {
+      node.textContent = '';
     }, 2200);
   }
 
@@ -1072,6 +1074,7 @@ export class GameApp {
     this.applyMotionPreference();
     this.audio.setEnabled(this.settings.audioEnabled);
     this.audio.setVolume(this.settings.volume);
+    this.audio.setChannelVolumes(this.settings.sfxVolume, this.settings.uiVolume);
     this.input?.updateSettings(this.settings);
 
     if (this.renderer) {

@@ -6,6 +6,9 @@ const LANDSCAPE = [
   { width: 844, height: 390 },
   { width: 667, height: 375 },
 ];
+/** Por debajo de esta altura en vertical el HUD no entra sin pisarse (límite conocido, ver docs/GAME_AUDIT.md). */
+const HUD_MIN_PORTRAIT_HEIGHT = 640;
+const TABLET = { width: 1024, height: 768 };
 const PORTRAIT = [
   { width: 390, height: 844 },
   { width: 360, height: 640 },
@@ -119,4 +122,97 @@ test('touch targets in the pause menu are at least 44px', async ({ page }) => {
     return out;
   });
   expect(small).toEqual([]);
+});
+
+/** Bloques del HUD que nunca deben pisarse entre sí. */
+const HUD_BLOCKS: Record<string, string> = {
+  minimap: '.hud__minimap',
+  sector: '.hud__block--sector',
+  stats: '.hud__block--right',
+  objective: '#hud-objective-line',
+  score: '.hud__score',
+  track: '.hud__objective-track',
+  feed: '.hud__feed',
+  ammo: '.ammo',
+  vitals: '.vitals',
+  tutorial: '.tutorial',
+};
+
+async function hudBoxes(page: Page): Promise<Box[]> {
+  return page.evaluate((blocks) => {
+    const out: { name: string; x: number; y: number; w: number; h: number }[] = [];
+    for (const [name, selector] of Object.entries(blocks)) {
+      const node = document.querySelector<HTMLElement>(selector);
+      if (!node) continue;
+      const r = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      if (r.width < 2 || r.height < 2 || style.display === 'none' || style.visibility === 'hidden') continue;
+      // Un elemento con texto corto no debe contar todo su ancho de bloque: se mide el rango del texto.
+      if (['objective', 'score'].includes(name)) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const t = range.getBoundingClientRect();
+        out.push({ name, x: t.x, y: t.y, w: t.width, h: t.height });
+      } else {
+        out.push({ name, x: r.x, y: r.y, w: r.width, h: r.height });
+      }
+    }
+    return out;
+  }, HUD_BLOCKS);
+}
+
+async function expectNoHudOverlap(page: Page, label: string, requireScore = true): Promise<void> {
+  const boxes = await hudBoxes(page);
+  const names = boxes.map((b) => b.name);
+  if (requireScore) {
+    expect(names, `${label}: score and objective must be present`).toEqual(expect.arrayContaining(['objective', 'score']));
+  }
+  const clashes: string[] = [];
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      // 2 px de tolerancia: sombras y bordes no son contenido.
+      const a = { ...boxes[i], x: boxes[i].x + 2, y: boxes[i].y + 2, w: boxes[i].w - 4, h: boxes[i].h - 4 };
+      if (overlaps(a, boxes[j])) clashes.push(`${boxes[i].name} overlaps ${boxes[j].name}`);
+    }
+  }
+  if (clashes.length) report.push(`${label}: ${clashes.join(', ')}`);
+}
+const report: string[] = [];
+
+test('HUD blocks do not overlap each other at any phone size or on a tablet', async ({ page }, info) => {
+  report.length = 0;
+  await startPlaying(page);
+  await page.evaluate(() => {
+    const game = window.__BREACH__ as unknown as { hud: { pushFeed(text: string, kind?: string): void } };
+    game.hud.pushFeed('oleada 1');
+    game.hud.pushFeed('scout eliminado', 'good');
+  });
+  const sizes = info.project.name === 'mobile-landscape' ? [...LANDSCAPE, TABLET] : PORTRAIT.filter((size) => size.height >= HUD_MIN_PORTRAIT_HEIGHT);
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${SHOT_DIR}/mobile-hud-${size.width}x${size.height}.png` });
+    await expectNoHudOverlap(page, `${size.width}x${size.height}`);
+  }
+  expect(report).toEqual([]);
+});
+
+test('with the tutorial visible the HUD blocks still do not overlap', async ({ page }, info) => {
+  report.length = 0;
+  await seedStorage(page, { tutorialSeen: false });
+  await page.goto('/');
+  await screenIs(page, 'menu');
+  await page.locator('#screen-menu [data-action="play"]').tap();
+  await screenIs(page, 'calibrate');
+  await page.locator('#screen-calibrate [data-action="play"]').tap();
+  await screenIs(page, 'playing');
+  await expect(page.locator('#tutorial')).toBeVisible();
+  const sizes = info.project.name === 'mobile-landscape' ? [...LANDSCAPE, TABLET] : PORTRAIT.filter((size) => size.height >= HUD_MIN_PORTRAIT_HEIGHT);
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${SHOT_DIR}/mobile-tutorial-${size.width}x${size.height}.png` });
+    await expectNoHudOverlap(page, `tutorial ${size.width}x${size.height}`, false);
+  }
+  expect(report).toEqual([]);
 });

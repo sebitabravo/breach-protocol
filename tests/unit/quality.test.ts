@@ -52,6 +52,21 @@ describe('QualityController with measured CPU cost', () => {
     expect(qc.preset).toBe('medium');
   });
 
+  it('by default never re-climbs on CPU headroom to a preset it dropped from, even after 10 minutes', () => {
+    const qc = new QualityController('auto', { windowSize: 4, windowsToDrop: 1, windowsToRaise: 1, cooldownMs: 0 });
+    feedCostWindow(qc, 12, 1, 1000); // medium -> high
+    feedCostWindow(qc, 40, 1, 2000); // high -> medium
+    expect(feedCostWindow(qc, vsync, 1, 2000 + 10 * 60_000).changed).toBe(false);
+    expect(qc.preset).toBe('medium');
+  });
+
+  it('can still climb on real headroom (frames well under the climb threshold) after a drop', () => {
+    const qc = new QualityController('auto', { windowSize: 4, windowsToDrop: 1, windowsToRaise: 1, cooldownMs: 0 });
+    feedCostWindow(qc, 12, 1, 1000);
+    feedCostWindow(qc, 40, 1, 2000);
+    expect(feedCostWindow(qc, 8, 1, 3000)).toMatchObject({ changed: true, preset: 'high' });
+  });
+
   it('does not bounce back to a preset it just dropped from until the ceiling expires', () => {
     const qc = new QualityController('auto', { windowSize: 4, windowsToDrop: 1, windowsToRaise: 1, cooldownMs: 0, ceilingMs: 60_000 });
     feedCostWindow(qc, 12, 1, 1000); // medium -> high (frames well under 12 ms)

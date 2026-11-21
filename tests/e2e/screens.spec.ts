@@ -171,7 +171,11 @@ for (const viewport of VIEWPORTS) {
       await expect(page.locator('#tutorial')).toBeVisible();
       await shot(page, viewport, '12-tutorial');
       if (viewport.mobile) await page.getByRole('button', { name: 'Omitir tutorial' }).tap();
-      else await page.keyboard.press('Backspace'); // Funciona con el puntero capturado.
+      else {
+        // Funciona con el puntero capturado. La primera pulsación pide confirmar; la segunda omite.
+        await page.keyboard.press('Backspace');
+        await page.keyboard.press('Backspace');
+      }
       await screenIs(page, 'tutorial-handoff');
       const handoff = page.getByRole('region', { name: 'TUTORIAL OMITIDO' });
       await expect(handoff).toBeVisible();

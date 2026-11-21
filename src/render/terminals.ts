@@ -7,6 +7,8 @@ import { SURFACE } from './surfaces';
 import { buildConsoleHousing, buildConsoleInstruments, CONSOLE_ROLE, consoleYaw, ROTOR_PIVOT, SCREEN_SAMPLE } from './terminal-model';
 import { DISPLAY_HEIGHT, DISPLAY_ROW, DISPLAY_WIDTH, paintStencil, paintTerminalScreen, STENCIL_HEIGHT, TERMINAL_MODE } from './terminal-screen';
 
+/** Objeto reutilizado entre frames: evita reservar uno por terminal por frame. */
+const nodeScratch = { x: 0, z: 0, progress: 0, active: false };
 const INTERVAL = 0.1;
 const FLASH_TIME = 0.26;
 const SPIN_TIME = 0.74;
@@ -67,7 +69,7 @@ export class TerminalConsoles {
     this.batch.material.uniforms.uPulse.value = reducedMotion ? 1 : 0.92 + 0.08 * Math.sin(seconds * 8);
     for (let i = 0; i < this.displays.length; i += 1) {
       const display = this.displays[i];
-      const node = state?.node(i);
+      const node = state?.node(i, nodeScratch);
       const active = node?.active ?? display.active;
       const progress = active ? 1 : node?.progress ?? this.live.getY(i);
       const mode = active ? TERMINAL_MODE.active : progress > 0 ? TERMINAL_MODE.channeling : TERMINAL_MODE.idle;
