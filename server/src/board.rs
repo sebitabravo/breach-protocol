@@ -12,6 +12,7 @@ const PHASE_WIN: u8 = WIN as u8;
 const PHASE_LOSE: u8 = LOSE as u8;
 
 const OVERFLOW_BOARD: &str = "overflow";
+const OVERFLOW_MIN_TICKS: u32 = 60;
 const SECONDS_PER_DAY: u64 = 86_400;
 
 /// Tablero de una partida verificada. Práctica y derrotas de misión no cuentan.
@@ -23,7 +24,17 @@ pub fn derive_board(header: &Header, outcome: &Outcome, now_unix: u64) -> Result
             }
             mission_key(header.map).ok_or(ApiError::NotQualified)
         }
-        MODE_OVERFLOW => Ok(OVERFLOW_BOARD.to_string()),
+        MODE_OVERFLOW => {
+            // One second excludes stubs; a kill or a natural death (Overflow's only
+            // LOSE condition) comes from the sim, not from padding or stopping the log.
+            // Death lets a short, unsuccessful run qualify without requiring a kill.
+            if outcome.ticks < OVERFLOW_MIN_TICKS
+                || (outcome.kills == 0 && outcome.phase != PHASE_LOSE)
+            {
+                return Err(ApiError::NotQualified);
+            }
+            Ok(OVERFLOW_BOARD.to_string())
+        }
         MODE_DAILY => {
             if !ended_for_scoring(header, outcome) {
                 return Err(ApiError::NotQualified);
@@ -47,7 +58,7 @@ fn mission_key(map: u8) -> Option<String> {
 }
 
 /// Claves válidas para `GET /api/leaderboard`.
-pub fn is_known_board(key: &str) -> bool {
+pub fn is_known_board(key: &str, now_unix: u64) -> bool {
     if key == OVERFLOW_BOARD {
         return true;
     }
@@ -55,7 +66,8 @@ pub fn is_known_board(key: &str) -> bool {
         return true;
     }
     key.strip_prefix("daily:")
-        .is_some_and(|date| seed_of_date(date).is_some())
+        .and_then(seed_of_date)
+        .is_some_and(|seed| daily_board(seed, now_unix).is_ok())
 }
 
 /// `YYYY-MM-DD` a la semilla `YYYYMMDD`, solo si es una fecha que el núcleo acepta.
@@ -85,7 +97,7 @@ fn daily_board(seed: u32, now_unix: u64) -> Result<String, ApiError> {
 
 fn yyyymmdd(year: i64, month: u32, day: u32) -> Option<u32> {
     let year = u32::try_from(year).ok()?;
-    Some(year * 10_000 + month * 100 + day)
+    year.checked_mul(10_000)?.checked_add(month * 100 + day)
 }
 
 /// Inverso de la conversión a días desde 1970-01-01 (algoritmo de Howard Hinnant, dominio
@@ -196,16 +208,35 @@ mod tests {
     }
 
     #[test]
-    fn overflow_counts_whether_it_ends_in_death_or_at_log_end() {
-        let playing = outcome(PLAYING, false);
-        let lost = outcome(PHASE_LOSE, false);
+    fn one_kill_overflow_at_the_minimum_qualifies_without_death() {
+        let one_kill = Outcome {
+            ticks: 60,
+            kills: 1,
+            ..outcome(PLAYING, false)
+        };
         assert_eq!(
-            derive_board(&header(MODE_OVERFLOW, 0, 1), &playing, NOW),
+            derive_board(&header(MODE_OVERFLOW, 0, 1), &one_kill, NOW),
             Ok("overflow".into())
         );
+    }
+
+    #[test]
+    fn overflow_requires_both_simulated_ticks_and_a_real_outcome() {
+        let mut outcome = Outcome {
+            ticks: 59,
+            kills: 1,
+            ..outcome(PLAYING, false)
+        };
+        let header = header(MODE_OVERFLOW, 0, 1);
         assert_eq!(
-            derive_board(&header(MODE_OVERFLOW, 0, 1), &lost, NOW),
-            Ok("overflow".into())
+            derive_board(&header, &outcome, NOW),
+            Err(ApiError::NotQualified)
+        );
+        outcome.ticks = 60;
+        outcome.kills = 0;
+        assert_eq!(
+            derive_board(&header, &outcome, NOW),
+            Err(ApiError::NotQualified)
         );
     }
 
@@ -316,11 +347,22 @@ mod tests {
     }
 
     #[test]
-    fn cap_rule_leaves_overflow_and_practice_as_they_were() {
-        let playing = outcome(PLAYING, false);
+    fn cap_rule_accepts_qualified_overflow_but_not_practice() {
+        let playing = Outcome {
+            ticks: MAX_TICKS,
+            ..outcome(PLAYING, false)
+        };
+        let one_kill = Outcome {
+            kills: 1,
+            ..playing.clone()
+        };
+        assert_eq!(
+            derive_board(&at_cap(MODE_OVERFLOW, 0, 1), &one_kill, NOW),
+            Ok("overflow".into())
+        );
         assert_eq!(
             derive_board(&at_cap(MODE_OVERFLOW, 0, 1), &playing, NOW),
-            Ok("overflow".into())
+            Err(ApiError::NotQualified)
         );
         assert_eq!(
             derive_board(&at_cap(MODE_PRACTICE, 0, 1), &playing, NOW),
@@ -367,9 +409,9 @@ mod tests {
             "mission:s02",
             "mission:s03",
             "daily:2026-11-20",
-            "daily:2028-02-29",
+            "daily:2026-11-19",
         ] {
-            assert!(is_known_board(key), "{key} should be known");
+            assert!(is_known_board(key, NOW), "{key} should be known");
         }
         for key in [
             "practice",
@@ -385,7 +427,7 @@ mod tests {
             "Overflow",
             "",
         ] {
-            assert!(!is_known_board(key), "{key} should be rejected");
+            assert!(!is_known_board(key, NOW), "{key} should be rejected");
         }
     }
 }

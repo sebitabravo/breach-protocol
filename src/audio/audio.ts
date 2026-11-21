@@ -6,6 +6,7 @@
 export type SoundName =
   | 'shotSidearm'
   | 'shotCarbine'
+  | 'shotShotgun'
   | 'hit'
   | 'kill'
   | 'damage'
@@ -22,6 +23,7 @@ export type SoundName =
 const MIN_GAP_MS: Partial<Record<SoundName, number>> = {
   shotSidearm: 40,
   shotCarbine: 28,
+  shotShotgun: 60,
   hit: 25,
   enemyShot: 45,
   ui: 60,
@@ -117,6 +119,12 @@ export class AudioManager {
         this.noiseBurst({ duration: 0.08, type: 'highpass', from: 1400, to: 600, gain: 0.34, q: 0.7 });
         this.tone({ from: 220, to: 90, duration: 0.05, gain: 0.18, wave: 'square' });
         break;
+      case 'shotShotgun':
+        // Centered thump with slightly staggered, wide-band noise on both sides.
+        this.tone({ from: 118, to: 39, duration: 0.15, gain: 0.55, wave: 'sine' });
+        this.noiseBurst({ duration: 0.11, type: 'lowpass', from: 3800, to: 340, gain: 0.46, q: 0.6, pan: -0.72 });
+        this.noiseBurst({ duration: 0.13, type: 'lowpass', from: 2800, to: 250, gain: 0.4, q: 0.6, delay: 0.005, pan: 0.72 });
+        break;
       case 'hit':
         this.tone({ from: 1500, to: 900, duration: 0.05, gain: 0.16, wave: 'triangle' });
         break;
@@ -200,6 +208,7 @@ export class AudioManager {
     gain: number;
     q: number;
     delay?: number;
+    pan?: number;
   }): void {
     if (!this.ctx || !this.master || !this.noise) return;
     const ctx = this.ctx;
@@ -215,7 +224,14 @@ export class AudioManager {
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(Math.max(0.0002, opts.gain), start);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + opts.duration);
-    source.connect(filter).connect(gain).connect(this.master);
+    source.connect(filter).connect(gain);
+    if (opts.pan !== undefined) {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = opts.pan;
+      gain.connect(panner).connect(this.master);
+    } else {
+      gain.connect(this.master);
+    }
     source.start(start);
     source.stop(start + opts.duration + 0.02);
   }

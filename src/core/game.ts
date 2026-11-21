@@ -6,29 +6,30 @@
  * qué pantalla está visible.
  */
 import { Engine, type Snapshot, type WorldEvent } from '../wasm/bridge';
-import { EVT, H, INPUT_LEN, PHASE, WEAPON } from '../wasm/protocol';
-import { Renderer } from '../render/renderer';
+import { EVT, H, INPUT_LEN, N, NODE_BASE, NODE_STRIDE, PHASE, WEAPON } from '../wasm/protocol';
+import type { Renderer } from '../render/renderer';
 import { InputManager, type InputHooks } from '../input/input';
-import { AudioManager } from '../audio/audio';
+import type { AudioManager } from '../audio/audio';
 import { Hud, type MatchView } from '../ui/hud';
+import { ObjectiveMarker } from '../ui/objective-marker';
 import { Engineering } from '../ui/engineering';
-import { BootView, fallbackMessage, webgl2Supported } from '../ui/boot-view';
+import { BootView, webgl2Supported } from '../ui/boot-view';
 import { renderResult } from '../ui/results';
 import { SettingsForm, type SettingsView } from '../ui/settings-form';
 import { byId } from '../ui/dom';
 import { recommendedSector, renderBriefing, renderMenu, renderSectorCards } from '../ui/campaign-view';
 import { renderBoardLoading, renderBoardPanel, renderBoardRows, boardLabel, type BoardPanel } from '../ui/board-view';
-import { renderTutorial } from '../ui/tutorial-view';
+import { renderTutorial, renderTutorialHandoff } from '../ui/tutorial-view';
 import { QualityController } from './quality';
-import { FixedStepLoop } from './loop';
+import { FIXED_DT, FixedStepLoop } from './loop';
 import { loadSettings, resetSettings, saveSettings, type Quality, type Settings } from './settings';
 import { bestScore, saveScore, type RunResult } from './scores';
 import { buildRunResult, buildStartOptions } from './match';
 import { effectsOf } from './events';
-import { damageBearing } from './bearing';
 import { dailySeed, utcDateKey } from './daily';
 import {
   ProgressStore,
+  isSectorCleared,
   isSectorUnlocked,
   isShotgunUnlocked,
   markTutorialSeen,
@@ -39,7 +40,7 @@ import {
   type ProgressState,
 } from './progress';
 import { SECTOR_IDS, SECTORS, sectorInfo, type SectorId } from './sectors';
-import { observeTutorial, skipTutorial, startTutorial, tutorialDone, type TutorialState } from './tutorial';
+import { continueTutorial, observeTutorial, skipTutorial, startTutorial, TUTORIAL_TERMINAL, TUTORIAL_TERMINAL_STEP, type TutorialOutcome, type TutorialState } from './tutorial';
 import { boardFor, fetchBoard, sanitizeName, submitRun, type BoardKey, type RunMode } from '../net/leaderboard';
 import { MUTATORS, type MapData, type Mutator } from '../world/map';
 import {
@@ -53,12 +54,33 @@ import {
   type FlowState,
   type Mode,
   type PauseOrigin,
-  type Screen,
 } from './screens';
 
 const ENGINE_URL = `${import.meta.env.BASE_URL}bp_core.wasm`;
 const LEADERBOARD_LIMIT = 20;
 const DEFAULT_BOARD = 'mission:s01';
+
+type TutorialExit = { type: 'tutorial-handoff'; outcome: TutorialOutcome; elapsedSeconds: number };
+type GameEvent = FlowEvent | TutorialExit;
+type GameFlow = FlowState | (Omit<FlowState, 'screen'> & {
+  screen: 'tutorial-handoff';
+  outcome: TutorialOutcome;
+  elapsedSeconds: number;
+});
+
+function transitionGame(flow: GameFlow, event: GameEvent): GameFlow {
+  if (event.type === 'tutorial-handoff') {
+    if (flow.screen !== 'playing' || flow.mode !== 'practice') return flow;
+    return { ...flow, screen: 'tutorial-handoff', outcome: event.outcome, elapsedSeconds: event.elapsedSeconds };
+  }
+  if (flow.screen !== 'tutorial-handoff') return transition(flow, event);
+  // Esta pausa solo se puede resolver con una de las tres decisiones de la ficha.
+  if (event.type === 'resume' || (event.type === 'start' && event.mode === 'run') ||
+      (event.type === 'open' && event.screen === 'menu')) {
+    return transition({ screen: 'pause', mode: flow.mode, mapId: flow.mapId, pauseOrigin: 'game' }, event);
+  }
+  return flow;
+}
 
 interface PendingRun {
   board: BoardKey | null;
@@ -67,17 +89,13 @@ interface PendingRun {
   submitted: boolean;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
 function clampSector(id: number): SectorId {
   return SECTOR_IDS.find((sector) => sector === id) ?? 0;
 }
 
-function ineligibleReason(mode: Mode, won: boolean, truncated: boolean): string {
+function ineligibleReason(mode: Mode, won: boolean, shotgunEnabled: boolean): string {
   if (mode === 'practice') return 'El simulador no cuenta para ningún tablero.';
-  if (truncated) return 'La partida supera el límite verificable (20 min) y no entra a los tableros.';
+  if (shotgunEnabled) return 'Las partidas con SG-08 no entran al tablero: el desbloqueo no se puede verificar.';
   if (mode === 'run' && !won) return 'Las derrotas de misión no entran al tablero. Reintentá el sector.';
   return 'Esta partida no entra a ningún tablero.';
 }
@@ -85,6 +103,8 @@ function ineligibleReason(mode: Mode, won: boolean, truncated: boolean): string 
 export class GameApp {
   private readonly canvas = byId<HTMLCanvasElement>('gl');
   private readonly app = byId('app');
+  private readonly crosshair = byId('crosshair');
+  private channelPercent = 0;
   /** Un solo controlador: `dispose()` corta todos los listeners del shell de una vez. */
   private readonly abort = new AbortController();
   private readonly settingsForm = new SettingsForm(this.app, {
@@ -98,8 +118,9 @@ export class GameApp {
   private engine: Engine | null = null;
   private renderer: Renderer | null = null;
   private input: InputManager | null = null;
-  private audio = new AudioManager();
   private hud: Hud | null = null;
+  private objectiveMarker: ObjectiveMarker | null = null;
+  private readonly motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
   private map: MapData | null = null;
   private mutator: Mutator = 'none';
   private eng: Engineering | null = null;
@@ -114,9 +135,12 @@ export class GameApp {
     onContextRestored: (): void => this.handleContextRestored(),
   };
 
-  private flow: FlowState = INITIAL_FLOW;
+  private flow: GameFlow = INITIAL_FLOW;
   private matchDate = utcDateKey(new Date());
+  /** El registro reclama el desbloqueo desde el arranque, incluso si nunca se equipa. */
+  private matchShotgunEnabled = false;
   private tutorial: TutorialState | null = null;
+  private tutorialTerminal = -1;
   private tutorialOrigin = { x: 0, z: 0 };
   private pending: PendingRun | null = null;
   private submitting = false;
@@ -132,11 +156,11 @@ export class GameApp {
   private lastEngineeringAt = 0;
   private bootAt = performance.now();
 
+  constructor(private readonly audio: AudioManager) {}
+
   // ------------------------------------------------------------------ boot
 
-  async boot(): Promise<void> {
-    this.apply();
-    this.bindGlobalUI();
+  async boot(takeIntent: () => HTMLElement | undefined): Promise<void> {
     const view = new BootView();
 
     try {
@@ -145,10 +169,16 @@ export class GameApp {
       view.setProgress(12);
 
       const startedAt = performance.now();
-      this.engine = await Engine.load(ENGINE_URL);
-      this.wasmKib = this.engine.wasmBytes / 1024;
-      view.setCheck('wasm', 'ok');
-      view.setProgress(46);
+      const [engine, { Renderer }] = await Promise.all([
+        Engine.load(ENGINE_URL).then((loaded) => {
+          this.wasmKib = loaded.wasmBytes / 1024;
+          view.setCheck('wasm', 'ok');
+          view.setProgress(46);
+          return loaded;
+        }),
+        import('../render/renderer'),
+      ]);
+      this.engine = engine;
 
       if (!webgl2Supported()) {
         view.setCheck('webgl2', 'fail');
@@ -172,6 +202,7 @@ export class GameApp {
       this.input.attach();
       this.hud = new Hud();
       this.hud.setMap(this.map);
+      this.objectiveMarker = new ObjectiveMarker();
       this.eng = new Engineering();
 
       this.applySettings();
@@ -182,14 +213,18 @@ export class GameApp {
       view.setProgress(100);
       view.setMeta(`núcleo listo · ${this.wasmKib.toFixed(1)} KiB · ${this.loadMs.toFixed(0)} ms`);
 
+      this.bindGlobalUI();
+      const intent = takeIntent();
+      // A cold Jugar preserves the first-visit route into the simulator. Other
+      // choices come from the menu and keep their usual navigation or game mode.
+      const fromMenu = intent !== undefined && intent.dataset.action !== 'play';
+      this.dispatch({ type: 'boot-complete', tutorialSeen: this.progress.state.tutorialSeen || fromMenu });
+      if (intent) this.activateControl(intent);
+
       this.lastNow = performance.now();
       this.rafId = requestAnimationFrame(this.frame);
-
-      await sleep(320);
-      this.dispatch({ type: 'boot-complete', tutorialSeen: this.progress.state.tutorialSeen });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      view.setFallbackDetail(fallbackMessage(detail));
+      view.setFailure(error);
       this.dispatch({ type: 'boot-failed' });
     }
   }
@@ -214,30 +249,36 @@ export class GameApp {
 
   /** Aplica el estado del flujo al DOM: pantalla visible, foco y puntero. */
   private apply(): void {
-    const screen = this.flow.screen;
+    const flow = this.flow;
+    const screen = flow.screen;
+    if (screen === 'tutorial-handoff') renderTutorialHandoff(flow.outcome, flow.elapsedSeconds);
     this.app.dataset.screen = screen;
-    if (screen !== 'playing') {
-      this.input?.releasePointerLock();
-      this.input?.reset();
+    this.objectiveMarker?.invalidate();
+    if (screen === 'playing') {
+      this.canvas.focus({ preventScroll: true });
+      return;
     }
-    const focusTarget = this.app.querySelector<HTMLElement>(
-      `#screen-${screen} [data-action], #screen-${screen} button, #screen-${screen} a`,
-    );
-    if (screen !== 'playing' && screen !== 'boot') {
-      focusTarget?.focus({ preventScroll: true });
+    this.objectiveMarker?.hide();
+    this.input?.releasePointerLock();
+    this.input?.reset();
+    if (screen !== 'boot') {
+      const section = this.app.querySelector(`#screen-${screen}`);
+      if (!section?.contains(document.activeElement)) {
+        section?.querySelector<HTMLElement>('[data-action], button, a')?.focus({ preventScroll: true });
+      }
     }
   }
 
   /** Aplica un evento del flujo; devuelve falso si la transición no está permitida. */
-  private dispatch(event: FlowEvent): boolean {
-    const next = transition(this.flow, event);
+  private dispatch(event: GameEvent): boolean {
+    const next = transitionGame(this.flow, event);
     if (next === this.flow) return false;
     this.flow = next;
     this.apply();
     return true;
   }
 
-  get currentScreen(): Screen {
+  get currentScreen(): GameFlow['screen'] {
     return this.flow.screen;
   }
 
@@ -258,12 +299,13 @@ export class GameApp {
 
   async startMatch(mode: Mode, mapId = 0, options: { tutorial?: boolean } = {}): Promise<void> {
     if (!this.engine || !this.renderer || !this.input) return;
-    if (transition(this.flow, { type: 'start', mode, mapId }) === this.flow) return;
+    if (transitionGame(this.flow, { type: 'start', mode, mapId }) === this.flow) return;
 
     this.audio.unlock();
     this.audio.resume();
     this.matchDate = utcDateKey(new Date());
     const seed = mode === 'daily' ? dailySeed(new Date()) : (Math.random() * 0xffffffff) >>> 0;
+    const shotgunEnabled = isShotgunUnlocked(this.progress.state);
     const started = this.engine.start(
       buildStartOptions({
         mode,
@@ -271,10 +313,11 @@ export class GameApp {
         seed,
         aimAssist: this.settings.aimAssistTouch && this.input.usingTouch,
         autoReload: this.settings.autoReload,
-        shotgun: isShotgunUnlocked(this.progress.state),
+        shotgun: shotgunEnabled,
       }),
     );
     if (!started) throw new Error(`no se pudo iniciar el sector ${mapId}`);
+    this.matchShotgunEnabled = shotgunEnabled;
 
     this.syncMap();
     this.finished = false;
@@ -286,8 +329,10 @@ export class GameApp {
     this.hud?.setMatch(this.matchView(mode));
     this.lastNow = performance.now();
 
-    const tutorialOn = mode === 'practice' && (options.tutorial ?? !this.progress.state.tutorialSeen);
-    this.tutorial = tutorialOn ? startTutorial() : null;
+    this.tutorial = mode === 'practice' && options.tutorial !== false
+      ? startTutorial(this.progress.state.tutorialSeen, options.tutorial === true) : null;
+    this.tutorialTerminal = -1;
+    this.objectiveMarker?.hide();
     this.tutorialOrigin = { x: this.engine.state.px, z: this.engine.state.pz };
     renderTutorial(this.tutorial);
 
@@ -394,8 +439,9 @@ export class GameApp {
     saveScore(run);
     const before = this.progress.state;
     const after = this.recordOutcome(run);
-    this.pending = this.capturePending(mode, won);
-    renderResult(run, run.score > 0 && run.score > (previousBest ?? 0));
+    const truncated = this.engine.logTruncated;
+    this.pending = this.capturePending(mode, won, truncated);
+    renderResult(run, run.score > 0 && run.score > (previousBest ?? 0), truncated);
     this.renderUnlocks(before, after, won);
     byId<HTMLInputElement>('board-name').value = this.progress.state.playerName;
     renderBoardPanel(this.boardPanel());
@@ -422,11 +468,8 @@ export class GameApp {
     return this.progress.update(next);
   }
 
-  /** Lee el registro y la bandera de truncado antes de que la siguiente partida reinicie el grabador. */
-  private capturePending(mode: Mode, won: boolean): PendingRun {
-    const engine = this.engine;
-    const truncated = engine?.logTruncated ?? false;
-    const log = engine?.encodeLog() ?? new Uint8Array();
+  /** Conserva el registro elegible antes de que la siguiente partida reinicie el grabador. */
+  private capturePending(mode: Mode, won: boolean, truncated: boolean): PendingRun {
     const runMode: RunMode = mode === 'run' ? 'mission' : mode;
     const board = boardFor({
       mode: runMode,
@@ -434,8 +477,10 @@ export class GameApp {
       won,
       dateKey: this.matchDate,
       logTruncated: truncated,
+      shotgunEnabled: this.matchShotgunEnabled,
     });
-    return { board, reason: ineligibleReason(mode, won, truncated), log, submitted: false };
+    const log = board === null ? new Uint8Array() : this.engine?.encodeLog() ?? new Uint8Array();
+    return { board, reason: ineligibleReason(mode, won, this.matchShotgunEnabled), log, submitted: false };
   }
 
   private boardPanel(): BoardPanel {
@@ -456,8 +501,10 @@ export class GameApp {
     if (runWon && sector === 1 && isShotgunUnlocked(after) && !isShotgunUnlocked(before)) {
       lines.push('SG-08 desbloqueada');
     }
-    if (runWon && sector === 2) lines.push('red recuperada');
-    byId('result-unlock').textContent = lines.join(' · ');
+    if (runWon && sector === 2 && isSectorCleared(after, sector) && !isSectorCleared(before, sector)) {
+      lines.push('Red recuperada');
+    }
+    byId('result-unlock').textContent = lines.length ? `Recompensa: ${lines.join(' · ')}` : '';
     byId('result-unlock').hidden = lines.length === 0;
     byId('result-next').hidden = !(runWon && nextSector !== null);
   }
@@ -514,26 +561,75 @@ export class GameApp {
   // ------------------------------------------------------------------ tutorial
 
   private observeTutorialFrame(state: Snapshot): void {
-    if (!this.tutorial || tutorialDone(this.tutorial)) return;
+    if (this.tutorial?.status !== 'active') return;
     const before = this.tutorial;
-    this.tutorial = observeTutorial(before, {
+    this.setTutorialStep(observeTutorial(before, {
       metersMoved: Math.hypot(state.px - this.tutorialOrigin.x, state.pz - this.tutorialOrigin.z),
       shot: this.events.some((event) => event.type === EVT.shot),
-      nodeActivated: this.events.some((event) => event.type === EVT.nodeActivated),
-    });
-    if (this.tutorial !== before) renderTutorial(this.tutorial);
-    if (tutorialDone(this.tutorial)) this.endTutorial(this.tutorial.skipped);
+      nodeActivated: before.step === TUTORIAL_TERMINAL_STEP &&
+        (this.tutorialTerminal < 0 || this.terminalActive(state, this.tutorialTerminal)),
+    }));
   }
 
-  private endTutorial(skipped: boolean): void {
-    if (!this.tutorial) return;
-    this.tutorial = skipTutorial(this.tutorial);
-    renderTutorial(this.tutorial);
+  private setTutorialStep(next: TutorialState): void {
+    if (next === this.tutorial) return;
+    if (next.status !== 'active') {
+      this.endTutorial(next);
+      return;
+    }
+    this.tutorial = next;
+    const state = this.engine?.state;
+    if (next.step === TUTORIAL_TERMINAL_STEP && state) {
+      this.tutorialTerminal = this.map?.nodes[TUTORIAL_TERMINAL] && !this.terminalActive(state, TUTORIAL_TERMINAL)
+        ? TUTORIAL_TERMINAL : this.nearestInactiveTerminal(state);
+    }
+    renderTutorial(next);
+    this.objectiveMarker?.invalidate();
+  }
+
+  private endTutorial(outcome: TutorialOutcome): void {
+    if (this.tutorial?.status !== 'active' || !this.engine) return;
+    const elapsedSeconds = Math.floor(this.engine.state.tick * FIXED_DT);
+    if (!this.dispatch({ type: 'tutorial-handoff', outcome, elapsedSeconds })) return;
     this.tutorial = null;
+    renderTutorial(null);
     this.progress.update(markTutorialSeen(this.progress.state));
     this.settings = { ...this.settings, tutorialSeen: true };
     saveSettings(this.settings);
-    this.toast(skipped ? 'tutorial omitido' : 'tutorial completo');
+    this.audio.suspend();
+  }
+
+  private terminalActive(state: Snapshot, index: number): boolean {
+    return state.at(NODE_BASE + index * NODE_STRIDE + N.active) > 0.5;
+  }
+
+  private nearestInactiveTerminal(state: Snapshot): number {
+    const nodes = this.map?.nodes;
+    if (!nodes) return -1;
+    let target = -1, best = Infinity;
+    for (let i = 0; i < nodes.length; i += 1) {
+      if (this.terminalActive(state, i)) continue;
+      const { x, y, z } = nodes[i];
+      const distanceSquared = (x - state.px) ** 2 + (y - state.py) ** 2 + (z - state.pz) ** 2;
+      if (distanceSquared < best) { best = distanceSquared; target = i; }
+    }
+    return target;
+  }
+
+  private trackedTerminal(state: Snapshot): number {
+    if (state.phase !== PHASE.playing) return -1;
+    if (this.tutorial?.status !== 'active') return this.nearestInactiveTerminal(state);
+    return this.tutorial.step === TUTORIAL_TERMINAL_STEP ? this.tutorialTerminal : -1;
+  }
+
+  /** Mirror the existing node bar at the reticle while the switch is in reach. */
+  private updateChannelRing(state: Snapshot): void {
+    const node = state.interacting >= 0 ? state.node(state.interacting) : null;
+    const percent = node && !node.active ? Math.round(node.progress * 100) : 0;
+    if (percent === this.channelPercent) return;
+    this.channelPercent = percent;
+    this.crosshair.classList.toggle('is-channeling', percent > 0);
+    this.crosshair.style.setProperty('--channel', `${percent}%`);
   }
 
   // ------------------------------------------------------------------ loop
@@ -566,12 +662,20 @@ export class GameApp {
       if (this.events.length > 0) {
         this.lastSeq = this.events[this.events.length - 1].seq;
       }
-      this.renderer.renderGame(state, step.alpha, rawDt, this.events);
+      const tracked = this.trackedTerminal(state);
+      this.renderer.renderGame(state, step.alpha, rawDt, this.events, tracked);
+      this.consumeEvents(this.events, state.tick);
       this.hud?.update(state, this.input.usingTouch);
-      this.consumeEvents(this.events);
-      this.observeTutorialFrame(state);
+      this.updateChannelRing(state);
+      const node = this.map?.nodes[tracked];
+      if (node) {
+        const metres = Math.hypot(node.x - state.px, node.y - state.py, node.z - state.pz);
+        this.objectiveMarker?.update(this.renderer.objectiveClip, tracked, metres, this.input.usingTouch,
+          state.interacting === tracked, this.settings.hudScale);
+      } else this.objectiveMarker?.hide();
       this.maybeAdaptQuality(frameMs, now);
       this.updateEngineering(now, state);
+      this.observeTutorialFrame(state);
       if (state.phase === PHASE.win) this.finish(true);
       if (state.phase === PHASE.lose) this.finish(false);
     } else {
@@ -588,7 +692,7 @@ export class GameApp {
     }
   }
 
-  private consumeEvents(events: readonly WorldEvent[]): void {
+  private consumeEvents(events: readonly WorldEvent[], tick: number): void {
     for (const event of events) {
       const effects = effectsOf(event);
       for (const sound of effects.sounds) this.audio.play(sound);
@@ -596,16 +700,12 @@ export class GameApp {
 
       if (event.type === EVT.enemyHit) this.hud?.flashHit(false);
       if (event.type === EVT.enemyDied) this.hud?.flashHit(true);
-      if (event.type === EVT.playerDamaged && event.a >= 1 && this.engine) {
-        const state = this.engine.state;
-        const bearing = damageBearing(state.yaw, { x: state.px, z: state.pz }, { x: event.b, z: event.d });
-        this.hud?.showDamageFrom(bearing);
-      }
+      if (event.type === EVT.playerDamaged && event.a > 0) this.hud?.showDamageFrom(event.b, event.d, tick);
     }
   }
 
-  private updateEngineering(now: number, state: Snapshot | null): void {
-    if (!this.eng?.visible || now - this.lastEngineeringAt < 240) return;
+  private updateEngineering(now: number, state: Snapshot | null, immediate = false): void {
+    if (!this.eng?.visible || (!immediate && now - this.lastEngineeringAt < 240)) return;
     this.lastEngineeringAt = now;
     const sorted = [...this.frameSamples].sort((a, b) => a - b);
     const pick = (q: number): number =>
@@ -638,19 +738,24 @@ export class GameApp {
   private inputHooks(): InputHooks {
     return {
       onPause: () => {
-        const action = escapeAction(this.flow);
+        const action = this.flow.screen === 'tutorial-handoff' ? 'menu' : escapeAction(this.flow);
         if (action === 'pause') this.pause('game');
         else if (action === 'resume') this.resume();
         else if (action === 'menu') this.goToMenu();
       },
       onEngineering: () => this.toggleEngineering(),
+      onTutorialKey: (action, repeat) => {
+        if (this.flow.screen !== 'playing' || !this.tutorial) return false;
+        if (!repeat) this.setTutorialStep(action === 'skip' ? skipTutorial(this.tutorial) : continueTutorial(this.tutorial));
+        return true;
+      },
       onPointerLockLost: () => {
-        if (pointerLockLostAction(this.flow, this.input?.usingTouch ?? false) === 'pause') {
+        if (this.flow.screen !== 'tutorial-handoff' && pointerLockLostAction(this.flow, this.input?.usingTouch ?? false) === 'pause') {
           this.pause('game');
         }
       },
       onPointerLockError: () => {
-        if (pointerLockErrorAction(this.flow) === 'hint') this.toast('clic para capturar el mouse');
+        if (this.flow.screen !== 'tutorial-handoff' && pointerLockErrorAction(this.flow) === 'hint') this.toast('clic para capturar el mouse');
       },
       isPlaying: () => this.flow.screen === 'playing',
       onTouchDetected: () => {
@@ -669,10 +774,11 @@ export class GameApp {
   private toggleEngineering(): void {
     if (!this.eng) return;
     const visible = this.eng.toggle();
+    // Opening the panel must not depend on the next render or simulation tick.
+    if (visible) this.updateEngineering(performance.now(), this.engine?.state ?? null, true);
     this.settings = { ...this.settings, telemetry: visible };
     saveSettings(this.settings);
     this.syncSettingsUI();
-    this.lastEngineeringAt = 0;
   }
 
   private bindGlobalUI(): void {
@@ -683,19 +789,9 @@ export class GameApp {
         const target = event.target as HTMLElement | null;
         if (!target) return;
 
-        const actionEl = target.closest<HTMLElement>('[data-action]');
-        if (actionEl) {
-          this.audio.unlock();
-          this.audio.play('ui');
-          void this.handleAction(actionEl.dataset.action ?? '', actionEl);
-          return;
-        }
-
-        const gotoEl = target.closest<HTMLElement>('[data-goto]');
-        if (gotoEl) {
-          this.audio.unlock();
-          this.audio.play('ui');
-          this.navigate(gotoEl.dataset.goto ?? '');
+        const control = target.closest<HTMLElement>('[data-action], [data-goto]');
+        if (control) {
+          this.activateControl(control);
           return;
         }
 
@@ -737,6 +833,13 @@ export class GameApp {
     this.app.addEventListener('keydown', () => this.audio.unlock(), { passive: true, signal });
   }
 
+  private activateControl(control: HTMLElement): void {
+    this.audio.unlock();
+    this.audio.play('ui');
+    if (control.dataset.action !== undefined) void this.handleAction(control.dataset.action, control);
+    else if (control.dataset.goto !== undefined) this.navigate(control.dataset.goto);
+  }
+
   private navigate(goto: string): void {
     if (goto === 'menu') this.goToMenu();
     else if (goto === 'sectors') this.openSectors();
@@ -766,7 +869,13 @@ export class GameApp {
         await this.startMatch('practice', 0, { tutorial: true });
         break;
       case 'tutorial-skip':
-        this.endTutorial(true);
+        if (this.flow.screen === 'playing' && this.tutorial) this.setTutorialStep(skipTutorial(this.tutorial));
+        break;
+      case 'tutorial-start':
+        if (this.flow.screen === 'tutorial-handoff') await this.startMatch('run', recommendedSector(this.progress.state));
+        break;
+      case 'tutorial-practice':
+        if (this.flow.screen === 'tutorial-handoff') this.resume();
         break;
       case 'brief':
         this.brief(Number(element.dataset.sector));
@@ -863,10 +972,7 @@ export class GameApp {
     if (window.matchMedia('(pointer: coarse)').matches) {
       this.app.classList.add('is-touch');
     }
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this.settings = { ...this.settings, reduceMotion: true };
-      this.hooks.reducedMotion = true;
-    }
+    this.motionPreference.addEventListener('change', () => this.applyMotionPreference(), { signal });
   }
 
   // ---------------------------------------------------------------- settings
@@ -884,10 +990,9 @@ export class GameApp {
     document.documentElement.style.setProperty('--hud-scale', String(this.settings.hudScale));
     document.documentElement.dataset.theme = 'dark';
     this.app.dataset.hand = this.settings.handedness;
-    this.app.dataset.motion = this.settings.reduceMotion ? 'reduce' : 'full';
     if (this.input?.usingTouch) this.app.classList.add('is-touch');
-
-    this.hooks.reducedMotion = this.settings.reduceMotion;
+    this.objectiveMarker?.invalidate();
+    this.applyMotionPreference();
     this.audio.setEnabled(this.settings.audioEnabled);
     this.audio.setVolume(this.settings.volume);
     this.input?.updateSettings(this.settings);
@@ -898,6 +1003,11 @@ export class GameApp {
       this.renderer.resize();
     }
     saveSettings(this.settings);
+  }
+
+  private applyMotionPreference(): void {
+    this.hooks.reducedMotion = this.settings.reduceMotion || this.motionPreference.matches;
+    this.app.dataset.motion = this.hooks.reducedMotion ? 'reduce' : 'full';
   }
 
   private syncSettingsUI(): void {
@@ -914,6 +1024,7 @@ export class GameApp {
     this.abort.abort();
     cancelAnimationFrame(this.rafId);
     this.input?.detach();
+    this.objectiveMarker?.dispose();
     this.renderer?.dispose();
     this.audio.dispose();
   }

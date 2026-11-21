@@ -17,6 +17,7 @@ const STICK_RADIUS = 52;
 export interface InputHooks {
   onPause(): void;
   onEngineering(): void;
+  onTutorialKey(action: 'continue' | 'skip', repeat: boolean): boolean;
   onPointerLockLost(): void;
   onPointerLockError(): void;
   isPlaying(): boolean;
@@ -250,6 +251,12 @@ export class InputManager {
     }
     const target = event.target as HTMLElement | null;
     const formTarget = target?.closest?.('input, select, textarea, button') != null;
+    const tutorialKey = code === 'Enter' || code === 'NumpadEnter' ? 'continue' : code === 'Backspace' ? 'skip' : null;
+    if (tutorialKey && !formTarget && !event.defaultPrevented && !event.isComposing &&
+        !event.ctrlKey && !event.altKey && !event.metaKey && this.hooks.onTutorialKey(tutorialKey, event.repeat)) {
+      event.preventDefault();
+      return;
+    }
     if (shouldPreventDefault(code, { playing: this.hooks.isPlaying(), formTarget })) {
       event.preventDefault();
     }
@@ -274,14 +281,17 @@ export class InputManager {
     const locked = document.pointerLockElement === this.canvas;
     const was = this.pointerLocked;
     this.pointerLocked = locked;
-    if (was && !locked) {
+    if (locked && this.hooks.isPlaying()) {
+      this.canvas.focus({ preventScroll: true });
+    } else if (was && !locked) {
       this.fireHeld = false;
       this.hooks.onPointerLockLost();
     }
   };
 
   private onPointerLockError = (): void => {
-    this.pointerLocked = false;
+    this.pointerLocked = document.pointerLockElement === this.canvas;
+    if (this.hooks.isPlaying()) this.canvas.focus({ preventScroll: true });
     this.hooks.onPointerLockError();
   };
 

@@ -13,7 +13,7 @@ fn mode_score_and_phase_constants_are_exported() {
         (MODE_MISSION, MODE_OVERFLOW, MODE_DAILY, MODE_PRACTICE),
         (0, 1, 2, 3)
     );
-    assert_eq!((SCORE_VERSION, OVERFLOW_SCORE_VERSION), (1, 1));
+    assert_eq!((SCORE_VERSION, OVERFLOW_SCORE_VERSION), (3, 3));
     assert_eq!(MAP_COUNT, 3);
     assert_eq!(MAX_TICKS, 72_000);
     assert_eq!(phase::PLAYING, 1.0);
@@ -29,6 +29,17 @@ fn mode_score_and_phase_constants_are_exported() {
         ),
         (phase::PLAYING, phase::EXTRACTION, phase::WIN, phase::LOSE)
     );
+}
+
+#[test]
+fn abi_reports_the_active_score_version_and_encodes_v3_logs() {
+    bp_core::bp_init(5);
+    for (mode, version) in [(MODE_MISSION, SCORE_VERSION), (MODE_OVERFLOW, OVERFLOW_SCORE_VERSION)] {
+        assert_eq!(bp_core::bp_start(u32::from(mode), 0, 5, 0), 1);
+        assert_eq!(bp_core::bp_score_version(), u32::from(version));
+        assert!(bp_core::bp_log_encode() >= 16);
+        assert_eq!(unsafe { *bp_core::bp_log_ptr().add(4) }, 3);
+    }
 }
 
 #[test]
@@ -53,6 +64,32 @@ fn a_live_run_round_trips_through_the_public_log_api() {
     assert_eq!(outcome.score, g.final_score());
     assert_eq!(outcome.phase, g.phase as u8);
     assert!(!g.log_truncated());
+}
+
+#[test]
+fn fifty_weapon_switches_cannot_exceed_the_starting_ammo_budget() {
+    use bp_core::FLAG_AUTO_RELOAD;
+
+    let mut g = Game::new(5);
+    assert!(g.start(MODE_OVERFLOW, 0, 5, FLAG_AUTO_RELOAD));
+    g.waves.running = false; // Isolate weapons from combat; use normal fixed steps and reloads.
+
+    for t in 0..50 {
+        let switch = if t % 2 == 0 { 2 } else { 1 };
+        g.step(Input {
+            switch,
+            ..Input::default()
+        });
+        for _ in 0..600 {
+            g.step(Input {
+                fire_held: true,
+                fire_pressed: true,
+                ..Input::default()
+            });
+        }
+    }
+    // PB-01: 12 + 60, AR-04: 30 + 120. Equality also proves both reserves were spent.
+    assert_eq!(g.shots, 222);
 }
 
 #[test]

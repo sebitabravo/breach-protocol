@@ -137,6 +137,8 @@ fn activating_every_terminal_then_surviving_extraction_wins_with_a_time_bonus() 
         assert_eq!(g.nodes_active, 3, "map {map}");
         assert_eq!(g.phase, phase::EXTRACTION, "map {map}");
         for _ in 0..(13.0 / FIXED_DT) as u32 {
+            // Objective waves now spawn; isolate the extraction timer from combat survival.
+            g.player.hp = g.player.hp_max;
             g.step(Input::default());
         }
         assert_eq!(g.phase, phase::WIN, "map {map}");
@@ -146,6 +148,74 @@ fn activating_every_terminal_then_surviving_extraction_wins_with_a_time_bonus() 
             g.final_score()
         );
     }
+}
+
+#[test]
+fn director_pacing_with_and_without_fast_objectives() {
+    let run = |fast: bool| {
+        let mut g = Game::new(7);
+        assert!(g.start(MODE_MISSION, 0, 7, 0));
+        let channel_ticks = (NODE_CHANNEL / FIXED_DT).round() as u32;
+        let activation_ticks = [20 * 60, 40 * 60, 60 * 60];
+        let mut activations = Vec::new();
+        let mut waves = vec![0];
+        let mut peak_alive = 0;
+        for t in 1..=90 * 60 {
+            // Controlled combat: one elimination every two seconds in both cases;
+            // restore HP so the comparison measures director pacing, not survival.
+            g.player.hp = g.player.hp_max;
+            if t % 120 == 0 {
+                if let Some(enemy) = g.enemies.iter_mut().find(|e| e.is_alive()) {
+                    enemy.hurt(f32::MAX);
+                }
+            }
+            let mut input = Input::default();
+            if fast {
+                for (i, &activate_at) in activation_ticks.iter().enumerate() {
+                    if t == activate_at - channel_ticks + 1 {
+                        let n = g.nodes[i];
+                        g.player.pos = v3(n.x, n.y, n.z + 1.0);
+                        g.player.vel = V3::ZERO;
+                    }
+                    if (activate_at - channel_ticks + 1..=activate_at + 1).contains(&t) {
+                        input.interact = true;
+                    }
+                }
+            }
+            g.step(input);
+            if g.nodes_active as usize > activations.len() {
+                activations.push(t);
+            }
+            if g.waves.wave as usize > waves.len() {
+                waves.push(t);
+            }
+            peak_alive = peak_alive.max(g.alive_count());
+            if g.waves.wave == 5 {
+                break;
+            }
+        }
+        assert_eq!(waves.len(), 5, "wave 5 wasn't reached: {waves:?}");
+        if fast {
+            assert_eq!(activations, activation_ticks);
+            assert_eq!(g.phase, phase::EXTRACTION);
+        } else {
+            assert!(activations.is_empty());
+            assert_eq!(g.phase, phase::PLAYING);
+        }
+        let seconds = |ticks: &[u32]| {
+            ticks.iter().map(|&t| f64::from(t) / 60.0).collect::<Vec<_>>()
+        };
+        println!(
+            "fast={fast} waves(s)={:?} activations(s)={:?} peak_alive={peak_alive} remaining_at_wave_5={}",
+            seconds(&waves),
+            seconds(&activations),
+            g.waves.queued() + u64::from(g.alive_count())
+        );
+        waves[4]
+    };
+    let fast = run(true);
+    let slow = run(false);
+    assert!(fast < slow && fast <= 61 * 60);
 }
 
 #[test]

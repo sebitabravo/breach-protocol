@@ -4,18 +4,21 @@
  * All buffers are preallocated; nothing is allocated per spawn call.
  */
 import * as THREE from 'three';
+import { SOLID_KIND } from '../world/map';
 
 const MAX_TRACERS = 64;
 const MAX_SPARKS = 1024;
 const TRACER_LIFE = 0.09;
 const FLASH_LIFE = 0.06;
+// Local offset just beyond the rim so a depth-tested flare isn't buried in the mesh.
+const FLASH_LEAD = 0.033;
 const SPARK_GRAVITY = -14;
 
 /** tokens.css palette (hex int form for three.js). */
 const C = {
   accent: 0x4de3c6,
   tracer: 0xbfffe0,
-  flash: 0xd9ffe9,
+  flash: 0xffc984,
 } as const;
 
 /** Color de chispa por tipo de superficie (SOLID_KIND en world/map.ts). */
@@ -56,7 +59,109 @@ export interface SurfaceSolid {
   kind: number;
 }
 
+/** Recover a front-facing plane from the hit point + shot origin, not an arbitrary camera offset.
+ * Skip corners so the entire mark fits the face. Crates have shallow raised panel trim. */
+export function impactFace(solids: readonly SurfaceSolid[], hit: THREE.Vector3, origin: THREE.Vector3,
+  point: THREE.Vector3, normal: THREE.Vector3): boolean {
+  let facing = 0, offset = 0, axis = -1, direction = 0, plane = 0;
+  for (const solid of solids) {
+    const cargo = solid.kind === SOLID_KIND.crate || solid.kind === SOLID_KIND.cover;
+    if (!cargo && solid.kind !== SOLID_KIND.wall && solid.kind !== SOLID_KIND.pillar) continue;
+    for (let a = 0; a < 3; a += 1) {
+      const v = hit.getComponent(a), eye = origin.getComponent(a);
+      const sign = eye > v ? 1 : -1;
+      const candidate = (sign > 0 ? solid.max : solid.min)[a];
+      if (Math.abs(v - candidate) > SURFACE_EPS) continue;
+      const u = (a + 1) % 3, w = (a + 2) % 3;
+      const hu = hit.getComponent(u), hw = hit.getComponent(w);
+      if (hu < solid.min[u] + 0.16 || hu > solid.max[u] - 0.16 || hw < solid.min[w] + 0.16 || hw > solid.max[w] - 0.16) continue;
+      if (Math.abs(eye - v) <= facing) continue;
+      facing = Math.abs(eye - v); axis = a; direction = sign; plane = candidate;
+      offset = cargo && a !== 1 ? 0.084 : 0.013;
+    }
+  }
+  if (axis === -1) return false;
+  normal.set(0, 0, 0).setComponent(axis, direction);
+  point.copy(hit).setComponent(axis, plane + direction * offset);
+  return true;
+}
+
 const tmpColor = new THREE.Color();
+
+/** Soft four-point flare; transparent corners keep the billboard invisible. */
+function flareMap(softHalo: boolean): THREE.DataTexture {
+  const side = 48;
+  const pixels = new Uint8Array(side * side * 4);
+  for (let y = 0; y < side; y += 1) for (let x = 0; x < side; x += 1) {
+    const u = Math.abs((x + 0.5) / side * 2 - 1), v = Math.abs((y + 0.5) / side * 2 - 1);
+    const radius = Math.hypot(u, v);
+    const core = Math.max(0, 1 - radius * 2.2) ** 2;
+    const halo = softHalo ? 0.26 * Math.max(0, 1 - radius * 1.18) ** 2 : 0;
+    const ray = Math.max(0, 1 - u - v) ** 1.8 * Math.exp(-Math.min(u, v) * 25);
+    const p = (y * side + x) * 4;
+    pixels[p] = pixels[p + 1] = pixels[p + 2] = 255;
+    pixels[p + 3] = 255 * Math.min(1, core + ray * 0.8 + halo);
+  }
+  const map = new THREE.DataTexture(pixels, side, side);
+  map.minFilter = map.magFilter = THREE.LinearFilter;
+  map.needsUpdate = true;
+  return map;
+}
+
+/** One reusable, depth-tested billboard; player and NPCs use separate scenes. */
+export class MuzzleFlash {
+  private readonly sprite: THREE.Sprite;
+  private life = 0;
+  private source?: THREE.Object3D;
+
+  constructor(scene: THREE.Scene, softHalo = false) {
+    this.sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      color: new THREE.Color(C.flash).multiplyScalar(3.4),
+      map: flareMap(softHalo),
+      rotation: Math.PI / 8,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+    }));
+    this.sprite.visible = false;
+    scene.add(this.sprite);
+  }
+
+  show(position: THREE.Vector3, size: number, source?: THREE.Object3D): void {
+    this.source = source;
+    this.sprite.position.copy(position);
+    this.track();
+    this.sprite.material.opacity = 1;
+    this.sprite.scale.set(size, size, 1);
+    this.life = FLASH_LIFE;
+    this.sprite.visible = true;
+  }
+
+  update(dt: number): void {
+    if (!this.life) return;
+    this.life = Math.max(0, this.life - dt);
+    if (!this.life || this.source?.parent?.visible === false) { this.hide(); return; }
+    this.track();
+    this.sprite.material.opacity = this.life / FLASH_LIFE;
+  }
+
+  hide(): void {
+    this.life = 0;
+    this.source = undefined;
+    this.sprite.visible = false;
+  }
+
+  dispose(): void {
+    this.hide();
+    this.sprite.removeFromParent();
+    this.sprite.material.map?.dispose();
+    this.sprite.material.dispose();
+  }
+
+  private track(): void {
+    if (this.source) this.sprite.position.set(0, 0, -FLASH_LEAD).applyMatrix4(this.source.matrixWorld);
+  }
+}
 
 export class FxPool {
   private readonly tracerLines: THREE.LineSegments;
@@ -65,6 +170,7 @@ export class FxPool {
   private readonly tracerBase: Float32Array;
   private readonly tracerLife = new Float32Array(MAX_TRACERS);
   private tracerCursor = 0;
+  private readonly tracerSources: (THREE.Object3D | undefined)[] = Array(MAX_TRACERS);
 
   private readonly sparks: THREE.Points;
   private readonly sparkPos: Float32Array;
@@ -75,8 +181,8 @@ export class FxPool {
   private readonly sparkMaxLife = new Float32Array(MAX_SPARKS);
   private sparkCursor = 0;
 
-  private readonly flash: THREE.Sprite;
-  private flashLife = 0;
+  private readonly flash: MuzzleFlash;
+  private readonly socketPosition = new THREE.Vector3();
 
   private budget: number;
 
@@ -123,32 +229,20 @@ export class FxPool {
     this.sparks.visible = false;
     scene.add(this.sparks);
 
-    // --- muzzle flash (billboarded additive quad) -------------------------
-    const flashMat = new THREE.SpriteMaterial({
-      color: C.flash,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      depthWrite: false,
-    });
-    this.flash = new THREE.Sprite(flashMat);
-    this.flash.scale.set(0.3, 0.3, 1);
-    this.flash.visible = false;
-    scene.add(this.flash);
+    this.flash = new MuzzleFlash(scene);
   }
 
   /** Flash quad at a world position; `size` (metres) is per weapon, the shotgun's is the largest. */
-  muzzle(worldPos: THREE.Vector3, size = 0.24): void {
-    this.flash.position.copy(worldPos);
-    this.flash.scale.set(size, size, 1);
-    this.flashLife = FLASH_LIFE;
-    this.flash.visible = true;
+  muzzle(worldPos: THREE.Vector3, size = 0.24, source?: THREE.Object3D): void {
+    this.flash.show(worldPos, size, source);
   }
 
   /** One additive beam segment from `from` to `to`. */
-  tracer(from: THREE.Vector3, to: THREE.Vector3): void {
+  tracer(from: THREE.Vector3, to: THREE.Vector3, source?: THREE.Object3D): void {
     const slot = this.tracerCursor;
     this.tracerCursor = (this.tracerCursor + 1) % MAX_TRACERS;
     const p = slot * 6;
+    this.tracerSources[slot] = source;
     this.tracerPos[p] = from.x;
     this.tracerPos[p + 1] = from.y;
     this.tracerPos[p + 2] = from.z;
@@ -192,7 +286,14 @@ export class FxPool {
       this.tracerCol[c] = this.tracerBase[c] * f;
       this.tracerCol[c + 1] = this.tracerBase[c + 1] * f;
       this.tracerCol[c + 2] = this.tracerBase[c + 2] * f;
-      if (this.tracerLife[i] > 0) anyTracer = true;
+      if (this.tracerLife[i] > 0) {
+        anyTracer = true;
+        const source = this.tracerSources[i];
+        if (source) {
+          this.socketPosition.setFromMatrixPosition(source.matrixWorld);
+          this.socketPosition.toArray(this.tracerPos, i * 6);
+        }
+      } else this.tracerSources[i] = undefined;
     }
     this.tracerLines.visible = anyTracer;
     if (tracersTouched) this.markTracersDirty();
@@ -224,16 +325,7 @@ export class FxPool {
     this.sparks.visible = anySpark;
     if (sparksTouched) this.markSparksDirty();
 
-    // muzzle flash decay
-    if (this.flashLife > 0) {
-      this.flashLife -= dt;
-      if (this.flashLife <= 0) {
-        this.flash.visible = false;
-      } else {
-        const mat = this.flash.material;
-        mat.opacity = Math.max(this.flashLife / FLASH_LIFE, 0);
-      }
-    }
+    this.flash.update(dt);
   }
 
   /** Concurrent spark budget (quality presets may lower it at runtime). */
@@ -249,8 +341,7 @@ export class FxPool {
     this.sparks.removeFromParent();
     this.sparks.geometry.dispose();
     (this.sparks.material as THREE.Material).dispose();
-    this.flash.removeFromParent();
-    (this.flash.material as THREE.SpriteMaterial).dispose();
+    this.flash.dispose();
   }
 
   private markTracersDirty(): void {

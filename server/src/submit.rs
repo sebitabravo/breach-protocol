@@ -1,6 +1,5 @@
-//! Orquestación de `POST /api/runs`. Orden: tamaño (413), límite de tasa (429), forma del
-//! JSON (400), verificación del registro (400/422), tablero (422) y almacén (503). El límite
-//! va antes de re-simular para proteger la CPU.
+//! `POST /api/runs`: clasifica sin simular, limita por clase y cliente y solo entonces
+//! verifica el registro. El tráfico malformado no consume la cuota de re-simulación.
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -47,18 +46,37 @@ impl Accepted {
     }
 }
 
-pub fn submit(store: &dyn Store, input: &Submission<'_>) -> Result<Accepted, ApiError> {
-    if input.body.len() > MAX_BODY_BYTES {
-        return Err(ApiError::BodyTooLarge);
-    }
-
-    let minute = input.now_unix / 60;
-    let bucket = format!("rl:{}:{minute}", input.client);
+fn check_rate(
+    store: &dyn Store,
+    prefix: &str,
+    client: &str,
+    now_unix: u64,
+) -> Result<(), ApiError> {
+    let minute = now_unix / 60;
+    let bucket = format!("{prefix}:{client}:{minute}");
     if store.rate_limit_hit(&bucket)? > RATE_LIMIT_PER_MINUTE {
         return Err(ApiError::RateLimited);
     }
+    Ok(())
+}
 
-    let request: Value = serde_json::from_slice(input.body).map_err(|_| ApiError::BadJson)?;
+/// Cuenta errores de lectura y de estructura en la misma cuota separada.
+pub fn malformed_response(
+    store: &dyn Store,
+    client: &str,
+    now_unix: u64,
+    error: ApiError,
+) -> ApiError {
+    check_rate(store, "rlbad", client, now_unix)
+        .err()
+        .unwrap_or(error)
+}
+
+fn parse(body: &[u8]) -> Result<(String, bp_core::Log), ApiError> {
+    if body.len() > MAX_BODY_BYTES {
+        return Err(ApiError::BodyTooLarge);
+    }
+    let request: Value = serde_json::from_slice(body).map_err(|_| ApiError::BadJson)?;
     let raw_name = request
         .get("name")
         .and_then(Value::as_str)
@@ -68,9 +86,30 @@ pub fn submit(store: &dyn Store, input: &Submission<'_>) -> Result<Accepted, Api
         .and_then(Value::as_str)
         .ok_or(ApiError::BadRequest)?;
     let name = sanitize_name(raw_name)?;
-
     let bytes = STANDARD.decode(log_b64).map_err(|_| ApiError::BadBase64)?;
     let log = bp_core::decode(&bytes).map_err(|_| ApiError::MalformedLog)?;
+    Ok((name, log))
+}
+
+pub fn submit(store: &dyn Store, input: &Submission<'_>) -> Result<Accepted, ApiError> {
+    let (name, log) = match parse(input.body) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            return Err(malformed_response(
+                store,
+                input.client,
+                input.now_unix,
+                error,
+            ))
+        }
+    };
+    check_rate(store, "rl", input.client, input.now_unix)?;
+
+    // BPL1 only claims an unlock; it cannot prove a prior SECTOR_02 win. A win in
+    // this replay cannot grant a weapon retroactively (src/core/progress.ts).
+    if log.header.flags & bp_core::FLAG_SHOTGUN != 0 {
+        return Err(ApiError::NotQualified);
+    }
     let outcome = bp_core::run(&log).map_err(|_| ApiError::LogInvalid)?;
 
     let board = derive_board(&log.header, &outcome, input.now_unix)?;

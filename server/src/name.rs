@@ -4,14 +4,12 @@ use crate::error::ApiError;
 
 pub const MAX_NAME_CHARS: usize = 16;
 
-/// Quita todo lo que no sea letra, dígito, espacio, `_`, `-` o `.`; recorta los bordes y
-/// valida el largo sobre el resultado. Las letras son Unicode, así que "José" se conserva.
-/// Un nombre que queda demasiado largo se rechaza: no se trunca en silencio.
+/// Recorta espacios Unicode no de control en los bordes. Valida (no filtra ni normaliza)
+/// el resto del nombre, en escalares Unicode, igual que el cliente.
 pub fn sanitize_name(raw: &str) -> Result<String, ApiError> {
-    let kept: String = raw.chars().filter(|&c| is_allowed(c)).collect();
-    let trimmed = kept.trim();
+    let trimmed = raw.trim_matches(|c: char| c.is_whitespace() && !c.is_control());
     let len = trimmed.chars().count();
-    if len == 0 || len > MAX_NAME_CHARS {
+    if len == 0 || len > MAX_NAME_CHARS || !trimmed.chars().all(is_allowed) {
         return Err(ApiError::BadName);
     }
     Ok(trimmed.to_string())
@@ -31,8 +29,11 @@ mod tests {
     }
 
     #[test]
-    fn strips_disallowed_characters_then_trims() {
-        assert_eq!(sanitize_name("  Seb<i>ta!  ").unwrap(), "Sebita");
+    fn trims_whitespace_but_rejects_disallowed_symbols() {
+        assert_eq!(sanitize_name("  Ana  ").unwrap(), "Ana");
+        assert_eq!(sanitize_name("\u{85}Ana"), Err(ApiError::BadName));
+        assert_eq!(sanitize_name("\u{a0}Ana\u{3000}").unwrap(), "Ana");
+        assert_eq!(sanitize_name("  Seb<i>ta!  "), Err(ApiError::BadName));
     }
 
     #[test]
@@ -46,14 +47,23 @@ mod tests {
     }
 
     #[test]
-    fn drops_control_characters_and_pipes_used_as_member_separator() {
-        assert_eq!(sanitize_name("ab|c\u{0007}d\n").unwrap(), "abcd");
+    fn rejects_control_format_and_pipe_characters() {
+        for name in [
+            "a|b",
+            "a\u{0007}b",
+            "\tAna",
+            "Ana\n",
+            "Jo\u{200d}sé",
+            "Ana\u{feff}",
+        ] {
+            assert_eq!(sanitize_name(name), Err(ApiError::BadName), "{name:?}");
+        }
     }
 
     #[test]
-    fn rejects_when_nothing_survives_stripping() {
-        assert_eq!(sanitize_name("<<<>>>"), Err(ApiError::BadName));
-        assert_eq!(sanitize_name("   \t  "), Err(ApiError::BadName));
+    fn rejects_empty_and_all_space_names() {
+        assert_eq!(sanitize_name(""), Err(ApiError::BadName));
+        assert_eq!(sanitize_name("   "), Err(ApiError::BadName));
     }
 
     #[test]
@@ -72,5 +82,8 @@ mod tests {
     fn counts_characters_not_bytes() {
         let sixteen_accents = "ñ".repeat(MAX_NAME_CHARS);
         assert_eq!(sanitize_name(&sixteen_accents).unwrap(), sixteen_accents);
+        let astral = "𐐀".repeat(MAX_NAME_CHARS);
+        assert_eq!(sanitize_name(&astral).unwrap(), astral);
+        assert_eq!(sanitize_name(&(astral + "𐐀")), Err(ApiError::BadName));
     }
 }

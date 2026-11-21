@@ -16,7 +16,7 @@ use crate::protocol::phase;
 use crate::sim::{Game, MODE_DAILY, MODE_PRACTICE};
 
 pub const MAGIC: [u8; 4] = *b"BPL1";
-pub const LOG_VERSION: u8 = 1;
+pub const LOG_VERSION: u8 = 3; // v3: terminal-driven waves and one-shot Overflow nodes.
 /// Techo de duración de una partida registrada: 20 minutos a 60 Hz.
 pub const MAX_TICKS: u32 = 60 * 60 * 20;
 const HEADER_LEN: usize = 16;
@@ -139,7 +139,7 @@ impl Recorder {
         self.ticks
     }
 
-    /// Una partida más larga que `MAX_TICKS` no es verificable.
+    /// La partida continuó después del prefijo verificable de `MAX_TICKS`.
     pub fn truncated(&self) -> bool {
         self.truncated
     }
@@ -461,8 +461,31 @@ pub fn golden_hash(ticks: u32) -> u64 {
     hash_snapshot(&g)
 }
 
-/// Escenarios fijados. La partida dorada no pisa interceptores, escopeta ni mutadores; estos
-/// sí. El escenario 0 es la dorada. Ids desconocidos caen en la dorada.
+// Real Sector 01 route: east along the south lane, then north to the terminal.
+// No fixture state is written, so this route can be recorded and replayed.
+fn objective_input(g: &Game) -> Input {
+    if g.nodes[1].active {
+        Input::default()
+    } else if g.player.pos.z > 12.5 && g.player.pos.x < 11.1 {
+        Input {
+            move_x: 1.0,
+            ..Input::default()
+        }
+    } else if g.player.pos.z > 1.64 {
+        Input {
+            move_z: 1.0,
+            ..Input::default()
+        }
+    } else {
+        Input {
+            interact: true,
+            ..Input::default()
+        }
+    }
+}
+
+/// Escenarios fijados: interceptores, escopeta, mutadores y aceleración por terminal.
+/// El escenario 0 es la partida dorada. Ids desconocidos caen en la dorada.
 pub fn scenario_hash(id: u32, ticks: u32) -> u64 {
     hash_snapshot(&run_scenario(id, ticks, |_| {}))
 }
@@ -480,6 +503,7 @@ fn run_scenario(id: u32, ticks: u32, mut watch: impl FnMut(&Game)) -> Game {
         2 => (MODE_OVERFLOW, 2, 0x0BEE_F002, FLAG_AUTO_RELOAD),
         3 => (MODE_DAILY, 0, 20_261_120, 0),
         4 => (MODE_MISSION, 0, 0x1C0F_F004, FLAG_AUTO_RELOAD),
+        5 => (MODE_MISSION, 0, 0x5EED_0005, FLAG_AUTO_RELOAD),
         _ => (MODE_PRACTICE, 0, 0x00C0_FFEE, FLAG_AUTO_RELOAD),
     };
     let mut g = Game::new(seed);
@@ -495,8 +519,12 @@ fn run_scenario(id: u32, ticks: u32, mut watch: impl FnMut(&Game)) -> Game {
         if g.phase != phase::PLAYING && g.phase != phase::EXTRACTION {
             break;
         }
-        g.step(scenario_input(id, t));
-        if id != 0 {
+        g.step(if id == 5 {
+            objective_input(&g)
+        } else {
+            scenario_input(id, t)
+        });
+        if (1..=4).contains(&id) {
             // Arnés: el operador scripteado no sobrevive ni despeja oleadas. Los escenarios
             // 1 a 3 limpian la oleada cada 10 s, para llegar a composiciones posteriores.
             // El simulacro (4) no limpia: sus interceptores deben completar el ciclo.
@@ -626,6 +654,15 @@ mod tests {
             decode(&good[..good.len() - 1]).err(),
             Some(ReplayError::Truncated)
         );
+    }
+
+    #[test]
+    fn rejects_logs_from_before_objective_escalation() {
+        let (mut bytes, _) = record(MODE_OVERFLOW, 0, 1, 0, 60);
+        for version in [1, 2] {
+            bytes[4] = version;
+            assert_eq!(decode(&bytes).err(), Some(ReplayError::BadVersion));
+        }
     }
 
     #[test]
@@ -777,15 +814,28 @@ mod tests {
     }
 
     #[test]
+    fn real_terminal_activation_replays_with_the_same_hash() {
+        for mode in [MODE_MISSION, MODE_OVERFLOW] {
+            let seed = 0x5EED_0005;
+            let mut live = Game::new(seed);
+            live.enable_recording();
+            assert!(live.start(mode, 0, seed, FLAG_AUTO_RELOAD));
+            for _ in 0..600 {
+                live.step(objective_input(&live));
+            }
+            assert_eq!((live.nodes_active, live.waves.wave, live.kills), (1, 2, 0));
+            let expected = outcome_of(&live, live.tick);
+            live.encode_log();
+            let replay = run_bytes(&live.log_out).expect("objective run replays");
+            assert_eq!(replay, expected);
+        }
+    }
+
+    #[test]
     fn scenario_hashes_are_pinned() {
         // Los mismos valores los comprueba wasm en tests/unit/determinism.test.ts.
-        for (id, pinned) in SCENARIO_PINS.iter().enumerate() {
-            assert_eq!(
-                scenario_hash(id as u32, GOLDEN_TICKS),
-                *pinned,
-                "scenario {id}"
-            );
-        }
+        let actual = std::array::from_fn(|id| scenario_hash(id as u32, GOLDEN_TICKS));
+        assert_eq!(actual, SCENARIO_PINS);
     }
 
     /// Los escenarios 1 a 3 solo prueban que los interceptores aparecen: no salen de PATROL.
@@ -859,13 +909,14 @@ mod tests {
         assert!(run.damage_taken > 0.0, "no dash ever landed a hit");
     }
 
-    const SCENARIO_PINS: [u64; 5] = [
-        6051080362437244339,
-        8473981006168998935,
-        14559882121426080077,
-        1992019841316245935,
+    const SCENARIO_PINS: [u64; 6] = [
+        5711138649934550938,
+        12760246713383565853,
+        770316419739378658,
+        4310614164317112927,
         15493279338039416630,
+        825227913700778631,
     ];
     const GOLDEN_TICKS: u32 = 4000;
-    const GOLDEN_HASH: u64 = 6051080362437244339;
+    const GOLDEN_HASH: u64 = 5711138649934550938;
 }

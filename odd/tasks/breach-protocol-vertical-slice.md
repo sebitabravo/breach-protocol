@@ -92,3 +92,19 @@ tokens.
 
 L4 (decision): no third-party asset downloads. Arena, weapons, enemies, reticle and audio are
 procedural, so provenance is trivially auditable and the payload stays inside budget.
+
+L5 (slice record, 2026-11-20): v0.3 landed as one integration pass by parallel workers, so the
+branch is recorded in six reviewable slices rather than invented intermediate states. Each slice
+is self-contained by path and the tree was green at every boundary.
+
+- 1f1684a chore(toolchain): move the whole toolchain to Bun
+- eacc07e chore(agents): vendor the project-level game-dev skills
+- 50f5508 fix(leaderboard): close two replay exploits and harden submission
+- 60ac655 feat(art): real CC0/MIT assets, authored weapons and an industrial arena
+- 5f74801 feat(gameplay): terminal-driven waves, objective markers and tutorial handoff
+- 5ecaf78 perf(boot): paint the shell without three.js and stop shipping sourcemaps
+
+Authored size: ~16.6k changed lines, past the ~400-line guideline. Rationale: the pass touched
+system boundaries (Rust sim, replay verification, server, renderer, HUD) that were developed and
+verified together; splitting mid-file would have produced commits that never compiled. Next
+feature should return to one slice per behaviour.

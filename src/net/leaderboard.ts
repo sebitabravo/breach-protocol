@@ -10,7 +10,10 @@ export const BOARD_LIMIT_MAX = 50;
 
 const RUNS_PATH = '/api/runs';
 const BOARD_PATH = '/api/leaderboard';
-const DISALLOWED_IN_NAME = /[^A-Za-z0-9 _.-]/g;
+// Same Unicode Alphabetic property as Rust char::is_alphabetic in server/src/name.rs.
+const DISALLOWED_IN_NAME = /[^\p{Alphabetic}0-9 _.-]/u;
+const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u;
+const EDGE_WHITESPACE = /^\p{White_Space}+|\p{White_Space}+$/gu;
 const CHUNK_BYTES = 0x8000;
 
 export type SectorBoard = 'mission:s01' | 'mission:s02' | 'mission:s03';
@@ -24,6 +27,7 @@ export interface BoardEligibility {
   won: boolean;
   dateKey: string;
   logTruncated: boolean;
+  shotgunEnabled: boolean;
 }
 
 export type SubmitResult =
@@ -50,15 +54,19 @@ export interface ClientDeps {
 
 type Reply = { kind: 'reply'; status: number; json: unknown } | { kind: 'failed'; reason: 'network' | 'timeout' };
 
-/** Nombre permitido por el contrato: 1-16 caracteres tras recortar; lo demás se descarta. */
+/** 1–16 escalares Unicode tras recortar, sin modificar los caracteres del nombre. */
 export function sanitizeName(raw: string): string | null {
-  const cleaned = raw.replace(DISALLOWED_IN_NAME, '').trim().slice(0, NAME_MAX_LENGTH).trim();
-  return cleaned.length > 0 ? cleaned : null;
+  if (CONTROL_OR_FORMAT.test(raw)) return null;
+  const trimmed = raw.replace(EDGE_WHITESPACE, '');
+  if (trimmed.length === 0 || DISALLOWED_IN_NAME.test(trimmed)) return null;
+  return [...trimmed].length <= NAME_MAX_LENGTH ? trimmed : null;
 }
 
 /** Tablero al que cuenta una partida. `null` significa que no se envía nada. */
 export function boardFor(run: BoardEligibility): BoardKey | null {
-  if (run.logTruncated || run.mode === 'practice') return null;
+  // A capped prefix is still verifiable. The server decides whether it qualifies.
+  // A replay cannot prove the campaign unlock, even if the weapon was never equipped.
+  if (run.mode === 'practice' || run.shotgunEnabled) return null;
   if (run.mode === 'overflow') return 'overflow';
   if (run.mode === 'daily') return `daily:${run.dateKey}`;
   if (!run.won || run.mapId < 0 || run.mapId > 2) return null;
@@ -143,10 +151,10 @@ export interface SubmitInput {
   log: Uint8Array;
 }
 
-/** Envía un registro verificable. Un nombre vacío se rechaza sin tocar la red. */
+/** Envía un registro verificable. Un nombre inválido se rechaza sin tocar la red. */
 export async function submitRun(input: SubmitInput, deps: ClientDeps = {}): Promise<SubmitResult> {
   const name = sanitizeName(input.name);
-  if (name === null) return { status: 'rejected', code: 'empty_name' };
+  if (name === null) return { status: 'rejected', code: 'bad_name' };
   let body: string;
   try {
     body = JSON.stringify({ name, log: encodeLogBase64(input.log) });

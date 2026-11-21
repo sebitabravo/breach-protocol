@@ -10,10 +10,37 @@
     <meta property="og:description" content="La red cayó. Queda una última conexión." />
     <meta property="og:type" content="website" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23080f14'/%3E%3Cpath d='M10 8h4l-4 16h-4zM20 8h4l-4 16h-4z' fill='%235ce08b'/%3E%3C/svg%3E" />
+    <link rel="preload" href="%BASE_URL%bp_core.wasm" as="fetch" crossorigin />
+    <style>
+      /* Paint the same menu grid before the game owns data-screen. */
+      #app[data-screen="shell"] #screen-menu {
+        display: grid;
+        grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
+        gap: var(--dist-3);
+        padding: calc(var(--dist-3) + var(--safe-t)) calc(var(--dist-3) + var(--safe-r)) var(--dist-2) calc(var(--dist-3) + var(--safe-l));
+        overflow: auto;
+      }
+      @media (max-width: 760px) {
+        #app[data-screen="shell"] #screen-menu {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: auto auto;
+          gap: var(--dist);
+          padding: calc(var(--dist) + var(--safe-t)) calc(var(--dist-2) + var(--safe-r)) var(--dist) calc(var(--dist-2) + var(--safe-l));
+        }
+      }
+      @media (max-height: 500px) {
+        #app[data-screen="shell"] #screen-menu {
+          padding-top: var(--dist);
+          padding-bottom: var(--dist);
+          gap: var(--dist-2);
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="app" data-screen="boot">
-      <canvas id="gl" class="gl" aria-hidden="true"></canvas>
+    <div id="app" data-screen="shell">
+      <canvas id="gl" class="gl" tabindex="-1" aria-label="Arena de juego"></canvas>
       <div class="gl-vignette" aria-hidden="true"></div>
       <div class="gl-scanlines" aria-hidden="true"></div>
 
@@ -32,7 +59,7 @@
             <div class="check" data-check="audio"><span class="check__dot"></span>sistema de audio</div>
           </div>
           <div class="boot__bar"><i id="boot-progress"></i></div>
-          <p class="boot__meta" id="boot-meta">inicializando…</p>
+          <p class="boot__meta" id="boot-meta" role="status">inicializando…</p>
         </div>
       </section>
 
@@ -58,7 +85,10 @@
               <span class="navitem__label">Protocolo diario</span><span class="navitem__meta" id="menu-daily-meta">incidente UTC</span>
             </button>
             <button class="navitem" data-action="practice">
-              <span class="navitem__label">Simulador</span><span class="navitem__meta">tutorial en 3 pasos</span>
+              <span class="navitem__label">Simulador</span><span class="navitem__meta" id="menu-practice-meta">tutorial en 3 pasos</span>
+            </button>
+            <button class="navitem" data-action="tutorial-replay">
+              <span class="navitem__label">Repetir tutorial</span><span class="navitem__meta">3 pasos</span>
             </button>
             <button class="navitem" data-goto="leaderboard">
               <span class="navitem__label">Clasificación</span><span class="navitem__meta">tableros</span>
@@ -95,7 +125,6 @@
               <li><span>racha diaria</span><b id="menu-streak">0 días</b></li>
               <li><span>récord overflow</span><b id="menu-overflow">—</b></li>
             </ul>
-            <button class="btn btn--ghost btn--block" data-action="tutorial-replay">Repetir tutorial</button>
           </div>
         </div>
 
@@ -121,7 +150,7 @@
           <div class="sector-grid">
             <article class="sector" data-sector-card="0">
               <div class="sector__head">
-                <span class="sector__code">SECTOR_01</span>
+                <span class="sector__code"><svg class="sector__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 20V8h6v12m-2-6h2"/></svg> SECTOR_01</span>
                 <span class="sector__state" data-state-label="0">disponible</span>
               </div>
               <h3 class="sector__title">Control de Acceso</h3>
@@ -134,7 +163,7 @@
             </article>
             <article class="sector" data-sector-card="1">
               <div class="sector__head">
-                <span class="sector__code">SECTOR_02</span>
+                <span class="sector__code"><svg class="sector__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M3.34 7l17.32 10m0-10L3.34 17M9 4l3 3 3-3M9 20l3-3 3 3"/></svg> SECTOR_02</span>
                 <span class="sector__state" data-state-label="1">bloqueado</span>
               </div>
               <h3 class="sector__title">Refrigeración</h3>
@@ -147,7 +176,7 @@
             </article>
             <article class="sector" data-sector-card="2">
               <div class="sector__head">
-                <span class="sector__code">SECTOR_03</span>
+                <span class="sector__code"><svg class="sector__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="5" rx="1"/><rect x="4" y="10" width="16" height="5" rx="1"/><rect x="4" y="16" width="16" height="5" rx="1"/><path d="M7 6.5h2m-2 6h2m-2 6h2"/></svg> SECTOR_03</span>
                 <span class="sector__state" data-state-label="2">bloqueado</span>
               </div>
               <h3 class="sector__title">Archivo</h3>
@@ -329,12 +358,6 @@
             </div>
           </div>
 
-          <div class="hud__block hud__block--objective">
-            <span class="hud__kicker">objetivo</span>
-            <p class="hud__sub" id="hud-objective-line">reactivá el terminal de control (0/3)</p>
-            <p class="hud__score"><span class="hud__kicker">puntuación</span> <b id="hud-score">0</b></p>
-          </div>
-
           <div class="hud__block hud__block--right">
             <div class="hud__stat"><span class="hud__kicker" id="hud-time-label">restante</span><span class="hud__mid" id="hud-time">3:00</span></div>
             <div class="hud__stat"><span class="hud__kicker">enemigos</span><span class="hud__mid" id="hud-remaining">0</span></div>
@@ -342,6 +365,12 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="4" height="14" fill="currentColor"/><rect x="13" y="5" width="4" height="14" fill="currentColor"/></svg>
             </button>
           </div>
+        </div>
+
+        <div class="hud__block hud__block--objective">
+          <span class="hud__kicker">objetivo</span>
+          <p class="hud__sub" id="hud-objective-line">reactivá una terminal (0/3)</p>
+          <p class="hud__score"><span class="hud__kicker">puntuación</span> <b id="hud-score">0</b></p>
         </div>
 
         <div class="hud__objective-track">
@@ -362,11 +391,6 @@
           <span class="hitmarker" id="hit-marker"></span>
         </div>
         <div class="hud__dmgdir" id="hud-dmgdir" aria-hidden="true" hidden><span></span></div>
-
-        <div class="hud__prompt" id="hud-prompt" hidden>
-          <kbd class="hud__key" id="hud-prompt-key">E</kbd>
-          <span id="hud-prompt-text">activar terminal</span>
-        </div>
 
         <div class="hud__bottom">
           <div class="vitals">
@@ -411,12 +435,32 @@
           <div class="tutorial__foot">
             <span class="tutorial__dots" aria-hidden="true"><i></i><i></i><i></i></span>
             <button class="btn btn--ghost btn--sm" data-action="tutorial-skip">Omitir tutorial</button>
+            <p class="tutorial__keys"><span><kbd>Enter</kbd> continuar</span> <i aria-hidden="true">·</i> <span><kbd>Retroceso</kbd> omitir</span></p>
           </div>
         </aside>
 
         <div class="damage" id="damage-flash" aria-hidden="true"></div>
         <div class="hud__notice" id="hud-notice" hidden></div>
       </div>
+
+      <!-- Screen-space objective: independent of the HUD's layout zoom. -->
+      <svg id="objective-marker" data-mode="hidden" aria-hidden="true">
+        <g id="objective-anchor">
+          <g id="objective-scale">
+            <path class="objective-diamond" d="M0 -11 11 0 0 11 -11 0Z"/>
+            <path class="objective-chevron" id="objective-chevron" d="M-5 -8 4 0 -5 8"/>
+            <foreignObject class="objective-card" x="-67" y="14" width="134" height="32">
+              <div xmlns="http://www.w3.org/1999/xhtml" class="objective-label">
+                <b data-objective-name></b>
+                <span id="hud-objective-distance"></span>
+                <span data-objective-hold hidden></span>
+              </div>
+            </foreignObject>
+          </g>
+        </g>
+      </svg>
+      <div id="objective-insets" aria-hidden="true"></div>
+      <p id="objective-status" role="status"></p>
 
       <!-- ============================= TOUCH ========================= -->
       <div class="touch" id="touch-layer">
@@ -426,7 +470,7 @@
         </button>
         <button class="tbtn tbtn--jump" data-touch="jump" aria-label="Saltar">⤒</button>
         <button class="tbtn tbtn--reload" data-touch="reload" aria-label="Recargar">⟳</button>
-        <button class="tbtn tbtn--interact" data-touch="interact" aria-label="Interactuar">E</button>
+        <button class="tbtn tbtn--interact" data-touch="interact" aria-label="Interactuar">Ⓔ</button>
         <button class="tbtn tbtn--switch" data-touch="switch" aria-label="Cambiar arma">⇄</button>
         <button class="tbtn tbtn--ads" data-touch="ads" aria-label="Apuntar">⊕</button>
         <button class="tbtn tbtn--pause" data-touch="pause" aria-label="Pausa">❙❙</button>
@@ -503,6 +547,30 @@
         </div>
       </section>
 
+      <!-- ======================== TUTORIAL HAND-OFF =================== -->
+      <section id="screen-tutorial-handoff" class="screen screen--overlay screen--tutorial-handoff" aria-labelledby="tut-handoff-title">
+        <div class="sheet sheet--tutorial-handoff">
+          <header class="sheet__head">
+            <p class="eyebrow">SIMULADOR</p>
+            <h2 id="tut-handoff-title">TUTORIAL COMPLETADO</h2>
+          </header>
+          <div id="tut-handoff-recap">
+            <ul class="tutorial-recap" role="list" aria-label="Acciones aprendidas">
+              <li><span aria-hidden="true">✓</span> Moverte</li>
+              <li><span aria-hidden="true">✓</span> Apuntar y disparar</li>
+              <li><span aria-hidden="true">✓</span> Activar un terminal</li>
+            </ul>
+            <p class="tutorial-time"><span>Tiempo transcurrido</span> <time id="tut-handoff-time"></time></p>
+          </div>
+          <p id="tut-handoff-skip-note" hidden>Podés repetir el tutorial desde el menú.</p>
+          <footer class="sheet__foot tutorial-handoff-actions">
+            <button class="btn btn--primary" data-action="tutorial-start" aria-describedby="tut-handoff-title">Empezar el protocolo</button>
+            <button class="btn btn--ghost" data-action="tutorial-practice">Seguir practicando</button>
+            <button class="btn btn--ghost" data-action="menu">Volver al menú</button>
+          </footer>
+        </div>
+      </section>
+
       <!-- ============================ RESULT ========================= -->
       <section id="screen-result" class="screen screen--page" aria-label="Resultados">
         <div class="page page--result">
@@ -537,6 +605,7 @@
               <span class="board-submit__where" id="board-where">—</span>
             </div>
             <p class="board-submit__text" id="board-text">Enviá la partida para verificarla en el servidor.</p>
+            <p class="board-submit__text" id="result-prefix" hidden>Registro recortado: cuenta el prefijo de 20 min.</p>
             <div class="board-submit__rank" id="board-rank" hidden></div>
             <div class="board-submit__form" id="board-form">
               <label class="field" for="board-name">

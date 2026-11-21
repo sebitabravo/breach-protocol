@@ -20,6 +20,7 @@ body {
   font-family: var(--sans);
   font-size: var(--fs-body);
   line-height: var(--lh-body);
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   overscroll-behavior: none;
@@ -98,20 +99,18 @@ a {
     rgba(3, 8, 12, 0.22) 66%,
     rgba(2, 6, 10, 0.45) 100%
   );
-  mix-blend-mode: multiply;
 }
 
 .gl-scanlines {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.16;
+  opacity: 0.07;
   background: repeating-linear-gradient(
     to bottom,
     rgba(255, 255, 255, 0.05) 0 1px,
     transparent 1px 3px
   );
-  mix-blend-mode: overlay;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -134,6 +133,7 @@ a {
 #app[data-screen="about"] #screen-about,
 #app[data-screen="fallback"] #screen-fallback,
 #app[data-screen="pause"] #screen-pause,
+#app[data-screen="tutorial-handoff"] #screen-tutorial-handoff,
 #app[data-screen="result"] #screen-result {
   display: flex;
 }
@@ -169,7 +169,41 @@ a {
   overflow: auto;
 }
 
+/* The shell still owns visibility and focus. Only the arriving content moves. */
+@media (prefers-reduced-motion: no-preference) {
+  #app:not([data-motion="reduce"]) :is(#screen-menu, #screen-briefing, #screen-result, #screen-tutorial-handoff) > :not(.menu__backdrop) {
+    animation: screen-arrive 240ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+  }
+  #app:not([data-motion="reduce"]) :is(#screen-menu, #screen-briefing, #screen-result)::after,
+  #app:not([data-motion="reduce"])[data-screen="playing"]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 22;
+    background: linear-gradient(180deg, #20374457, #080e16c9);
+    animation: screen-sync 225ms steps(5, end) both;
+  }
+}
+
+@keyframes screen-arrive {
+  from { opacity: 0.28; transform: translateY(7px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes screen-sync {
+  from { opacity: 0.58; clip-path: inset(0 0 0 0); }
+  to { opacity: 0; clip-path: inset(100% 0 0 0); }
+}
+
 /* ------------------------------------------------------------------ type */
+.section-title {
+  color: var(--text);
+  font: 600 12px/1.35 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  padding-inline-start: var(--dist);
+  border-inline-start: 2px solid #66808c;
+}
 .eyebrow {
   font-size: var(--fs-caption);
   letter-spacing: 0.16em;
@@ -418,6 +452,7 @@ input[type="range"] {
   appearance: none;
   width: 100%;
   height: 24px;
+  margin: 0;
   background: transparent;
 }
 

@@ -1,21 +1,18 @@
-/**
- * Tutorial de tres acciones del Simulador: moverse, disparar y activar un terminal.
- * Avanza con hechos observados (posición, disparos, nodos) y nunca bloquea el
- * juego: el overlay es informativo y puede omitirse en cualquier paso.
- */
+/** Tres acciones del Simulador, en orden: movimiento, disparo, terminal. */
 export const TUTORIAL_STEPS = [
   { id: 'move', title: 'Moverse', body: 'WASD o joystick izquierdo. Caminá dos metros.' },
-  { id: 'shoot', title: 'Apuntar y disparar', body: 'Mirá con el mouse o arrastrá con el pulgar derecho. Disparo: click izquierdo o botón de fuego.' },
-  { id: 'terminal', title: 'Activar terminal', body: 'Acercate a un terminal y mantené E hasta que se active.' },
+  { id: 'shoot', title: 'Apuntar y disparar', body: 'Mirá con el mouse o arrastrá. Dispará con clic izquierdo o el botón de fuego.' },
+  { id: 'terminal', title: 'Activar terminal', body: 'Seguí el rombo hasta la terminal marcada. Mantené hasta llenar la barra.' },
 ] as const;
 
 export const TUTORIAL_MOVE_METERS = 2;
+export const TUTORIAL_TERMINAL_STEP = 2;
+/** Terminal este del Simulador (SECTOR_01), a la derecha de la salida. */
+export const TUTORIAL_TERMINAL = 1;
 
-export interface TutorialState {
-  /** Índice del paso actual; `TUTORIAL_STEPS.length` significa terminado. */
-  step: number;
-  skipped: boolean;
-}
+type ActiveTutorial = { status: 'active'; step: 0 | 1 | typeof TUTORIAL_TERMINAL_STEP };
+export type TutorialOutcome = { status: 'completed' | 'skipped' };
+export type TutorialState = ActiveTutorial | TutorialOutcome;
 
 export interface TutorialFacts {
   metersMoved: number;
@@ -23,24 +20,26 @@ export interface TutorialFacts {
   nodeActivated: boolean;
 }
 
-export function startTutorial(): TutorialState {
-  return { step: 0, skipped: false };
+export function startTutorial(tutorialSeen = false, replay = false): ActiveTutorial | null {
+  return tutorialSeen && !replay ? null : { status: 'active', step: 0 };
 }
 
-export function tutorialDone(state: TutorialState): boolean {
-  return state.step >= TUTORIAL_STEPS.length;
-}
-
-/** Avanza a lo sumo un paso por observación: solo el paso actual puede completarse. */
+/** Avanza a lo sumo un paso; una vez emitido el resultado, no vuelve a cambiar. */
 export function observeTutorial(state: TutorialState, facts: TutorialFacts): TutorialState {
-  if (tutorialDone(state)) return state;
+  if (state.status !== 'active') return state;
   const completed =
     (state.step === 0 && facts.metersMoved >= TUTORIAL_MOVE_METERS) ||
     (state.step === 1 && facts.shot) ||
-    (state.step === 2 && facts.nodeActivated);
-  return completed ? { ...state, step: state.step + 1 } : state;
+    (state.step === TUTORIAL_TERMINAL_STEP && facts.nodeActivated);
+  return completed ? continueTutorial(state) : state;
+}
+
+export function continueTutorial(state: TutorialState): TutorialState {
+  if (state.status !== 'active') return state;
+  if (state.step === TUTORIAL_TERMINAL_STEP) return { status: 'completed' };
+  return { status: 'active', step: state.step === 0 ? 1 : TUTORIAL_TERMINAL_STEP };
 }
 
 export function skipTutorial(state: TutorialState): TutorialState {
-  return tutorialDone(state) ? state : { step: TUTORIAL_STEPS.length, skipped: true };
+  return state.status === 'active' ? { status: 'skipped' } : state;
 }

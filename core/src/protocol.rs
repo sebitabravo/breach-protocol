@@ -126,6 +126,10 @@ pub mod ev {
     pub const ENEMY_WINDUP: f32 = 17.0;
 }
 
+// WAVE_START carries the wave number in A and the start reason in B (0 = normal).
+pub const WAVE_ACCELERATED: f32 = 1.0;
+pub const WAVE_SURGE: f32 = 2.0;
+
 /// Simulation phases. Mirrored in `src/wasm/protocol.ts`.
 pub mod phase {
     pub const IDLE: f32 = 0.0;

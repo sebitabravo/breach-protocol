@@ -124,6 +124,23 @@ export function paintDecalAtlas<T extends CanvasSurface>(factory: SurfaceFactory
   ctx.textBaseline = 'middle';
   ctx.fillText(label, 512, 128);
   paintHazard(ctx, 0, 256, 1024, 256);
+  if (label === 'SECTOR 01') {
+    ctx.fillStyle = 'rgba(255,255,255,1)';
+    ctx.font = 'bold 45px monospace';
+    ctx.fillText('07 // PRESSURE LOCK', 512, 24);
+  }
+  // The node test factory only implements the shared drawing subset.
+  const erase = (ctx as Partial<CanvasRenderingContext2D>).clearRect?.bind(ctx);
+  if (erase) {
+    const rng = mulberry32(0x5ca1e);
+    for (let i = 0; i < 1900; i += 1) {
+      erase(rng() * 1024, 45 + rng() * 170, 0.7 + rng() * 7, 0.7 + rng() * 3);
+    }
+    for (const x of [79, 281, 480, 680, 889]) {
+      erase(x, 64, 7, 48);
+      erase(x + 4, 147, 7, 45);
+    }
+  }
   return surface;
 }
 

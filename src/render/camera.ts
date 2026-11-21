@@ -6,9 +6,9 @@
 import * as THREE from 'three';
 import type { Pose } from './interp';
 
-const ORBIT_RADIUS = 17;
-const ORBIT_HEIGHT = 8.5;
-const ORBIT_SPEED = 0.12;
+const ORBIT_RADIUS = 13.4;
+const ORBIT_HEIGHT = 3.6;
+const ORBIT_SPEED = 0.085;
 /** The snapshot carries the player's FEET y (core/src/sim.rs writes
  * `player.pos.y`); the first-person camera needs the eye, so the renderer
  * lifts it by the sim's EYE_HEIGHT (core/src/player.rs). */
@@ -24,19 +24,16 @@ export interface ViewInput {
 }
 
 export class CameraRig {
-  private orbitAngle = 0;
+  private orbitAngle = 1.11;
   private bobPhase = 0;
   private bobAmp = 0;
 
   /** Menu/loading camera: slow orbit over the arena. */
   orbit(camera: THREE.PerspectiveCamera, dt: number): void {
     this.orbitAngle += dt * ORBIT_SPEED;
-    camera.position.set(
-      Math.cos(this.orbitAngle) * ORBIT_RADIUS,
-      ORBIT_HEIGHT,
-      Math.sin(this.orbitAngle) * ORBIT_RADIUS,
-    );
-    camera.lookAt(0, 1.2, 0);
+    const angle = 1.45 - 0.22 * Math.sin(this.orbitAngle);
+    camera.position.set(Math.cos(angle) * ORBIT_RADIUS, ORBIT_HEIGHT, Math.sin(angle) * ORBIT_RADIUS);
+    camera.lookAt(0, 2.05, 0);
     camera.updateMatrixWorld();
   }
 

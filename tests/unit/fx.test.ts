@@ -32,6 +32,24 @@ describe('FxPool GPU upload flags', () => {
     expect(col.version).toBeGreaterThan(before);
   });
 
+  it('keeps the tracer start and flash on the posed bore during recoil', () => {
+    const scene = new THREE.Scene();
+    const fx = new FxPool(scene, 64);
+    const muzzle = new THREE.Object3D();
+    fx.muzzle(muzzle.position, 0.13, muzzle);
+    fx.tracer(muzzle.position, new THREE.Vector3(0, 0, -5), muzzle);
+    muzzle.position.set(0.3, -0.2, -1.2);
+    muzzle.updateMatrixWorld();
+    fx.update(1 / 60);
+    const { pos } = attrs(scene, 'LineSegments');
+    expect(new THREE.Vector3().fromBufferAttribute(pos, 0).distanceTo(muzzle.position)).toBeLessThan(1e-6);
+    expect(pos.getZ(1)).toBe(-5);
+    const flash = scene.children.find((child) => child.type === 'Sprite')!;
+    expect(flash.position.x).toBeCloseTo(muzzle.position.x);
+    expect(flash.position.y).toBeCloseTo(muzzle.position.y);
+    expect(flash.position.z).toBeLessThan(muzzle.position.z);
+  });
+
   it('does not upload when nothing is alive', () => {
     const scene = new THREE.Scene();
     const fx = new FxPool(scene, 64);

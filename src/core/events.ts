@@ -4,7 +4,7 @@
  */
 import type { SoundName } from '../audio/audio';
 import type { WorldEvent } from '../wasm/bridge';
-import { ENEMY_KIND, EVT, WEAPON } from '../wasm/protocol';
+import { ENEMY_KIND, EVT, WAVE_START_REASON, WEAPON } from '../wasm/protocol';
 
 export type FeedKind = 'good' | 'danger' | 'plain';
 
@@ -26,6 +26,12 @@ const ENEMY_LABEL: Record<number, string> = {
   [ENEMY_KIND.interceptor]: 'interceptor',
 };
 
+const SHOT_SOUND: Partial<Record<number, SoundName>> = {
+  [WEAPON.sidearm]: 'shotSidearm',
+  [WEAPON.carbine]: 'shotCarbine',
+  [WEAPON.shotgun]: 'shotShotgun',
+};
+
 function line(text: string, kind: FeedKind = 'plain'): FeedLine {
   return { text, kind };
 }
@@ -33,7 +39,7 @@ function line(text: string, kind: FeedKind = 'plain'): FeedLine {
 export function effectsOf(event: WorldEvent): EventEffects {
   switch (event.type) {
     case EVT.shot:
-      return { sounds: [event.a === WEAPON.carbine ? 'shotCarbine' : 'shotSidearm'], feed: [] };
+      return { sounds: [SHOT_SOUND[event.a] ?? 'shotSidearm'], feed: [] };
     case EVT.enemyHit:
       return { sounds: ['hit'], feed: [] };
     case EVT.enemyDied:
@@ -49,8 +55,14 @@ export function effectsOf(event: WorldEvent): EventEffects {
       return { sounds: ['windup'], feed: [] };
     case EVT.nodeActivated:
       return { sounds: ['node'], feed: [line('nodo de red activado', 'good')] };
-    case EVT.waveStart:
-      return { sounds: ['wave'], feed: [line(`oleada ${Math.round(event.a)}`)] };
+    case EVT.waveStart: {
+      const wave = `oleada ${Math.round(event.a)}`;
+      if (event.b === WAVE_START_REASON.accelerated || event.b === WAVE_START_REASON.surge) {
+        const suffix = event.b === WAVE_START_REASON.surge ? 'refuerzos' : 'acelerada';
+        return { sounds: ['wave', 'windup'], feed: [line(`${wave} · ${suffix}`, 'danger')] };
+      }
+      return { sounds: ['wave'], feed: [line(wave)] };
+    }
     case EVT.extraction:
       return { sounds: ['wave'], feed: [line('extracción iniciada · sobreviví', 'danger')] };
     case EVT.reloadStart:

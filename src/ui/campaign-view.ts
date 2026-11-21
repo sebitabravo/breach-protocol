@@ -31,6 +31,7 @@ export function renderMenu(state: ProgressState, todayKey: string): void {
   const code = sector.code.toLowerCase().replace('_', ' ');
   byId('menu-sector-code').textContent = `${code} · ${sector.title.toLowerCase()}`;
   byId('menu-play-meta').textContent = code;
+  byId('menu-practice-meta').textContent = state.tutorialSeen ? 'práctica libre' : 'tutorial en 3 pasos';
   byId('menu-cleared').textContent = `${SECTOR_IDS.filter((id) => isSectorCleared(state, id)).length}/3`;
   byId('menu-streak').textContent = `${state.daily.streak} ${state.daily.streak === 1 ? 'día' : 'días'}`;
   byId('menu-overflow').textContent = points(state.overflow.bestScore);

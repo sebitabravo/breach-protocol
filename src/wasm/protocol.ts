@@ -98,6 +98,9 @@ export const EVT = {
   enemyWindup: 17,
 } as const;
 
+/** WAVE_START: a = wave number, b = reason (mirrors protocol.rs). */
+export const WAVE_START_REASON = { normal: 0, accelerated: 1, surge: 2 } as const;
+
 export const PHASE = {
   idle: 0,
   playing: 1,

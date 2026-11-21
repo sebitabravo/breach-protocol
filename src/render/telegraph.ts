@@ -131,6 +131,7 @@ export class Telegraph {
 
   dispose(): void {
     this.halo.removeFromParent();
+    this.halo.dispose();
     this.halo.geometry.dispose();
     (this.halo.material as THREE.Material).dispose();
     this.laser.removeFromParent();

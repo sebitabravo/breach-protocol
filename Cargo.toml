@@ -20,10 +20,23 @@ path = "api/runs.rs"
 name = "leaderboard"
 path = "api/leaderboard.rs"
 
+[[test]]
+name = "http_api"
+path = "api/tests/http.rs"
+
+[dev-dependencies]
+base64 = "0.22.1"
+bp-core = { path = "core" }
+http-body-util = "0.1.5"
+serde_json = "1.0.154"
+
 [dependencies]
 bp-server = { path = "server" }
+bytes = "1.12.2"
+http = "1.5.0"
+http-body = "1.1.0"
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
-vercel_runtime = "2.4.1"
+vercel_runtime = "=2.4.1"
 
 # server/ es miembro del workspace. core/ queda fuera: tiene su propio Cargo.toml y Cargo.lock.
 [workspace]

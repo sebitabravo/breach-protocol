@@ -22,8 +22,8 @@ export function postPlan(name: QualityName): PostPlan {
   return name === 'low' ? { bloom: false, msaaSamples: 0 } : { bloom: true, msaaSamples: 4 };
 }
 
-/** Bloom tuning: only emissive strips (>1 in HDR) pass the threshold. */
-export const BLOOM = { strength: 0.35, radius: 0.35, threshold: 1.0 } as const;
+/** HDR soft knee picks up cyan tubes and the less luminous orange strips. */
+export const BLOOM = { strength: 0.39, radius: 0.39, threshold: 0.65 } as const;
 
 /**
  * Niveles de desenfoque que se usan: 3 de los 5 que trae UnrealBloomPass. Cada
@@ -33,10 +33,12 @@ export const BLOOM = { strength: 0.35, radius: 0.35, threshold: 1.0 } as const;
 const BLOOM_MIPS = 3;
 
 /** Recorta la cadena de desenfoque sin tocar el shader: los pesos de los niveles sobrantes van a cero. */
-function trimBloomMips(pass: UnrealBloomPass): void {
-  pass.nMips = BLOOM_MIPS;
+function trimBloomMips(pass: UnrealBloomPass, preset: QualityName): void {
+  // Medium retains the tight highlight halo, without four wider blur draws.
+  const levels = preset === 'medium' ? 1 : BLOOM_MIPS;
+  pass.nMips = levels;
   const factors = pass.compositeMaterial.uniforms.bloomFactors.value as number[];
-  for (let i = BLOOM_MIPS; i < factors.length; i += 1) factors[i] = 0;
+  for (let i = levels; i < factors.length; i += 1) factors[i] = 0;
 }
 
 export class PostFx {
@@ -55,6 +57,7 @@ export class PostFx {
 
   /** Applies a quality plan and the current drawing-buffer geometry. */
   configure(name: QualityName, pixelRatio: number, width: number, height: number): void {
+    if (this.quality !== name) this.disposeComposer();
     this.quality = name;
     this.plan = postPlan(name);
     this.pixelRatio = pixelRatio;
@@ -65,14 +68,21 @@ export class PostFx {
       return;
     }
     if (!this.composer) this.createComposer();
-    this.composer?.setPixelRatio(this.pixelRatio);
+    // Keep the fullscreen pass budget stable on wide screens. High has no cap.
+    const mediumDpr = Math.min(this.pixelRatio * 0.76, Math.sqrt(420_000 / (this.width * this.height)));
+    this.composer?.setPixelRatio(name === 'medium' ? mediumDpr : this.pixelRatio);
     this.composer?.setSize(this.width, this.height);
   }
 
   /** Renders one frame through the composer, or directly when bloom is off. */
   render(): void {
     if (this.composer) this.composer.render();
-    else this.renderer.render(this.scene, this.camera);
+    else {
+      this.renderer.setRenderTarget(null);
+      // A solid-color Scene.background forces the color/depth clear even when
+      // autoClear is disabled for the foreground pass.
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   /** Drops GPU targets so the next configure allocates fresh ones (context restore). */
@@ -97,7 +107,7 @@ export class PostFx {
     const composer = new EffectComposer(this.renderer, target);
     composer.addPass(new RenderPass(this.scene, this.camera));
     const bloom = new UnrealBloomPass(new THREE.Vector2(this.width, this.height), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
-    trimBloomMips(bloom);
+    trimBloomMips(bloom, this.quality);
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
     this.composer = composer;
@@ -105,6 +115,7 @@ export class PostFx {
 
   private disposeComposer(): void {
     if (!this.composer) return;
+    for (const pass of this.composer.passes) pass.dispose();
     this.composer.dispose();
     this.composer = null;
   }

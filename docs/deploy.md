@@ -25,7 +25,23 @@ workspace. Use `--manifest-path Cargo.toml` to make that explicit.
 
 The Vercel Rust runtime docs say: "Create a `Cargo.toml` file in your project root", and
 "Each handler has to be specified as `[[bin]]`", with `path = "api/hello.rs"` as the example
-(source 1). This repo matches that shape.
+(source 1). This repo matches that shape. Local compile evidence (Rust 1.100.0):
+
+```sh
+cargo build --release --bins --target aarch64-apple-darwin --workspace --locked --message-format=json-render-diagnostics \
+  | python3 scripts/check-api-bins.py
+# Verified release executables: leaderboard, runs
+```
+
+`x86_64-unknown-linux-gnu` is not installed locally. `.github/workflows/api.yml` runs the
+same check on Ubuntu using that target. This checks Cargo's actual executable artifacts,
+not Vercel's routing, packaging, or live Upstash credentials.
+
+The local Cargo registry source `vercel_runtime-2.4.1/src/lib.rs` defines `Request` as
+`hyper::Request<hyper::body::Incoming>` (line 16) and accepts a stateless one-argument
+handler via `IntoServiceFn<(Request,)>`. `src/types.rs` implements `IntoFunctionResponse`
+for both `Result<T, Error>` and `Response<String>`. The existing `run(service_fn(handler))`
+contract therefore compiles as written with the exact 2.4.1 pin.
 
 Still unverified, because none of it has run on Vercel:
 
@@ -33,8 +49,8 @@ Still unverified, because none of it has run on Vercel:
   whether framework detection still picks Vite.
 - Whether the Rust builder can resolve path dependencies outside `api/` (`server/`, `core/`).
   The whole repo is uploaded or cloned, so the files are present; the resolution is not tested.
-- Whether Vercel treats every `api/**/*.rs` as a function. `api/` now holds only the two
-  handler files, so this only matters if files are added to `api/` later.
+- Whether Vercel ignores `api/tests/*.rs` when discovering functions. Cargo does not
+  produce function binaries from those tests; only the two `[[bin]]` targets are functions.
 - Whether a `functions` pattern that matches no function fails the whole deploy. Both
   patterns in `vercel.json` match a real `[[bin]]`, so this should not trigger.
 - Whether `.vercelignore` applies to Git-based builds. It only lists build artifacts, so it
@@ -73,6 +89,7 @@ work. Items marked **unverified** could not be checked without an account or a r
 | `vercel_runtime` | 2.4.1 | Vercel Rust function runtime (root package and `bp-server`) |
 | `tokio` | 1.54.1 (`macros`, `rt-multi-thread`) | Required by the runtime's `main` pattern; `spawn_blocking` keeps replay and store I/O off the async workers. In `bp-server` only as a dev-dependency (`macros`, `rt`) for async tests |
 | `http-body-util` | 0.1.5 | Reads the request body with a hard `Limited` cap (413) |
+| `http` | 1.5.0 | Generic request type shared by Vercel's `Incoming` body and in-process test fixtures |
 | `http-body` | 1.1.0 | Trait bound on `read_capped`, so the 413 path is unit-tested with an in-memory body |
 | `bytes` | 1.12.2 | `Bytes` type in the same bound. Already in the tree through `vercel_runtime` |
 | `serde_json` | 1.0.154 | Parse the request and build the JSON responses |
@@ -125,33 +142,37 @@ storage: there is no schema or migration, and the rate-limit keys expire on thei
 The full table of statuses and codes, and the list of approved deviations from the original
 draft, are in `docs/api-contract.md`. This file does not repeat them.
 
-## Build
+## Compilación
 
-`installCommand` (in `vercel.json`):
+`installCommand` (en `vercel.json`):
 
-1. `curl` the pinned `rustup-init` **1.29.3** from `static.rust-lang.org/rustup/archive/1.29.3/…`.
-2. Check its SHA-256 against the pinned value (fails the build on mismatch).
-3. Run `rustup-init -y --profile minimal --default-toolchain 1.100.0 -t wasm32-unknown-unknown --no-modify-path`.
-4. `npm ci`.
+1. Descarga `rustup-init` **1.29.3** desde `static.rust-lang.org/rustup/archive/1.29.3/…`.
+2. Verifica el SHA-256 fijado y aborta si no coincide.
+3. Ejecuta `rustup-init -y --profile minimal --default-toolchain 1.100.0 -t wasm32-unknown-unknown --no-modify-path`.
+4. Instala Bun **1.4.4** explícitamente con `curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.4"` bajo Bash con `pipefail`, para que un error de descarga también aborte la instalación.
+5. Exporta `PATH="$HOME/.bun/bin:$HOME/.cargo/bin:$PATH"` y ejecuta `bun install --frozen-lockfile` con `bun.lock`.
 
-The builder is **assumed to be x86_64** (Amazon Linux 2023). If it is aarch64, step 1 fetches a
-binary of the wrong architecture and the build fails loudly. This is unverified.
+Se **supone que el entorno de compilación es x86_64** (Amazon Linux 2023). Si es aarch64,
+el paso 1 descarga un binario de otra arquitectura y la instalación falla. Esto no está verificado.
 
-**Bumping rustup**: on every rustup release, read `https://static.rust-lang.org/rustup/release-stable.toml`,
-download `archive/<ver>/x86_64-unknown-linux-gnu/rustup-init` and its `.sha256`, check the hash, then
-update the version in the URL and the SHA in `vercel.json`. Do this in its own commit.
+**Actualizar rustup**: en cada versión de rustup, consultá `https://static.rust-lang.org/rustup/release-stable.toml`,
+descargá `archive/<ver>/x86_64-unknown-linux-gnu/rustup-init` y su `.sha256`, verificá el hash y
+actualizá la versión en la URL y el SHA en `vercel.json` en un commit separado.
 
-`buildCommand`: `export PATH="$HOME/.cargo/bin:$PATH" && npm run build`. The build runs
-`cargo build --target wasm32-unknown-unknown` through `scripts/build-wasm.mjs`, then
-`tsc --noEmit` and `vite build`. `core/` is built from its own manifest, so the root workspace
-exclusion does not affect the wasm build.
+`buildCommand` vuelve a exportar `PATH` porque podría ejecutarse en otro shell:
 
-Measured locally (macOS aarch64, not the Vercel image): `npm run build` passes, the API
-release binaries build in about 14 s once dependencies are compiled, and the first release
-build including `bp-core` and its dependencies took about 28 s. A cold build on Vercel,
-including the toolchain download and the wasm target, is slower. **Unverified**: the total on
-Vercel, and whether the Rust function build finds `cargo` on `PATH` from the install step.
-Check both on the first preview.
+```sh
+export PATH="$HOME/.bun/bin:$HOME/.cargo/bin:$PATH" && bun run build
+```
+
+El comando compila el wasm con Cargo a través de `scripts/build-wasm.mjs`, luego ejecuta
+`bunx tsc --noEmit` y `bunx vite build`. `core/` usa su propio manifiesto, así que la exclusión
+del workspace raíz no afecta la compilación del wasm.
+
+Medición previa en macOS aarch64 (no en Vercel): los binarios de la API tardaron unos 14 s
+con las dependencias ya compiladas, y la primera compilación en release con `bp-core` y
+sus dependencias tardó unos 28 s. En el primer despliegue de vista previa, verificá el tiempo
+total y si el entorno que compila las funciones Rust encuentra `cargo` en su `PATH`.
 
 Risk: `lto = "fat"` with `codegen-units = 1` is the slowest setting. Switch to `"thin"` if
 preview builds approach the build timeout.
@@ -182,7 +203,7 @@ object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 plus `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
 and `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()`.
 
-Why each directive, based on the built output (`npm run build`, then grep of `dist/`):
+Motivo de cada directiva, según los artefactos generados (`bun run build` y luego una búsqueda en `dist/`):
 
 - `script-src 'self' 'wasm-unsafe-eval'`: the only script is a same-origin module. Nothing
   is inline and nothing calls `eval` or `new Function`. `'wasm-unsafe-eval'` lets
@@ -249,11 +270,12 @@ Caching:
 
 - Builder architecture: assumed x86_64 (the rustup pin is x86_64 only).
 - The layout uncertainties listed under "Layout: what the docs require and what is still open".
-- Vercel's build with the rustup install, the wasm target and the Rust function build
-  (no account, no build run).
-- Vercel's runtime behaviour for the two handlers: `api/runs.rs` and `api/leaderboard.rs` were
-  compiled for macOS but never executed under the Vercel runtime. The Upstash client was tested
-  only with a fake transport; no live Upstash call was made.
+- La compilación en Vercel con la instalación de rustup y Bun, el target wasm y las funciones
+  Rust (sin cuenta ni despliegue de prueba).
+- Both handlers compiled for macOS. `cargo test --test http_api` used their real HTTP
+  request/response logic, real re-simulation, and the Upstash JSON adapter with an
+  in-process transport. It does not test Vercel's live runtime, `ureq` over HTTPS, or
+  real Upstash; no remote request was made.
 - The exact Redis variable names the Marketplace integration creates.
 - Build time and memory on the Vercel builder.
 - The Linux release build of the API crate (checked on macOS only; CI on `ubuntu-24.04` is the

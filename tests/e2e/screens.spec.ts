@@ -155,7 +155,10 @@ for (const viewport of VIEWPORTS) {
       await shot(page, viewport, '10-result-ranked');
     });
 
-    test('the practice tutorial is skippable and does not block play', async ({ page }) => {
+    test('skipping the tutorial pauses practice until the player chooses to resume', async ({ page }) => {
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
       await seedStorage(page, { tutorialSeen: false });
       await mockApi(page, {});
       await page.goto('/');
@@ -163,11 +166,29 @@ for (const viewport of VIEWPORTS) {
       await shot(page, viewport, '11-calibrate');
       await page.locator('#screen-calibrate [data-action="play"]').click();
       await screenIs(page, 'playing');
+      const hud = page.locator('#hud');
+      await expect(hud).toBeVisible();
       await expect(page.locator('#tutorial')).toBeVisible();
       await shot(page, viewport, '12-tutorial');
-      await page.locator('[data-action="tutorial-skip"]').dispatchEvent('click');
+      if (viewport.mobile) await page.getByRole('button', { name: 'Omitir tutorial' }).tap();
+      else await page.keyboard.press('Backspace'); // Funciona con el puntero capturado.
+      await screenIs(page, 'tutorial-handoff');
+      const handoff = page.getByRole('region', { name: 'TUTORIAL OMITIDO' });
+      await expect(handoff).toBeVisible();
+      await expect(handoff.getByRole('button')).toHaveText(['Empezar el protocolo', 'Seguir practicando', 'Volver al menú']);
+      await expect(handoff.getByRole('list')).toHaveCount(0);
+      await expect(handoff.locator('time')).toBeHidden();
       await expect(page.locator('#tutorial')).toBeHidden();
-      await expect(page.locator('#hud')).toBeVisible();
+      await expect(hud).toBeHidden();
+      const practice = handoff.getByRole('button', { name: 'Seguir practicando' });
+      if (viewport.mobile) await practice.tap();
+      else await practice.click();
+      await screenIs(page, 'playing');
+      await expect(handoff).toBeHidden();
+      await expect(hud).toBeVisible();
+      await expect(page.locator('#hud-sector-code')).toHaveText('SIMULADOR');
+      await expect(page.locator('#tutorial')).toBeHidden();
+      expect(errors).toEqual([]);
     });
 
     test('the HUD keeps its elements apart while playing', async ({ page }) => {

@@ -12,7 +12,7 @@ pub enum ApiError {
     BadRequest,
     BadName,
     BadBase64,
-    /// El registro no es BPL1 v1 válido: estructura, magic, versión o campos fuera de rango.
+    /// El registro no es BPL1 v2 válido: estructura, magic, versión o campos fuera de rango.
     MalformedLog,
     /// El registro decodifica pero no reproduce una partida válida hasta su final.
     LogInvalid,

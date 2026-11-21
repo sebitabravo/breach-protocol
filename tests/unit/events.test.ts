@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { effectsOf } from '../../src/core/events';
 import type { WorldEvent } from '../../src/wasm/bridge';
-import { ENEMY_KIND, EVT, WEAPON } from '../../src/wasm/protocol';
+import { ENEMY_KIND, EVT, WAVE_START_REASON, WEAPON } from '../../src/wasm/protocol';
 
 function event(type: number, values: Partial<Omit<WorldEvent, 'type'>> = {}): WorldEvent {
   return { type, a: 0, b: 0, c: 0, d: 0, seq: 1, ...values };
@@ -11,6 +11,7 @@ describe('effectsOf', () => {
   it('picks the shot sound from the weapon id', () => {
     expect(effectsOf(event(EVT.shot, { a: WEAPON.carbine })).sounds).toEqual(['shotCarbine']);
     expect(effectsOf(event(EVT.shot, { a: WEAPON.sidearm })).sounds).toEqual(['shotSidearm']);
+    expect(effectsOf(event(EVT.shot, { a: WEAPON.shotgun })).sounds).toEqual(['shotShotgun']);
   });
 
   it('names the dead enemy by its kind, including the interceptor', () => {
@@ -25,8 +26,16 @@ describe('effectsOf', () => {
     expect(effectsOf(event(EVT.playerDamaged, { a: 12 })).sounds).toEqual(['damage']);
   });
 
-  it('rounds the wave number in the feed line', () => {
-    expect(effectsOf(event(EVT.waveStart, { a: 2.6 })).feed[0].text).toBe('oleada 3');
+  it('keeps normal wave feedback and distinguishes objective acceleration and surges', () => {
+    expect(effectsOf(event(EVT.waveStart, { a: 2.6 }))).toEqual({
+      sounds: ['wave'], feed: [{ text: 'oleada 3', kind: 'plain' }],
+    });
+    expect(effectsOf(event(EVT.waveStart, { a: 3, b: WAVE_START_REASON.accelerated }))).toEqual({
+      sounds: ['wave', 'windup'], feed: [{ text: 'oleada 3 · acelerada', kind: 'danger' }],
+    });
+    expect(effectsOf(event(EVT.waveStart, { a: 5, b: WAVE_START_REASON.surge }))).toEqual({
+      sounds: ['wave', 'windup'], feed: [{ text: 'oleada 5 · refuerzos', kind: 'danger' }],
+    });
   });
 
   it('marks win and lose with the matching feed tone', () => {

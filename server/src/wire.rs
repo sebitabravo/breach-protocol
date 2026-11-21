@@ -1,13 +1,22 @@
 //! Glue con Vercel: lectura acotada del cuerpo, encabezados y respuestas JSON.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use bytes::Bytes;
 use http_body::Body;
 use http_body_util::{BodyExt, LengthLimitError, Limited};
 use serde_json::Value;
-use vercel_runtime::{Error, Request, Response};
+use vercel_runtime::{Error, Response};
 
 use crate::error::ApiError;
 use crate::MAX_BODY_BYTES;
+
+pub fn now_unix() -> Result<u64, ApiError> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .map_err(|_| ApiError::Internal)
+}
 
 /// Lee el cuerpo sin pasar de `MAX_BODY_BYTES`. Excederlo es 413, no un error de lectura.
 pub async fn read_capped<B>(body: B) -> Result<Vec<u8>, ApiError>
@@ -22,7 +31,7 @@ where
     }
 }
 
-pub fn header_value(req: &Request, name: &str) -> Option<String> {
+pub fn header_value<B>(req: &http::Request<B>, name: &str) -> Option<String> {
     req.headers()
         .get(name)
         .and_then(|value| value.to_str().ok())

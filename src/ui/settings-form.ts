@@ -35,6 +35,19 @@ export class SettingsForm {
   ) {}
 
   attach(signal: AbortSignal): void {
+    for (const tab of this.root.querySelectorAll<HTMLButtonElement>('#screen-pause [data-tab]')) {
+      const pane = this.root.querySelector<HTMLElement>(`[data-pane="${tab.dataset.tab}"]`);
+      if (!pane || pane.querySelector('.section-title')) continue;
+      const heading = document.createElement('h3');
+      heading.className = 'section-title';
+      heading.id = `pause-title-${tab.dataset.tab}`;
+      heading.textContent = tab.textContent;
+      pane.id = `pause-panel-${tab.dataset.tab}`;
+      pane.setAttribute('role', 'tabpanel');
+      pane.setAttribute('aria-labelledby', heading.id);
+      tab.setAttribute('aria-controls', pane.id);
+      pane.prepend(heading);
+    }
     const bind = (id: string, handler: (node: Field) => void): void => {
       const node = field(id);
       if (!node) return;

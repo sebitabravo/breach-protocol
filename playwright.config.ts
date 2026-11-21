@@ -7,7 +7,10 @@ export default defineConfig({
   testDir: 'tests/e2e',
   timeout: 60_000,
   fullyParallel: false,
-  retries: 0,
+  // Cada spec levanta un contexto WebGL headless; en paralelo compiten por la GPU
+  // emulada y el arranque se vuelve lento e inestable. Un worker lo hace determinista.
+  workers: 1,
+  retries: process.env.CI ? 1 : 0,
   reporter: [['list']],
   projects: [
     {
@@ -25,7 +28,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run build:wasm && npx vite build && npx vite preview --port ${port} --strictPort`,
+    // Regenera dist/ antes de servirlo, incluso si ya existe.
+    command: `bun run build:wasm && bunx vite build && bunx vite preview --port ${port} --strictPort`,
     url: `http://localhost:${port}`,
     reuseExistingServer: false,
     timeout: 180_000,
