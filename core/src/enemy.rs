@@ -24,7 +24,7 @@ pub const ST_CHARGE: u8 = 8;
 
 /// Segundos de patrulla sin detectar al jugador antes de salir a buscarlo: sin esto, un enemigo
 /// aparecido fuera de línea de visión deja la oleada abierta para siempre.
-const PATROL_HUNT_AFTER: f32 = 20.0;
+const PATROL_HUNT_AFTER: f32 = 6.0;
 /// Radio del lazo de patrulla alrededor del punto de aparición.
 const PATROL_RADIUS: f32 = 4.0;
 /// Paso angular entre waypoints del lazo (rad); lo bastante chico para que las curvas no inviertan el rumbo.
@@ -37,6 +37,11 @@ const GRAVITY: f32 = 21.0;
 
 /// Interceptor: la carga arranca a lo sumo `CHARGE_REACH` más allá del anillo de flanqueo.
 const CHARGE_REACH: f32 = 1.2;
+/// Segundos de anticipación de la embestida sobre la velocidad del jugador.
+const DASH_LEAD: f32 = 0.22;
+/// Dispersión del centinela: base contra un blanco quieto, más un extra por m/s del jugador.
+const SENTINEL_JITTER: f32 = 0.012;
+const SENTINEL_JITTER_PER_SPEED: f32 = 0.0025;
 /// Coseno del ángulo frente al jugador. Por debajo (60°) el enemigo está en el costado o la espalda.
 const FLANK_ARC_COS: f32 = 0.5;
 /// Paso angular de la órbita por tick de decisión (rad, a 12 Hz equivale a ~29° por paso).
@@ -71,7 +76,7 @@ pub struct KindDef {
 
 pub const SCOUT: KindDef = KindDef {
     hp: 35.0,
-    speed: 3.5,
+    speed: 3.9,
     radius: 0.42,
     height: 1.7,
     discover: 26.0,
@@ -113,9 +118,9 @@ pub const INTERCEPTOR: KindDef = KindDef {
     discover: 26.0,
     attack_range: 1.4,
     preferred_range: 0.0,
-    damage: 18.0,
+    damage: 24.0,
     telegraph: 0.45,
-    cooldown: 1.6,
+    cooldown: 1.3,
     burst: 0,
     burst_interval: 0.0,
     spawn_grace: 0.5,
@@ -154,6 +159,8 @@ pub struct EnemyContext<'a> {
     pub player_forward: V3,
     pub player_radius: f32,
     pub player_height: f32,
+    /// Velocidad del jugador: la embestida la anticipa y el centinela falla más contra un blanco en movimiento.
+    pub player_vel: V3,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -318,6 +325,10 @@ impl Enemy {
                 if self.ready_to_charge(&d, ctx) {
                     self.set_state(ST_CHARGE);
                     action = Some(Action::Windup);
+                } else if !self.los && self.state_time >= FLANK_MAX {
+                    // El anillo de flanqueo puede caer detrás de una pared: sin línea de visión
+                    // tras FLANK_MAX, va directo como un scout en vez de orbitar para siempre.
+                    self.set_state(ST_CHASE);
                 }
             }
             ST_CHARGE if self.state_time >= d.telegraph => {
@@ -358,7 +369,13 @@ impl Enemy {
                         let origin = self.eye();
                         let target = ctx.player_eye;
                         let base = (target - origin).norm_or(forward_from_yaw(self.yaw));
-                        let jitter = v3(rng.signed(0.028), rng.signed(0.02), rng.signed(0.028));
+                        let spread =
+                            SENTINEL_JITTER + SENTINEL_JITTER_PER_SPEED * ctx.player_vel.len_xz();
+                        let jitter = v3(
+                            rng.signed(spread),
+                            rng.signed(spread * 0.7),
+                            rng.signed(spread),
+                        );
                         action = Some(Action::Shot {
                             origin,
                             dir: (base + jitter).norm_or(base),
@@ -384,7 +401,19 @@ impl Enemy {
 
         // --- movement -----------------------------------------------------
         let target = match self.state {
-            ST_PATROL => self.patrol_target(),
+            ST_PATROL => {
+                // Un waypoint detrás de una pared (spawn pegado a una esquina) incrustaba al robot en
+                // el muro: si la recta desde el ancla está bloqueada, se salta al siguiente.
+                let t = self.patrol_target();
+                let mid = v3(0.0, d.height * 0.5, 0.0);
+                let reach = (t - self.anchor).flat().norm_or(V3::ZERO) * (d.radius * 1.5);
+                if ctx.arena.blocked(self.anchor + mid, t + mid + reach) {
+                    self.waypoint = self.waypoint.wrapping_add(1);
+                    self.anchor
+                } else {
+                    t
+                }
+            }
             ST_CHASE => {
                 if self.kind == KIND_SENTINEL {
                     let toward = (ctx.player_feet - self.pos).norm_or(forward_from_yaw(self.yaw));
@@ -396,6 +425,14 @@ impl Enemy {
                         // Strafe to stay awkward to hit without charging in.
                         self.pos + v3(-toward.z, 0.0, toward.x) * 4.0 * self.avoid_dir
                     }
+                } else if self.kind == KIND_SCOUT && self.dist > 4.0 {
+                    // Zigzag al acercarse: más difícil de acertar a media distancia.
+                    let toward = (ctx.player_feet - self.pos)
+                        .flat()
+                        .norm_or(forward_from_yaw(self.yaw));
+                    let side = v3(-toward.z, 0.0, toward.x);
+                    let sway = sin(self.anim * 2.6) * (self.dist * 0.25).min(2.0);
+                    ctx.player_feet + side * sway
                 } else {
                     ctx.player_feet
                 }
@@ -470,7 +507,9 @@ impl Enemy {
         let toward = (ctx.player_feet - self.pos)
             .flat()
             .norm_or(ctx.player_forward);
-        self.dash_target = ctx.player_feet + toward * DASH_OVERSHOOT;
+        // Anticipa dónde va a estar el jugador cuando llegue la embestida.
+        let lead = ctx.player_vel.flat() * DASH_LEAD;
+        self.dash_target = ctx.player_feet + lead + toward * DASH_OVERSHOOT;
         self.dash_locked = true;
     }
 
@@ -560,6 +599,7 @@ mod tests {
             player_forward: v3(0.0, 0.0, -1.0),
             player_radius: 0.36,
             player_height: 1.8,
+            player_vel: V3::ZERO,
         }
     }
 
@@ -598,7 +638,8 @@ mod tests {
         let mut heading_flips = 0;
         let mut last_step = v3(0.0, 0.0, 0.0);
         let mut max_from_spawn = 0.0f32;
-        for _ in 0..1000 {
+        // 5 s: a los 6 s de patrulla sin detectar al jugador el robot sale a buscarlo (PATROL_HUNT_AFTER).
+        for _ in 0..300 {
             let before = e.pos;
             e.tick(1.0 / 60.0, &c, &mut rng);
             let step = (e.pos - before).flat();

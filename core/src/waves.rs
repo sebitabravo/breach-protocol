@@ -70,11 +70,11 @@ pub fn mission_composition(sector: u8, wave: u32) -> Composition {
         1 => Composition {
             scouts: 3 + w,
             sentinels: 0,
-            interceptors: if w >= 2 { w / 2 } else { 0 },
+            interceptors: if w >= 2 { 1 + w / 2 } else { 0 },
         },
         _ => Composition {
-            scouts: 2 + w,
-            sentinels: if w >= 2 { w / 2 } else { 0 },
+            scouts: 3 + w,
+            sentinels: if w >= 2 { w.div_ceil(2) } else { 0 },
             interceptors: if w >= 2 { 1 + u32::from(w >= 4) } else { 0 },
         },
     }
@@ -224,7 +224,7 @@ impl Waves {
     }
 
     pub fn spawn_interval_for(wave: u32) -> f32 {
-        (1.65 - 0.16 * (wave.saturating_sub(1)) as f32).max(0.6)
+        (1.4 - 0.16 * (wave.saturating_sub(1)) as f32).max(0.55)
     }
 
     /// Planifica la composición de una oleada normal, tras vaciar la anterior.
@@ -486,8 +486,8 @@ mod tests {
             }
         }
         let planned = Composition {
-            scouts: 42,
-            sentinels: 11,
+            scouts: 43,
+            sentinels: 12,
             interceptors: 11,
         };
         assert_eq!(actual, planned);
@@ -527,7 +527,7 @@ mod tests {
     #[test]
     fn spawn_interval_decreases_but_has_a_floor() {
         assert!(Waves::spawn_interval_for(2) < Waves::spawn_interval_for(1));
-        assert!(Waves::spawn_interval_for(99) >= 0.6);
+        assert!(Waves::spawn_interval_for(99) >= 0.55);
     }
 
     #[test]

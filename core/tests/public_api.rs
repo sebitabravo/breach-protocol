@@ -13,7 +13,7 @@ fn mode_score_and_phase_constants_are_exported() {
         (MODE_MISSION, MODE_OVERFLOW, MODE_DAILY, MODE_PRACTICE),
         (0, 1, 2, 3)
     );
-    assert_eq!((SCORE_VERSION, OVERFLOW_SCORE_VERSION), (4, 4));
+    assert_eq!((SCORE_VERSION, OVERFLOW_SCORE_VERSION), (5, 5));
     assert_eq!(MAP_COUNT, 3);
     assert_eq!(MAX_TICKS, 72_000);
     assert_eq!(phase::PLAYING, 1.0);
@@ -32,7 +32,7 @@ fn mode_score_and_phase_constants_are_exported() {
 }
 
 #[test]
-fn abi_reports_the_active_score_version_and_encodes_v4_logs() {
+fn abi_reports_the_active_score_version_and_encodes_v5_logs() {
     bp_core::bp_init(5);
     for (mode, version) in [
         (MODE_MISSION, SCORE_VERSION),
@@ -41,7 +41,7 @@ fn abi_reports_the_active_score_version_and_encodes_v4_logs() {
         assert_eq!(bp_core::bp_start(u32::from(mode), 0, 5, 0), 1);
         assert_eq!(bp_core::bp_score_version(), u32::from(version));
         assert!(bp_core::bp_log_encode() >= 16);
-        assert_eq!(unsafe { *bp_core::bp_log_ptr().add(4) }, 4);
+        assert_eq!(unsafe { *bp_core::bp_log_ptr().add(4) }, 5);
     }
 }
 

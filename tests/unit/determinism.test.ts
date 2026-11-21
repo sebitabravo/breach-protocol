@@ -5,15 +5,15 @@ import { I, INPUT_LEN, MODE } from '../../src/wasm/protocol';
 
 /** Mismo valor que `GOLDEN_HASH` en core/src/replay.rs: lo fija el test nativo. */
 const GOLDEN_TICKS = 4000;
-const GOLDEN_HASH = 12992704991389489702n;
+const GOLDEN_HASH = 18417066637296478998n;
 /** Escenarios 0..5 de `replay::scenario_hash` (core/src/replay.rs), con los mismos valores. */
 const SCENARIO_HASHES = [
   GOLDEN_HASH,
-  17316217633191464843n,
-  1899878884308704409n,
-  15340590896887943696n,
-  9302528463356393878n,
-  14265590685645182292n,
+  10346573694070700408n,
+  7520685970632888569n,
+  12829775233942397538n,
+  9780650152857181307n,
+  3580793289470374724n,
 ];
 
 let engine: Engine;
@@ -73,11 +73,11 @@ describe('cross-target determinism (native cargo vs wasm in this runtime)', () =
     }
   });
 
-  it('reports score v4 through the WASM ABI and records v4 replays', () => {
+  it('reports score v5 through the WASM ABI and records v5 replays', () => {
     for (const mode of [MODE.mission, MODE.overflow]) {
       expect(engine.start({ mode, map: 0, seed: 5, aimAssist: false, autoReload: true })).toBe(true);
-      expect(engine.scoreVersion).toBe(4);
-      expect(engine.encodeLog()[4]).toBe(4);
+      expect(engine.scoreVersion).toBe(5);
+      expect(engine.encodeLog()[4]).toBe(5);
     }
   });
 

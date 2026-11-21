@@ -32,7 +32,7 @@ pub const MODE_DAILY: u8 = 2;
 pub const MODE_PRACTICE: u8 = 3;
 
 /// Versión de puntuación de misión y diario, incluida la simulación.
-pub const SCORE_VERSION: u8 = 4;
+pub const SCORE_VERSION: u8 = 5;
 
 pub const FLAG_AIM_ASSIST: u8 = 1;
 pub const FLAG_AUTO_RELOAD: u8 = 2;
@@ -40,7 +40,7 @@ pub const FLAG_AUTO_RELOAD: u8 = 2;
 pub const FLAG_SHOTGUN: u8 = 4;
 
 /// Versión de puntuación de Overflow, incluida la simulación que genera el puntaje.
-pub const OVERFLOW_SCORE_VERSION: u8 = 4;
+pub const OVERFLOW_SCORE_VERSION: u8 = 5;
 const OVERFLOW_KILL_POINTS: f32 = 100.0;
 const OVERFLOW_NODE_POINTS: f32 = 500.0;
 const OVERFLOW_WAVE_POINTS: f32 = 250.0;
@@ -666,6 +666,7 @@ impl Game {
                 player_forward,
                 player_radius: RADIUS,
                 player_height: HEIGHT,
+                player_vel: self.player.vel,
             };
             let mut rng = self.rng;
             *slot = enemy
@@ -730,6 +731,18 @@ impl Game {
     }
 
     /// Cheap pairwise push-apart so enemies do not stack into one silhouette.
+    /// Empuje horizontal con colisión: la separación entre enemigos movía la posición a mano y
+    /// podía dejar a un robot dentro de una pared, trabado para siempre (oleada que no cierra).
+    fn nudge_enemy(&mut self, idx: usize, dx: f32, dz: f32) {
+        let def = enemy::def(self.enemies[idx].kind);
+        let mut pos = self.enemies[idx].pos;
+        let mut vel = v3(dx, 0.0, dz);
+        self.arena
+            .move_body(&mut pos, &mut vel, def.radius, def.height, 1.0, 0.0);
+        self.enemies[idx].pos.x = pos.x;
+        self.enemies[idx].pos.z = pos.z;
+    }
+
     fn separate_enemies(&mut self) {
         for i in 0..MAX_ENEMIES {
             if !self.enemies[i].is_alive() {
@@ -747,10 +760,8 @@ impl Game {
                 if d > 0.001 && d < min_d {
                     let push = (min_d - d) * 0.5;
                     let dir = delta * (1.0 / d);
-                    self.enemies[i].pos.x -= dir.x * push;
-                    self.enemies[i].pos.z -= dir.z * push;
-                    self.enemies[j].pos.x += dir.x * push;
-                    self.enemies[j].pos.z += dir.z * push;
+                    self.nudge_enemy(i, -dir.x * push, -dir.z * push);
+                    self.nudge_enemy(j, dir.x * push, dir.z * push);
                 }
             }
         }
@@ -1156,6 +1167,24 @@ mod tests {
         );
         assert!(g.player.is_reloading());
         assert!(last_event(&g, ev::RELOAD_START).is_some());
+    }
+
+    #[test]
+    fn separating_enemies_never_pushes_one_into_a_wall() {
+        let mut g = game_with_arena();
+        // Dos scouts superpuestos contra la pared este (x 18..19): el empuje no debe meter a ninguno en ella.
+        g.enemies[0] = Enemy::spawn(v3(17.5, 0.0, 0.0), enemy::KIND_SCOUT, 0.0, 0);
+        g.enemies[1] = Enemy::spawn(v3(17.2, 0.0, 0.0), enemy::KIND_SCOUT, 0.0, 0);
+        g.separate_enemies();
+        let r = enemy::def(enemy::KIND_SCOUT).radius;
+        for e in &g.enemies[..2] {
+            assert!(
+                e.pos.x + r <= 18.0 + 1e-3,
+                "enemy pushed into the wall at x={}",
+                e.pos.x
+            );
+        }
+        assert!(g.enemies[0].pos.dist_xz(g.enemies[1].pos) > 0.3);
     }
 
     #[test]

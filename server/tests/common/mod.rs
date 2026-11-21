@@ -35,11 +35,32 @@ pub fn record(mode: u8, map: u8, seed: u32, flags: u8, fire: bool, cap: u32) -> 
     let mut t = 0u32;
     while (g.phase == PHASE_PLAYING || g.phase == PHASE_EXTRACTION) && t < cap {
         if fire {
-            let mut input = g.input;
-            // Giro constante: las patrullas ya no convergen frente al jugador, hay que barrer.
-            input.look_dx = 0.02;
-            input.fire_held = t % 90 < 40;
-            input.fire_pressed = t.is_multiple_of(90);
+            // Apunta al enemigo vivo más cercano y dispara la carabina cuando está alineado:
+            // con la IA de la v5 un barrido a ciegas ya no consigue bajas.
+            let mut input = bp_core::Input {
+                switch: if t == 0 { 2 } else { 0 },
+                ..Default::default()
+            };
+            let p = g.player.pos;
+            let nearest = g
+                .enemies
+                .iter()
+                .filter(|e| e.is_alive())
+                .min_by(|a, b| a.pos.dist_xz(p).total_cmp(&b.pos.dist_xz(p)));
+            if let Some(e) = nearest {
+                let want = (-(e.pos.x - p.x)).atan2(-(e.pos.z - p.z));
+                let mut err = want - g.player.yaw;
+                while err > std::f32::consts::PI {
+                    err -= std::f32::consts::TAU;
+                }
+                while err < -std::f32::consts::PI {
+                    err += std::f32::consts::TAU;
+                }
+                input.look_dx = -err.clamp(-0.08, 0.08);
+                input.look_dy = g.player.pitch.clamp(-0.05, 0.05);
+                input.fire_held = err.abs() < 0.05;
+                input.fire_pressed = input.fire_held;
+            }
             g.step(input);
         } else {
             g.step(Default::default());

@@ -6,9 +6,9 @@ WebAssembly in the browser and computes the score itself.
 
 ## Replay log
 
-Binary format defined in `core/src/replay.rs` (`BPL1`, version 4). Logs of any
+Binary format defined in `core/src/replay.rs` (`BPL1`, version 5). Logs of any
 other version are rejected (v2 added ammo preserved on switch, v3 terminal-driven waves, v4 the
-simulation fixes of the audit pass). Header holds
+simulation fixes of the audit pass, v5 the harder enemy AI). Header holds
 `mode`, `map`, `flags` (bit0 aim assist, bit1 auto reload, bit2 shotgun unlocked),
 `seed` and `ticks`. Body is run-length encoded quantized inputs (60 Hz fixed step).
 Hard limits: 72 000 ticks (20 min), 1 MiB request body.
@@ -63,7 +63,7 @@ has unlocked it. Accepting those runs would require server-verifiable progressio
 Response `200`:
 
 ```json
-{ "ok": true, "board": "mission:s01", "score": 2310, "scoreVersion": 4,
+{ "ok": true, "board": "mission:s01", "score": 2310, "scoreVersion": 5,
   "won": true, "rank": 4, "total": 31 }
 ```
 
@@ -84,7 +84,7 @@ Error body: `{ "ok": false, "error": "<code>" }`.
 
 | Status | Code | When |
 |---|---|---|
-| 400 | `malformed_log` | Not a valid BPL1 v4 log: bad magic or version, too short, truncated, trailing bytes, out-of-range field or map, ticks above 72 000 |
+| 400 | `malformed_log` | Not a valid BPL1 v5 log: bad magic or version, too short, truncated, trailing bytes, out-of-range field or map, ticks above 72 000 |
 | 400 | `bad_json` | Body is not JSON |
 | 400 | `bad_request` | `name` or `log` missing or not a string |
 | 400 | `bad_name` | Empty after trimming, longer than 16 Unicode scalar values, or contains a disallowed character |

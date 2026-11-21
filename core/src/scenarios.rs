@@ -281,3 +281,138 @@ fn every_spawn_point_reaches_a_passive_player_on_every_map() {
         stuck.join("\n")
     );
 }
+
+/// Resultado de una partida del bot de referencia.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct BotRun {
+    pub died: bool,
+    pub seconds: f32,
+    pub kills: u32,
+    pub damage: f32,
+}
+
+/// Bot "competente" de referencia para medir dificultad: se queda en su punto de aparición,
+/// alterna strafe izquierda/derecha, reacciona 0.25 s después de ver un objetivo, gira a lo
+/// sumo 6 rad/s y dispara la carabina cuando el error de mira es menor a 0.06 rad.
+/// No busca terminales: mide cuánto resiste un tirador razonable, no si gana la misión.
+pub(crate) fn competent_bot(map: u8, seed: u32, max_seconds: f32) -> BotRun {
+    use crate::enemy::dir_to_yaw;
+    use crate::player::EYE_HEIGHT;
+    let mut g = Game::new(seed);
+    assert!(g.start(MODE_MISSION, map, seed, crate::sim::FLAG_AUTO_RELOAD));
+    let dt = FIXED_DT;
+    let mut target: i32 = -1;
+    let mut reaction = 0.0f32;
+    let mut t = 0.0f32;
+    let mut first = true;
+    while (g.phase == phase::PLAYING || g.phase == phase::EXTRACTION) && t < max_seconds {
+        let eye = v3(g.player.pos.x, g.player.pos.y + EYE_HEIGHT, g.player.pos.z);
+        let mut best = -1i32;
+        let mut best_d = f32::MAX;
+        for (i, e) in g.enemies.iter().enumerate() {
+            if !e.is_alive() {
+                continue;
+            }
+            let d = e.pos.dist_xz(g.player.pos);
+            if d < best_d && !g.arena.blocked(eye, e.eye()) {
+                best_d = d;
+                best = i as i32;
+            }
+        }
+        if best != target {
+            target = best;
+            reaction = 0.25;
+        }
+        reaction = (reaction - dt).max(0.0);
+        let mut input = Input {
+            move_x: if ((t / 1.2) as u32).is_multiple_of(2) {
+                1.0
+            } else {
+                -1.0
+            },
+            switch: if first { crate::weapons::ID_CARBINE } else { 0 },
+            ..Input::default()
+        };
+        first = false;
+        if target >= 0 && reaction <= 0.0 {
+            let e = g.enemies[target as usize];
+            let chest = v3(
+                e.pos.x,
+                e.pos.y + crate::enemy::def(e.kind).height * 0.6,
+                e.pos.z,
+            );
+            let to = chest - eye;
+            let want_yaw = dir_to_yaw(v3(to.x, 0.0, to.z));
+            let want_pitch = to.y.atan2(to.len_xz());
+            let yaw_err = wrap_pi(want_yaw - g.player.yaw);
+            let pitch_err = want_pitch - g.player.pitch;
+            let turn = 6.0 * dt;
+            input.look_dx = -yaw_err.clamp(-turn, turn);
+            input.look_dy = -pitch_err.clamp(-turn, turn);
+            input.fire_held = yaw_err.abs() < 0.06 && pitch_err.abs() < 0.08;
+            input.fire_pressed = input.fire_held;
+        }
+        g.step(input);
+        t += dt;
+    }
+    BotRun {
+        died: g.phase == phase::LOSE && g.player.hp <= 0.0,
+        seconds: t,
+        kills: g.kills,
+        damage: g.damage_taken,
+    }
+}
+
+/// Segundos hasta que muere un jugador quieto que no hace nada.
+pub(crate) fn idle_death_seconds(map: u8, seed: u32) -> f32 {
+    let mut g = Game::new(seed);
+    assert!(g.start(MODE_MISSION, map, seed, crate::sim::FLAG_AUTO_RELOAD));
+    let mut t = 0.0;
+    while g.phase == phase::PLAYING && t < 180.0 {
+        g.step(Input::default());
+        t += FIXED_DT;
+    }
+    t
+}
+
+/// Informe de dificultad: `cargo test --release --lib difficulty_report -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn difficulty_report() {
+    for map in 0..3u8 {
+        let runs: Vec<BotRun> = (0..10u32)
+            .map(|s| competent_bot(map, 1000 + s, 180.0))
+            .collect();
+        let deaths = runs.iter().filter(|r| r.died).count();
+        let alive = runs.iter().map(|r| r.seconds).sum::<f32>() / runs.len() as f32;
+        let kills = runs.iter().map(|r| r.kills).sum::<u32>() as f32 / runs.len() as f32;
+        let damage = runs.iter().map(|r| r.damage).sum::<f32>() / runs.len() as f32;
+        let idle = (0..10u32)
+            .map(|s| idle_death_seconds(map, 1000 + s))
+            .sum::<f32>()
+            / 10.0;
+        println!(
+            "DIFF map {map}: bot deaths {deaths}/10, mean alive {alive:.1} s, kills {kills:.1}, damage {damage:.0}, idle death {idle:.1} s"
+        );
+    }
+}
+
+/// Banda de dificultad acordada (docs/GAMEPLAY_SPEC.md): un tirador competente que no juega el
+/// objetivo cae en la mayoría de las semillas de cada sector, y quedarse quieto no dura medio minuto.
+#[test]
+fn difficulty_stays_in_the_agreed_band() {
+    for map in 0..3u8 {
+        let deaths = (0..6u32)
+            .filter(|s| competent_bot(map, 2000 + s, 180.0).died)
+            .count();
+        assert!(
+            deaths >= 3,
+            "sector {map}: the competent bot died only {deaths}/6 times"
+        );
+        let idle = idle_death_seconds(map, 2000);
+        assert!(
+            idle < 32.0,
+            "sector {map}: an idle player survived {idle:.1} s"
+        );
+    }
+}

@@ -52,9 +52,9 @@ re-simulates it with the same `bp-core` crate and computes the score itself.
   server.
 - Changes to simulation behaviour can change golden hashes and invalidate old logs.
   The submission API reports a score version and logs carry `LOG_VERSION`. All
-  score versions and `LOG_VERSION` are now **4** (v2 preserved ammo on weapon switch;
+  score versions and `LOG_VERSION` are now **5** (v2 preserved ammo on weapon switch;
   v4, from the `fix/game-audit-pass` audit, made mouse look 1:1, fixed the fire cadence,
-  anchored patrols and added the `RELOAD_END` event; the golden and scenario pins in
+  anchored patrols and added the `RELOAD_END` event; v5, from the visual and combat pass, made the enemy AI harder; the golden and scenario pins in
   `core/src/replay.rs` are the current ones, not the numbers quoted above).
   With identical seed and inputs, a completed terminal now changes the wave, spawn
   schedule and enemies encountered, which can change survival and score. Overflow
@@ -62,8 +62,8 @@ re-simulates it with the same `bp-core` crate and computes the score itself.
   farm the same terminals on the verified leaderboard. Overflow remains untimed
   and death-only; mission and Daily still extract after the third activation.
   The BPL1 encoding, snapshot layout and fixed-step ABI are unchanged; the ABI now
-  also exposes `bp_score_version`. The v4 decoder rejects older logs. Before
-  deploying v4, start with empty leaderboard storage (or archive and clear existing
+  also exposes `bp_score_version`. The v5 decoder rejects older logs. Before
+  deploying v5, start with empty leaderboard storage (or archive and clear existing
   board entries); Redis keys are not versioned, so a version bump alone does not
   remove old scores.
 - Weapon unlocks are client-side progression. BPL1 cannot prove a prior SECTOR_02
