@@ -9,11 +9,11 @@ use crate::store::Store;
 pub const DEFAULT_LIMIT: usize = 10;
 pub const MAX_LIMIT: usize = 50;
 
-pub fn read(store: &dyn Store, query: Option<&str>) -> Result<Value, ApiError> {
-    let (board, limit) = parse_query(query)?;
-    let total = store.total(&board)?;
+/// Lee un tablero y límite ya validados por `parse_query`.
+pub fn read(store: &dyn Store, board: &str, limit: usize) -> Result<Value, ApiError> {
+    let total = store.total(board)?;
     let entries = store
-        .top(&board, limit)?
+        .top(board, limit)?
         .into_iter()
         .enumerate()
         .map(|(index, entry)| {
@@ -29,7 +29,7 @@ pub fn read(store: &dyn Store, query: Option<&str>) -> Result<Value, ApiError> {
 }
 
 /// Un límite fuera de rango se acota a 1..=50; uno que no es entero es `bad_limit`.
-pub fn parse_query(query: Option<&str>) -> Result<(String, usize), ApiError> {
+pub fn parse_query(query: Option<&str>, now_unix: u64) -> Result<(String, usize), ApiError> {
     let mut board = None;
     let mut limit = None;
     for pair in query
@@ -46,7 +46,7 @@ pub fn parse_query(query: Option<&str>) -> Result<(String, usize), ApiError> {
     }
 
     let board = board.ok_or(ApiError::BadBoard)?;
-    if !is_known_board(&board) {
+    if !is_known_board(&board, now_unix) {
         return Err(ApiError::BadBoard);
     }
     let limit = match limit {
@@ -84,10 +84,14 @@ mod tests {
     use super::*;
     use crate::store::Candidate;
 
+    fn parse(query: Option<&str>) -> Result<(String, usize), ApiError> {
+        parse_query(query, 1_795_132_800)
+    }
+
     #[test]
     fn decodes_a_plain_board_key() {
         assert_eq!(
-            parse_query(Some("board=overflow")).unwrap(),
+            parse(Some("board=overflow")).unwrap(),
             ("overflow".into(), DEFAULT_LIMIT)
         );
     }
@@ -95,7 +99,7 @@ mod tests {
     #[test]
     fn decodes_percent_encoded_board_keys() {
         assert_eq!(
-            parse_query(Some("board=mission%3As01&limit=3")).unwrap(),
+            parse(Some("board=mission%3As01&limit=3")).unwrap(),
             ("mission:s01".into(), 3)
         );
     }
@@ -103,40 +107,37 @@ mod tests {
     #[test]
     fn clamps_limit_into_one_to_fifty() {
         assert_eq!(
-            parse_query(Some("board=overflow&limit=999")).unwrap().1,
+            parse(Some("board=overflow&limit=999")).unwrap().1,
             MAX_LIMIT
         );
-        assert_eq!(parse_query(Some("board=overflow&limit=0")).unwrap().1, 1);
-        assert_eq!(parse_query(Some("board=overflow&limit=-7")).unwrap().1, 1);
-        assert_eq!(parse_query(Some("board=overflow&limit=50")).unwrap().1, 50);
+        assert_eq!(parse(Some("board=overflow&limit=0")).unwrap().1, 1);
+        assert_eq!(parse(Some("board=overflow&limit=-7")).unwrap().1, 1);
+        assert_eq!(parse(Some("board=overflow&limit=50")).unwrap().1, 50);
     }
 
     #[test]
     fn rejects_a_missing_or_unknown_board() {
-        assert_eq!(parse_query(None), Err(ApiError::BadBoard));
-        assert_eq!(parse_query(Some("board=practice")), Err(ApiError::BadBoard));
-        assert_eq!(parse_query(Some("limit=5")), Err(ApiError::BadBoard));
+        assert_eq!(parse(None), Err(ApiError::BadBoard));
+        assert_eq!(parse(Some("board=practice")), Err(ApiError::BadBoard));
+        assert_eq!(parse(Some("limit=5")), Err(ApiError::BadBoard));
     }
 
     #[test]
     fn rejects_a_limit_that_is_not_an_integer() {
         assert_eq!(
-            parse_query(Some("board=overflow&limit=abc")),
+            parse(Some("board=overflow&limit=abc")),
             Err(ApiError::BadLimit)
         );
         assert_eq!(
-            parse_query(Some("board=overflow&limit=")),
+            parse(Some("board=overflow&limit=")),
             Err(ApiError::BadLimit)
         );
     }
 
     #[test]
     fn rejects_malformed_percent_escapes() {
-        assert_eq!(
-            parse_query(Some("board=overflow%")),
-            Err(ApiError::BadBoard)
-        );
-        assert_eq!(parse_query(Some("board=%zz")), Err(ApiError::BadBoard));
+        assert_eq!(parse(Some("board=overflow%")), Err(ApiError::BadBoard));
+        assert_eq!(parse(Some("board=%zz")), Err(ApiError::BadBoard));
     }
 
     #[test]
@@ -154,7 +155,7 @@ mod tests {
         add("0000000000000001", "LOW", 10, 100);
         add("0000000000000002", "HIGH", 90, 200);
         add("0000000000000003", "MID", 50, 300);
-        let body = read(&store, Some("board=overflow&limit=2")).unwrap();
+        let body = read(&store, "overflow", 2).unwrap();
         assert_eq!(body["board"], "overflow");
         assert_eq!(body["total"], 3);
         assert_eq!(
@@ -169,7 +170,7 @@ mod tests {
     #[test]
     fn empty_board_reads_as_zero_entries() {
         let store = crate::store::MemoryStore::default();
-        let body = read(&store, Some("board=overflow")).unwrap();
+        let body = read(&store, "overflow", DEFAULT_LIMIT).unwrap();
         assert_eq!(
             body,
             json!({ "board": "overflow", "total": 0, "entries": [] })

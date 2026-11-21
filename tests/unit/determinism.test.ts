@@ -5,14 +5,15 @@ import { I, INPUT_LEN, MODE } from '../../src/wasm/protocol';
 
 /** Mismo valor que `GOLDEN_HASH` en core/src/replay.rs: lo fija el test nativo. */
 const GOLDEN_TICKS = 4000;
-const GOLDEN_HASH = 6051080362437244339n;
-/** Escenarios 0..3 de `replay::scenario_hash` (core/src/replay.rs), con los mismos valores. */
+const GOLDEN_HASH = 5711138649934550938n;
+/** Escenarios 0..5 de `replay::scenario_hash` (core/src/replay.rs), con los mismos valores. */
 const SCENARIO_HASHES = [
-  6051080362437244339n,
-  8473981006168998935n,
-  14559882121426080077n,
-  1992019841316245935n,
+  GOLDEN_HASH,
+  12760246713383565853n,
+  770316419739378658n,
+  4310614164317112927n,
   15493279338039416630n,
+  825227913700778631n,
 ];
 
 let engine: Engine;
@@ -33,6 +34,7 @@ function scriptedInput(t: number, out: Float32Array): void {
   out[I.firePressed] = t % 90 === 0 ? 1 : 0;
   out[I.jump] = t % 150 === 149 ? 1 : 0;
   out[I.interact] = t % 300 > 250 ? 1 : 0;
+  out[I.switch] = t % 420 === 140 ? 2 : t % 420 === 280 ? 1 : 0;
 }
 
 describe('cross-target determinism (native cargo vs wasm in this runtime)', () => {
@@ -71,7 +73,15 @@ describe('cross-target determinism (native cargo vs wasm in this runtime)', () =
     }
   });
 
-  it('scenario hashes match the native pins, including the new content', async () => {
+  it('reports score v3 through the WASM ABI and records v3 replays', () => {
+    for (const mode of [MODE.mission, MODE.overflow]) {
+      expect(engine.start({ mode, map: 0, seed: 5, aimAssist: false, autoReload: true })).toBe(true);
+      expect(engine.scoreVersion).toBe(3);
+      expect(engine.encodeLog()[4]).toBe(3);
+    }
+  });
+
+  it('scenario hashes match the native pins, including objective acceleration', async () => {
     const bytes = readFileSync(new URL('../../public/bp_core.wasm', import.meta.url));
     const { instance } = await WebAssembly.instantiate(bytes as BufferSource, {});
     const scenarioHash = instance.exports.bp_scenario_hash as (id: number, ticks: number) => bigint;

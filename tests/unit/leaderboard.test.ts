@@ -33,23 +33,38 @@ describe('sanitizeName', () => {
     expect(sanitizeName('  SEBITA_01.x-y  ')).toBe('SEBITA_01.x-y');
   });
 
-  it('strips everything else, including accents and symbols', () => {
-    expect(sanitizeName('Ñandú <script>!')).toBe('and script');
+  it('preserves José verbatim', () => {
+    expect(sanitizeName('José')).toBe('José');
   });
 
-  it('caps the name at sixteen characters after trimming', () => {
-    expect(sanitizeName('a'.repeat(30))).toBe('a'.repeat(16));
-    expect(sanitizeName('abcdefghijklmno  pq')).toBe('abcdefghijklmno');
+  it('trims Ana without otherwise changing the name', () => {
+    expect(sanitizeName('  Ana  ')).toBe('Ana');
+    expect(sanitizeName('\u00a0Ana\u3000')).toBe('Ana');
   });
 
-  it('returns null when nothing usable is left', () => {
+  it('rejects disallowed symbols, control characters and zero-width joiners', () => {
+    for (const name of ['Ñandú <script>!', 'Jo\u200dsé', '\tAna', '\u0085Ana', 'Ana\ufeff', '¡¡¡']) {
+      expect(sanitizeName(name), JSON.stringify(name)).toBeNull();
+    }
+  });
+
+  it('rejects seventeen scalars instead of truncating', () => {
+    expect(sanitizeName('a'.repeat(17))).toBeNull();
+    expect(sanitizeName('𐐀'.repeat(17))).toBeNull();
+  });
+
+  it('counts astral letters as one character each', () => {
+    expect(sanitizeName('𐐀'.repeat(16))).toBe('𐐀'.repeat(16));
+  });
+
+  it('rejects empty and all-space names', () => {
+    expect(sanitizeName('')).toBeNull();
     expect(sanitizeName('   ')).toBeNull();
-    expect(sanitizeName('¡¡¡')).toBeNull();
   });
 });
 
 describe('boardFor', () => {
-  const base = { mode: 'mission' as const, mapId: 1, won: true, dateKey: '2026-11-20', logTruncated: false };
+  const base = { mode: 'mission' as const, mapId: 1, won: true, dateKey: '2026-11-20', logTruncated: false, shotgunEnabled: false };
 
   it('counts mission wins on the board of their sector', () => {
     expect(boardFor({ ...base, mapId: 0 })).toBe('mission:s01');
@@ -60,7 +75,7 @@ describe('boardFor', () => {
     expect(boardFor({ ...base, won: false })).toBeNull();
   });
 
-  it('counts every overflow run, win or loss', () => {
+  it('offers overflow submissions for the server to qualify', () => {
     expect(boardFor({ ...base, mode: 'overflow', won: false })).toBe('overflow');
   });
 
@@ -68,9 +83,19 @@ describe('boardFor', () => {
     expect(boardFor({ ...base, mode: 'daily', won: false })).toBe('daily:2026-11-20');
   });
 
-  it('never submits practice or truncated logs', () => {
+  it('submits truncated overflow to the overflow board', () => {
+    expect(boardFor({ ...base, mode: 'overflow', won: false, logTruncated: true })).toBe('overflow');
+  });
+
+  it('refuses logs that claim the SG-08 unlock on every board', () => {
+    for (const mode of ['mission', 'overflow', 'daily'] as const) {
+      expect(boardFor({ ...base, mode, shotgunEnabled: true })).toBeNull();
+    }
+  });
+
+  it('never submits practice or truncated mission losses', () => {
     expect(boardFor({ ...base, mode: 'practice' })).toBeNull();
-    expect(boardFor({ ...base, mode: 'overflow', logTruncated: true })).toBeNull();
+    expect(boardFor({ ...base, won: false, logTruncated: true })).toBeNull();
   });
 
   it('refuses sector ids that the contract does not know', () => {
@@ -101,11 +126,11 @@ describe('submitRun', () => {
     const fetchImpl = fakeFetch(
       reply(200, { ok: true, board: 'overflow', score: 2310, scoreVersion: 1, won: false, rank: 4, total: 31 }),
     );
-    await submitRun({ name: ' SEBITA!! ', log: LOG }, depsWith(fetchImpl));
+    await submitRun({ name: ' José ', log: LOG }, depsWith(fetchImpl));
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/runs');
     expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body as string)).toEqual({ name: 'SEBITA', log: encodeLogBase64(LOG) });
+    expect(JSON.parse(init.body as string)).toEqual({ name: 'José', log: encodeLogBase64(LOG) });
   });
 
   it('returns the rank of a verified run', async () => {
@@ -176,12 +201,14 @@ describe('submitRun', () => {
     expect(result).toEqual({ status: 'offline', reason: 'invalid-response' });
   });
 
-  it('rejects an empty name without calling the network', async () => {
+  it('rejects invalid names without calling the network', async () => {
     const fetchImpl = fakeFetch(reply(200, {}));
-    expect(await submitRun({ name: '  ¡  ', log: LOG }, depsWith(fetchImpl))).toEqual({
-      status: 'rejected',
-      code: 'empty_name',
-    });
+    for (const name of ['', 'Jo\u200dsé', 'a'.repeat(17)]) {
+      expect(await submitRun({ name, log: LOG }, depsWith(fetchImpl))).toEqual({
+        status: 'rejected',
+        code: 'bad_name',
+      });
+    }
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

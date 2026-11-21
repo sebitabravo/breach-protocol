@@ -90,6 +90,23 @@ impl Default for Input {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub(crate) struct WeaponSlot {
+    id: u8,
+    pub(crate) ammo: u16,
+    pub(crate) reserve: u16,
+}
+
+impl WeaponSlot {
+    const fn full(def: &weapons::WeaponDef) -> Self {
+        Self {
+            id: def.id,
+            ammo: def.mag,
+            reserve: def.reserve,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Player {
     pub pos: V3,
     pub vel: V3,
@@ -101,9 +118,9 @@ pub struct Player {
     pub recoil_pitch: f32,
     pub recoil_yaw: f32,
     pub damage_age: f32,
+    /// One-based active slot index, also the weapon ID used by input and snapshots.
     pub weapon: u8,
-    pub ammo: u16,
-    pub reserve: u16,
+    slots: [WeaponSlot; 3],
     pub reload_t: f32,
     pub fire_cd: f32,
     pub hit_age: f32,
@@ -125,8 +142,11 @@ impl Player {
             recoil_yaw: 0.0,
             damage_age: 999.0,
             weapon: weapons::ID_SIDEARM,
-            ammo: weapons::SIDEARM.mag,
-            reserve: weapons::SIDEARM.reserve,
+            slots: [
+                WeaponSlot::full(&weapons::SIDEARM),
+                WeaponSlot::full(&weapons::CARBINE),
+                WeaponSlot::full(&weapons::SHOTGUN),
+            ],
             reload_t: 0.0,
             fire_cd: 0.0,
             hit_age: 999.0,
@@ -150,6 +170,20 @@ impl Player {
 
     pub fn is_reloading(&self) -> bool {
         self.reload_t > 0.0
+    }
+
+    pub(crate) fn active_slot(&self) -> &WeaponSlot {
+        &self.slots[usize::from(self.weapon - 1)]
+    }
+
+    pub(crate) fn active_slot_mut(&mut self) -> &mut WeaponSlot {
+        &mut self.slots[usize::from(self.weapon - 1)]
+    }
+
+    pub(crate) fn scale_starting_reserves(&mut self, multiplier: u16) {
+        for slot in &mut self.slots {
+            slot.reserve = slot.reserve.saturating_mul(multiplier);
+        }
     }
 
     pub fn reload_progress(&self) -> f32 {
@@ -295,7 +329,8 @@ impl Player {
 
     pub fn start_reload(&mut self) -> bool {
         let def = weapons::def(self.weapon);
-        if self.reload_t > 0.0 || self.ammo >= def.mag || self.reserve == 0 {
+        let slot = self.active_slot();
+        if self.reload_t > 0.0 || slot.ammo >= def.mag || slot.reserve == 0 {
             return false;
         }
         self.reload_t = def.reload_time;
@@ -303,21 +338,29 @@ impl Player {
     }
 
     fn finish_reload(&mut self) {
-        let def = weapons::def(self.weapon);
-        let need = def.mag - self.ammo;
-        let take = need.min(self.reserve);
-        self.ammo += take;
-        self.reserve -= take;
+        let slot = self.active_slot_mut();
+        let need = weapons::def(slot.id).mag - slot.ammo;
+        let take = need.min(slot.reserve);
+        slot.ammo += take;
+        slot.reserve -= take;
+    }
+
+    /// Consume one round when the trigger is ready, leaving dry-fire handling to the game.
+    pub(crate) fn fire(&mut self) -> bool {
+        let slot = self.active_slot_mut();
+        if slot.ammo == 0 {
+            return false;
+        }
+        slot.ammo -= 1;
+        self.fire_cd = weapons::interval(weapons::def(slot.id));
+        true
     }
 
     pub fn equip(&mut self, id: u8) -> bool {
-        if id == self.weapon || weapons::def(id).mag == 0 {
+        if id == self.weapon || !(1..=self.slots.len()).contains(&usize::from(id)) {
             return false;
         }
         self.weapon = id;
-        let def = weapons::def(id);
-        self.ammo = def.mag;
-        self.reserve = def.reserve;
         self.reload_t = 0.0;
         self.fire_cd = 0.2;
         true
@@ -466,7 +509,7 @@ mod tests {
     #[test]
     fn reload_moves_ammo_from_reserve() {
         let mut p = Player::new(V3::ZERO, 0.0);
-        p.ammo = 2;
+        p.active_slot_mut().ammo = 2;
         assert!(p.start_reload());
         assert!(!p.start_reload(), "second reload must be refused");
         let arena = flat_arena();
@@ -474,9 +517,9 @@ mod tests {
         for _ in 0..120 {
             p.tick(1.0 / 60.0, &idle, &arena);
         }
-        assert_eq!(p.ammo, weapons::SIDEARM.mag);
+        assert_eq!(p.active_slot().ammo, weapons::SIDEARM.mag);
         assert_eq!(
-            p.reserve,
+            p.active_slot().reserve,
             weapons::SIDEARM.reserve - (weapons::SIDEARM.mag - 2)
         );
     }
@@ -495,11 +538,28 @@ mod tests {
     }
 
     #[test]
-    fn switching_weapon_resets_ammo() {
+    fn switching_weapon_preserves_magazine_after_two_shots() {
         let mut p = Player::new(V3::ZERO, 0.0);
-        p.ammo = 1;
+        let arena = flat_arena();
+        assert!(p.fire());
+        while p.fire_cd > 0.0 {
+            p.tick(1.0 / 60.0, &Input::default(), &arena);
+        }
+        assert!(p.fire());
         assert!(p.equip(weapons::ID_CARBINE));
-        assert_eq!(p.ammo, weapons::CARBINE.mag);
+        assert_eq!(p.active_slot().ammo, weapons::CARBINE.mag);
+        assert_eq!(p.active_slot().reserve, weapons::CARBINE.reserve);
         assert!(!p.equip(weapons::ID_CARBINE), "re-equipping is a no-op");
+        assert!(p.equip(weapons::ID_SIDEARM));
+        assert_eq!(p.active_slot().ammo, weapons::SIDEARM.mag - 2);
+    }
+
+    #[test]
+    fn switching_weapon_does_not_refill_empty_reserve() {
+        let mut p = Player::new(V3::ZERO, 0.0);
+        p.active_slot_mut().reserve = 0;
+        assert!(p.equip(weapons::ID_CARBINE));
+        assert!(p.equip(weapons::ID_SIDEARM));
+        assert_eq!(p.active_slot().reserve, 0);
     }
 }
