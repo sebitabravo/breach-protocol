@@ -15,6 +15,7 @@ export type SoundName =
   | 'node'
   | 'wave'
   | 'reload'
+  | 'reloadEnd'
   | 'empty'
   | 'ui'
   | 'win'
@@ -154,6 +155,10 @@ export class AudioManager {
       case 'reload':
         this.noiseBurst({ duration: 0.05, type: 'highpass', from: 2200, to: 1500, gain: 0.16, q: 1 });
         this.noiseBurst({ duration: 0.06, type: 'bandpass', from: 900, to: 700, gain: 0.16, q: 1.4, delay: 0.16 });
+        break;
+      case 'reloadEnd':
+        this.noiseBurst({ duration: 0.04, type: 'bandpass', from: 1400, to: 1000, gain: 0.18, q: 1.6 });
+        this.tone({ from: 520, to: 520, duration: 0.05, gain: 0.08, wave: 'square', delay: 0.03 });
         break;
       case 'empty':
         this.tone({ from: 240, to: 180, duration: 0.05, gain: 0.14, wave: 'square' });

@@ -16,7 +16,7 @@ use crate::protocol::phase;
 use crate::sim::{Game, MODE_DAILY, MODE_PRACTICE};
 
 pub const MAGIC: [u8; 4] = *b"BPL1";
-pub const LOG_VERSION: u8 = 3; // v3: terminal-driven waves and one-shot Overflow nodes.
+pub const LOG_VERSION: u8 = 4; // v4: 1:1 mouse look, exact fire cadence, anchored patrol and hunting, reload events.
 /// Techo de duración de una partida registrada: 20 minutos a 60 Hz.
 pub const MAX_TICKS: u32 = 60 * 60 * 20;
 const HEADER_LEN: usize = 16;
@@ -910,13 +910,13 @@ mod tests {
     }
 
     const SCENARIO_PINS: [u64; 6] = [
-        5711138649934550938,
-        12760246713383565853,
-        770316419739378658,
-        4310614164317112927,
-        15493279338039416630,
-        825227913700778631,
+        12992704991389489702,
+        17316217633191464843,
+        1899878884308704409,
+        15340590896887943696,
+        9302528463356393878,
+        14265590685645182292,
     ];
     const GOLDEN_TICKS: u32 = 4000;
-    const GOLDEN_HASH: u64 = 5711138649934550938;
+    const GOLDEN_HASH: u64 = 12992704991389489702;
 }

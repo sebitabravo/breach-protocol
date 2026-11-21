@@ -233,3 +233,51 @@ fn an_idle_operator_loses() {
     }
     assert_eq!(g.phase, phase::LOSE);
 }
+
+/// Sonda: ¿algún enemigo se queda sin alcanzar jamás a un jugador pasivo?
+/// Si alguno se atasca, la oleada nunca cierra (no hay timeout en `update_waves`).
+#[test]
+fn every_spawn_point_reaches_a_passive_player_on_every_map() {
+    use crate::enemy::{self, Enemy};
+    let mut stuck: Vec<String> = Vec::new();
+    for map in 0..3u8 {
+        let mut probe = Game::new(7);
+        assert!(probe.start(MODE_MISSION, map, 7, 0));
+        let spawns: Vec<(f32, f32)> = probe.spawns[..probe.spawn_count].to_vec();
+        for kind in [
+            enemy::KIND_SCOUT,
+            enemy::KIND_SENTINEL,
+            enemy::KIND_INTERCEPTOR,
+        ] {
+            for &(sx, sz) in &spawns {
+                let mut g = Game::new(7);
+                assert!(g.start(MODE_MISSION, map, 7, 0));
+                g.waves.queue_head = g.waves.queue_len;
+                let yaw = enemy::dir_to_yaw(v3(g.player.pos.x - sx, 0.0, g.player.pos.z - sz));
+                g.enemies[0] = Enemy::spawn(v3(sx, 0.0, sz), kind, yaw, 0);
+                let reach = enemy::def(kind).attack_range + 1.0;
+                let mut closest = f32::MAX;
+                for _ in 0..(60 * 60) {
+                    g.player.hp = g.player.hp_max;
+                    g.step(Input::default());
+                    closest = closest.min(g.enemies[0].pos.dist_xz(g.player.pos));
+                    if closest <= reach.max(enemy::def(kind).preferred_range + 4.0) {
+                        break;
+                    }
+                }
+                let limit = reach.max(enemy::def(kind).preferred_range + 4.0);
+                if closest > limit {
+                    stuck.push(format!(
+                        "map {map} kind {kind} spawn ({sx},{sz}) closest {closest:.1} m, ended at {:?}",
+                        g.enemies[0].pos
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        stuck.is_empty(),
+        "enemies never reached the player:\n{}",
+        stuck.join("\n")
+    );
+}

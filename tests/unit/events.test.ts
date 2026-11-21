@@ -14,6 +14,12 @@ describe('effectsOf', () => {
     expect(effectsOf(event(EVT.shot, { a: WEAPON.shotgun })).sounds).toEqual(['shotShotgun']);
   });
 
+  it('plays a latch cue when a reload completes but stays silent on a weapon switch', () => {
+    expect(effectsOf(event(EVT.reloadEnd, { a: WEAPON.carbine, b: 1 })).sounds).toEqual(['reloadEnd']);
+    expect(effectsOf(event(EVT.reloadEnd, { a: WEAPON.carbine, b: 0 })).sounds).toEqual([]);
+    expect(effectsOf(event(EVT.reloadStart, { a: WEAPON.carbine })).sounds).toEqual(['reload']);
+  });
+
   it('names the dead enemy by its kind, including the interceptor', () => {
     const feed = (kind: number) => effectsOf(event(EVT.enemyDied, { d: kind })).feed[0];
     expect(feed(ENEMY_KIND.scout)).toEqual({ text: 'scout eliminado', kind: 'good' });

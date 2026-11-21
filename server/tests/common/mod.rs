@@ -36,6 +36,8 @@ pub fn record(mode: u8, map: u8, seed: u32, flags: u8, fire: bool, cap: u32) -> 
     while (g.phase == PHASE_PLAYING || g.phase == PHASE_EXTRACTION) && t < cap {
         if fire {
             let mut input = g.input;
+            // Giro constante: las patrullas ya no convergen frente al jugador, hay que barrer.
+            input.look_dx = 0.02;
             input.fire_held = t % 90 < 40;
             input.fire_pressed = t.is_multiple_of(90);
             g.step(input);

@@ -106,6 +106,21 @@ impl WeaponSlot {
     }
 }
 
+/// Fracción del giro contra el retroceso que se descuenta de este en vez del ángulo guardado.
+const RECOIL_ABSORB: f32 = 0.45;
+
+/// Reparte un giro de la mira (`delta`, con signo) entre el ángulo guardado y el
+/// retroceso pendiente. Devuelve el cambio que le toca al ángulo guardado.
+fn split_against_recoil(recoil: &mut f32, delta: f32) -> f32 {
+    if *recoil == 0.0 || delta == 0.0 || (*recoil > 0.0) == (delta > 0.0) {
+        return delta;
+    }
+    let sign = recoil.signum();
+    let absorbed = (delta.abs() * RECOIL_ABSORB).min(recoil.abs());
+    *recoil -= absorbed * sign;
+    delta + absorbed * sign
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Player {
     pub pos: V3,
@@ -161,7 +176,8 @@ impl Player {
 
     /// Look direction including the transient recoil offset.
     pub fn aim_dir(&self) -> V3 {
-        dir_from_yaw_pitch(self.yaw + self.recoil_yaw, self.pitch + self.recoil_pitch)
+        let pitch = clamp(self.pitch + self.recoil_pitch, -PITCH_LIMIT, PITCH_LIMIT);
+        dir_from_yaw_pitch(self.yaw + self.recoil_yaw, pitch)
     }
 
     pub fn body(&self) -> crate::math::Aabb {
@@ -224,12 +240,15 @@ impl Player {
 
     /// Applies look input. Recoil is part of the aim, not of the stored angles,
     /// so a player who keeps fighting never loses the mouse mapping to it.
+    ///
+    /// El movimiento del mouse mueve la mira exactamente lo que se movió: si va
+    /// contra el retroceso pendiente, una parte de ese movimiento se descuenta del
+    /// retroceso (sin cruzar cero) en vez de sumarse al ángulo guardado.
     pub fn look(&mut self, dx: f32, dy: f32) {
-        self.yaw -= dx;
-        self.pitch = clamp(self.pitch - dy, -PITCH_LIMIT, PITCH_LIMIT);
-        // Moving the mouse absorbs pending recoil instead of stacking on top of it.
-        self.recoil_pitch -= dy * 0.45;
-        self.recoil_yaw -= dx * 0.45;
+        let yaw_delta = split_against_recoil(&mut self.recoil_yaw, -dx);
+        let pitch_delta = split_against_recoil(&mut self.recoil_pitch, -dy);
+        self.yaw += yaw_delta;
+        self.pitch = clamp(self.pitch + pitch_delta, -PITCH_LIMIT, PITCH_LIMIT);
     }
 
     pub fn tick(&mut self, dt: f32, input: &Input, arena: &Arena) -> bool {
@@ -310,7 +329,8 @@ impl Player {
         self.speed = self.vel.len_xz();
         self.damage_age += dt;
         self.hit_age = (self.hit_age + dt).min(9.99);
-        self.fire_cd = (self.fire_cd - dt).max(0.0);
+        // El resto negativo se arrastra al próximo disparo (máx. un tick) para no redondear la cadencia hacia abajo.
+        self.fire_cd = (self.fire_cd - dt).max(-dt);
 
         if self.hp > 0.0 && self.hp < self.hp_max && self.damage_age > REGEN_DELAY {
             self.heal(REGEN_PER_SEC * dt);
@@ -352,7 +372,7 @@ impl Player {
             return false;
         }
         slot.ammo -= 1;
-        self.fire_cd = weapons::interval(weapons::def(slot.id));
+        self.fire_cd += weapons::interval(weapons::def(slot.id));
         true
     }
 
@@ -561,5 +581,104 @@ mod tests {
         assert!(p.equip(weapons::ID_CARBINE));
         assert!(p.equip(weapons::ID_SIDEARM));
         assert_eq!(p.active_slot().reserve, 0);
+    }
+
+    #[test]
+    fn look_without_recoil_is_one_to_one() {
+        let mut p = Player::new(V3::ZERO, 0.0);
+        let arena = flat_arena();
+        let input = Input {
+            look_dx: 0.3,
+            look_dy: 0.2,
+            ..Input::default()
+        };
+        p.tick(1.0 / 60.0, &input, &arena);
+        let expected = dir_from_yaw_pitch(p.yaw, p.pitch);
+        let aim = p.aim_dir();
+        assert!(
+            (aim.x - expected.x).abs() < 1e-6,
+            "aim {aim:?} != {expected:?}"
+        );
+        assert!((aim.y - expected.y).abs() < 1e-6);
+        assert!((aim.z - expected.z).abs() < 1e-6);
+        assert!((p.yaw + 0.3).abs() < 1e-6 && (p.pitch + 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn look_against_recoil_moves_the_aim_exactly_the_flick() {
+        let mut p = Player::new(V3::ZERO, 0.0);
+        p.add_recoil(0.05, 0.0);
+        let before = p.pitch + p.recoil_pitch;
+        p.look(0.0, 0.02);
+        let moved = (p.pitch + p.recoil_pitch) - before;
+        assert!(
+            (moved + 0.02).abs() < 1e-6,
+            "aim moved {moved}, flick was 0.02"
+        );
+        assert!(p.recoil_pitch >= 0.0, "absorption never crosses zero");
+    }
+
+    #[test]
+    fn look_never_pushes_recoil_past_zero() {
+        let mut p = Player::new(V3::ZERO, 0.0);
+        p.add_recoil(0.01, 0.0);
+        p.look(0.0, 1.0);
+        assert_eq!(p.recoil_pitch, 0.0);
+    }
+
+    #[test]
+    fn look_with_the_recoil_does_not_absorb_it() {
+        let mut p = Player::new(V3::ZERO, 0.0);
+        p.add_recoil(0.05, 0.0);
+        p.look(0.0, -0.02);
+        assert!((p.recoil_pitch - 0.05).abs() < 1e-6);
+    }
+
+    #[test]
+    fn effective_pitch_is_clamped() {
+        let mut p = Player::new(V3::ZERO, 0.0);
+        p.pitch = PITCH_LIMIT;
+        p.add_recoil(0.5, 0.0);
+        let limit = dir_from_yaw_pitch(0.0, PITCH_LIMIT);
+        assert!((p.aim_dir().y - limit.y).abs() < 1e-6);
+    }
+
+    #[test]
+    fn held_trigger_fires_at_the_spec_rate() {
+        for def in [&weapons::SIDEARM, &weapons::CARBINE, &weapons::SHOTGUN] {
+            let mut p = Player::new(V3::ZERO, 0.0);
+            let arena = flat_arena();
+            p.weapon = def.id;
+            let dt = 1.0 / 60.0;
+            let mut shots = 0u32;
+            for _ in 0..600 {
+                p.active_slot_mut().ammo = def.mag;
+                if p.fire_cd <= 0.0 && p.fire() {
+                    shots += 1;
+                }
+                p.tick(dt, &Input::default(), &arena);
+            }
+            let expected = 10.0 * def.rpm / 60.0;
+            assert!(
+                (shots as f32 - expected).abs() <= 1.5,
+                "weapon {} fired {shots} shots in 10 s, spec says {expected}",
+                def.id
+            );
+        }
+    }
+
+    #[test]
+    fn idle_time_does_not_bank_shots() {
+        let mut p = Player::new(V3::ZERO, 0.0);
+        let arena = flat_arena();
+        p.weapon = weapons::ID_CARBINE;
+        for _ in 0..300 {
+            p.tick(1.0 / 60.0, &Input::default(), &arena);
+        }
+        assert!(p.fire());
+        assert!(
+            p.fire_cd > 0.0,
+            "a single shot must put the weapon on cooldown"
+        );
     }
 }

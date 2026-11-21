@@ -52,7 +52,7 @@ re-simulates it with the same `bp-core` crate and computes the score itself.
   server.
 - Changes to simulation behaviour can change golden hashes and invalidate old logs.
   The submission API reports a score version and logs carry `LOG_VERSION`. All
-  score versions and `LOG_VERSION` are now **3** (v2 preserved ammo on weapon switch).
+  score versions and `LOG_VERSION` are now **4** (v2 preserved ammo on weapon switch).
   With identical seed and inputs, a completed terminal now changes the wave, spawn
   schedule and enemies encountered, which can change survival and score. Overflow
   terminals no longer reset on a clear: repeatable healing and score let players

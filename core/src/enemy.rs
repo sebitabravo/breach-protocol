@@ -1,7 +1,7 @@
 //! Enemy archetypes driven by deterministic finite-state machines.
 //!
-//! Decisions are taken at a reduced rate (`THINK_HZ`) while movement integrates
-//! every fixed step, which keeps 30+ agents cheap without making them twitchy.
+//! Movement integrates every fixed step; patrol waypoints advance on arrival or on a
+//! seconds-scale timer, which keeps 30+ agents cheap without making them twitchy.
 
 use crate::arena::Arena;
 use crate::math::{clamp, cos, forward_from_yaw, sin, v3, wrap_pi, Aabb, V3};
@@ -22,7 +22,17 @@ pub const ST_DEAD: u8 = 6;
 pub const ST_FLANK: u8 = 7;
 pub const ST_CHARGE: u8 = 8;
 
-const THINK_HZ: f32 = 12.0;
+/// Segundos de patrulla sin detectar al jugador antes de salir a buscarlo: sin esto, un enemigo
+/// aparecido fuera de línea de visión deja la oleada abierta para siempre.
+const PATROL_HUNT_AFTER: f32 = 20.0;
+/// Radio del lazo de patrulla alrededor del punto de aparición.
+const PATROL_RADIUS: f32 = 4.0;
+/// Paso angular entre waypoints del lazo (rad); lo bastante chico para que las curvas no inviertan el rumbo.
+const PATROL_STEP: f32 = 0.6;
+/// Distancia a la que un waypoint de patrulla cuenta como alcanzado.
+const PATROL_ARRIVE: f32 = 0.8;
+/// Tope de segundos por tramo: si un obstáculo impide llegar, se pasa al siguiente waypoint.
+const PATROL_LEG_MAX: f32 = 4.0;
 const GRAVITY: f32 = 21.0;
 
 /// Interceptor: la carga arranca a lo sumo `CHARGE_REACH` más allá del anillo de flanqueo.
@@ -163,6 +173,8 @@ pub struct Enemy {
     pub burst_cd: f32,
     pub anim: f32,
     pub waypoint: u8,
+    /// Centro del lazo de patrulla: el punto donde apareció.
+    pub anchor: V3,
     pub stuck: f32,
     pub avoid_dir: f32,
     pub los: bool,
@@ -188,6 +200,7 @@ pub const EMPTY_ENEMY: Enemy = Enemy {
     burst_cd: 0.0,
     anim: 0.0,
     waypoint: 0,
+    anchor: V3::ZERO,
     stuck: 0.0,
     avoid_dir: 1.0,
     los: false,
@@ -217,6 +230,7 @@ impl Enemy {
             state_time: 0.0,
             anim: 0.0,
             waypoint,
+            anchor: pos,
             ..EMPTY_ENEMY
         }
     }
@@ -282,7 +296,8 @@ impl Enemy {
                 }
             }
             ST_PATROL => {
-                if self.dist < d.discover && self.los {
+                let hunting = self.state_time >= PATROL_HUNT_AFTER;
+                if (self.dist < d.discover && self.los) || hunting {
                     let next = if self.kind == KIND_INTERCEPTOR {
                         ST_FLANK
                     } else {
@@ -410,12 +425,14 @@ impl Enemy {
             self.face_towards(ctx.player_feet, dt, 6.0);
         }
 
-        // Periodically re-read the target so patrolling agents keep moving.
-        if self.think >= 1.0 / THINK_HZ {
-            self.think = 0.0;
-            if self.state == ST_PATROL {
+        if self.state == ST_PATROL {
+            let arrived = self.pos.dist_xz(target) < PATROL_ARRIVE;
+            if arrived || self.think >= PATROL_LEG_MAX {
+                self.think = 0.0;
                 self.waypoint = self.waypoint.wrapping_add(1);
             }
+        } else {
+            self.think = 0.0;
         }
 
         action
@@ -472,11 +489,11 @@ impl Enemy {
     }
 
     fn patrol_target(&self) -> V3 {
-        let angle = self.waypoint as f32 * 0.9;
+        let angle = self.waypoint as f32 * PATROL_STEP;
         v3(
-            crate::math::cos(angle) * 6.0,
+            self.anchor.x + crate::math::cos(angle) * PATROL_RADIUS,
             self.pos.y,
-            crate::math::sin(angle) * 6.0,
+            self.anchor.z + crate::math::sin(angle) * PATROL_RADIUS,
         )
     }
 
@@ -564,6 +581,41 @@ mod tests {
             e.tick(0.1, &c, &mut rng);
         }
         assert_eq!(e.state, ST_PATROL);
+    }
+
+    #[test]
+    fn patrol_walks_a_loop_around_its_spawn_without_jitter() {
+        let arena = flat();
+        let spawn = v3(20.0, 0.0, 20.0);
+        let mut e = Enemy::spawn(spawn, KIND_SCOUT, 0.0, 0);
+        let mut rng = Rng::new(3);
+        let c = ctx(&arena, v3(-30.0, 0.0, -30.0));
+        for _ in 0..40 {
+            e.tick(1.0 / 60.0, &c, &mut rng);
+        }
+        assert_eq!(e.state, ST_PATROL);
+
+        let mut heading_flips = 0;
+        let mut last_step = v3(0.0, 0.0, 0.0);
+        let mut max_from_spawn = 0.0f32;
+        for _ in 0..1000 {
+            let before = e.pos;
+            e.tick(1.0 / 60.0, &c, &mut rng);
+            let step = (e.pos - before).flat();
+            if step.len_xz() > 1e-4 && last_step.len_xz() > 1e-4 && step.dot(last_step) < 0.0 {
+                heading_flips += 1;
+            }
+            if step.len_xz() > 1e-4 {
+                last_step = step;
+            }
+            max_from_spawn = max_from_spawn.max(e.pos.dist_xz(spawn));
+        }
+        assert!(max_from_spawn > 1.5, "patrol barely moved");
+        assert!(heading_flips <= 2, "heading reversed {heading_flips} times");
+        assert!(
+            max_from_spawn < 8.0,
+            "patrol drifted {max_from_spawn} m from its anchor"
+        );
     }
 
     #[test]

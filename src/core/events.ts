@@ -67,6 +67,9 @@ export function effectsOf(event: WorldEvent): EventEffects {
       return { sounds: ['wave'], feed: [line('extracción iniciada · sobreviví', 'danger')] };
     case EVT.reloadStart:
       return { sounds: ['reload'], feed: [] };
+    case EVT.reloadEnd:
+      // b=1 es una recarga completa; b=0 es el cambio de arma, que no suena como recarga.
+      return event.b >= 1 ? { sounds: ['reloadEnd'], feed: [] } : NO_EFFECTS;
     case EVT.emptyMag:
       return { sounds: ['empty'], feed: [] };
     case EVT.win:

@@ -32,7 +32,7 @@ pub const MODE_DAILY: u8 = 2;
 pub const MODE_PRACTICE: u8 = 3;
 
 /// Versión de puntuación de misión y diario, incluida la simulación.
-pub const SCORE_VERSION: u8 = 3;
+pub const SCORE_VERSION: u8 = 4;
 
 pub const FLAG_AIM_ASSIST: u8 = 1;
 pub const FLAG_AUTO_RELOAD: u8 = 2;
@@ -40,7 +40,7 @@ pub const FLAG_AUTO_RELOAD: u8 = 2;
 pub const FLAG_SHOTGUN: u8 = 4;
 
 /// Versión de puntuación de Overflow, incluida la simulación que genera el puntaje.
-pub const OVERFLOW_SCORE_VERSION: u8 = 3;
+pub const OVERFLOW_SCORE_VERSION: u8 = 4;
 const OVERFLOW_KILL_POINTS: f32 = 100.0;
 const OVERFLOW_NODE_POINTS: f32 = 500.0;
 const OVERFLOW_WAVE_POINTS: f32 = 250.0;
@@ -513,7 +513,9 @@ impl Game {
         self.time_left = self.clock_left();
 
         self.update_weapons(dt, input);
-        self.player.tick(dt, &input, &self.arena);
+        if self.player.tick(dt, &input, &self.arena) {
+            self.push_event(ev::RELOAD_END, self.player.weapon as f32, 1.0, 0.0, 0.0);
+        }
         let accelerated = self.update_nodes(dt, input);
         self.update_enemies(dt);
         // The activation tick itself doesn't spend any of the new spawn grace.
@@ -534,6 +536,7 @@ impl Game {
         // El arma 3 solo existe si la partida se inició con FLAG_SHOTGUN.
         let unlocked = input.switch != weapons::ID_SHOTGUN || self.shotgun_unlocked;
         if unlocked && self.player.equip(input.switch) {
+            // b=0: el cambio de arma cancela la recarga en curso; b=1 la marca terminada.
             self.push_event(ev::RELOAD_END, self.player.weapon as f32, 0.0, 0.0, 0.0);
         }
         let def = *weapons::def(self.player.weapon);
@@ -549,7 +552,9 @@ impl Game {
         if !self.player.fire() {
             self.push_event(ev::EMPTY_MAG, 0.0, 0.0, 0.0, 0.0);
             self.player.fire_cd = 0.25;
-            self.player.start_reload();
+            if self.auto_reload && self.player.start_reload() {
+                self.push_event(ev::RELOAD_START, self.player.weapon as f32, 0.0, 0.0, 0.0);
+            }
             return;
         }
 
@@ -1101,6 +1106,56 @@ mod tests {
         }
         assert_eq!(killed, 1);
         assert!(g.hits >= 1);
+    }
+
+    #[test]
+    fn completing_a_reload_emits_reload_end() {
+        let mut g = game_with_arena();
+        g.player.active_slot_mut().ammo = 3;
+        g.tick(
+            1.0 / 60.0,
+            Input {
+                reload: true,
+                ..Default::default()
+            },
+        );
+        assert!(g.player.is_reloading());
+        assert!(last_event(&g, ev::RELOAD_END).is_none());
+        run_steps(&mut g, 90, Input::default());
+        assert!(!g.player.is_reloading());
+        let (_, weapon, completed) = last_event(&g, ev::RELOAD_END).expect("RELOAD_END missing");
+        assert_eq!(weapon, weapons::ID_SIDEARM as f32);
+        assert_eq!(completed, 1.0, "b=1 marks a finished reload, b=0 a switch");
+    }
+
+    #[test]
+    fn dry_fire_reloads_only_with_auto_reload() {
+        let mut g = game_with_arena();
+        g.auto_reload = false;
+        g.player.active_slot_mut().ammo = 0;
+        g.tick(
+            1.0 / 60.0,
+            Input {
+                fire_pressed: true,
+                ..Default::default()
+            },
+        );
+        assert!(last_event(&g, ev::EMPTY_MAG).is_some());
+        assert!(!g.player.is_reloading(), "auto-reload is off");
+        assert!(last_event(&g, ev::RELOAD_START).is_none());
+
+        let mut g = game_with_arena();
+        g.auto_reload = true;
+        g.player.active_slot_mut().ammo = 0;
+        g.tick(
+            1.0 / 60.0,
+            Input {
+                fire_pressed: true,
+                ..Default::default()
+            },
+        );
+        assert!(g.player.is_reloading());
+        assert!(last_event(&g, ev::RELOAD_START).is_some());
     }
 
     #[test]
