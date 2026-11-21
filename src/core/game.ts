@@ -157,6 +157,7 @@ export class GameApp {
   private submitting = false;
   private calibrationOffered = false;
   private readonly skipConfirm = new SkipConfirm();
+  private readonly destructiveConfirm = new Map<string, SkipConfirm>();
   private boardToken = 0;
   private lastSeq = 0;
   private events: WorldEvent[] = [];
@@ -280,7 +281,9 @@ export class GameApp {
     if (screen !== 'boot') {
       const section = this.app.querySelector(`#screen-${screen}`);
       if (!section?.contains(document.activeElement)) {
-        section?.querySelector<HTMLElement>('[data-action], button, a')?.focus({ preventScroll: true });
+        const target = section?.querySelector<HTMLElement>('[data-autofocus]') ??
+          section?.querySelector<HTMLElement>('[data-action], button, a');
+        target?.focus({ preventScroll: true });
       }
     }
   }
@@ -780,6 +783,7 @@ export class GameApp {
         if (action === 'pause') this.pause('game');
         else if (action === 'resume') this.resume();
         else if (action === 'menu') this.goToMenu();
+        else if (action === 'sectors') this.openSectors();
       },
       onEngineering: () => this.toggleEngineering(),
       onTutorialKey: (action, repeat) => {
@@ -890,6 +894,26 @@ export class GameApp {
     else if (goto === 'calibrate' || goto === 'about') this.dispatch({ type: 'open', screen: goto });
   }
 
+  /**
+   * Reiniciar y Salir al menú desde la pausa de una partida en curso descartan el progreso: la
+   * primera pulsación pide confirmar en el propio botón. Fuera de ese caso ejecutan de inmediato.
+   */
+  private confirmInPause(action: string, element: HTMLElement, label: string): boolean {
+    if (this.flow.screen !== 'pause' || this.flow.pauseOrigin !== 'game') return true;
+    let gate = this.destructiveConfirm.get(action);
+    if (!gate) {
+      gate = new SkipConfirm(3000);
+      this.destructiveConfirm.set(action, gate);
+    }
+    if (gate.press(performance.now()) === 'skip') {
+      element.textContent = label;
+      return true;
+    }
+    element.textContent = '¿Seguro? Tocá de nuevo';
+    window.setTimeout(() => { element.textContent = label; }, 3000);
+    return false;
+  }
+
   private async handleAction(action: string, element: HTMLElement): Promise<void> {
     switch (action) {
       case 'mission':
@@ -946,9 +970,11 @@ export class GameApp {
         else this.resume();
         break;
       case 'restart':
+        if (!this.confirmInPause(action, element, 'Reiniciar')) break;
         await this.startMatch(this.flow.mode, this.flow.mapId);
         break;
       case 'menu':
+        if (!this.confirmInPause(action, element, 'Salir al menú')) break;
         this.goToMenu();
         break;
       case 'engineering':
@@ -1057,6 +1083,7 @@ export class GameApp {
   private applyMotionPreference(): void {
     this.hooks.reducedMotion = this.settings.reduceMotion || this.motionPreference.matches;
     this.app.dataset.motion = this.hooks.reducedMotion ? 'reduce' : 'full';
+    this.hud?.setReduceFlashes(this.settings.reduceFlashes || this.hooks.reducedMotion);
   }
 
   private syncSettingsUI(): void {

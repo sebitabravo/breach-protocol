@@ -29,6 +29,13 @@ describe('screen state machine', () => {
     expect(escapeAction({ ...base, screen: 'pause', pauseOrigin: 'menu' })).toBe('menu');
   });
 
+  it('escape on a sub-screen goes back one level', () => {
+    for (const screen of ['sectors', 'leaderboard', 'about', 'calibrate'] as const) {
+      expect(escapeAction({ ...base, screen })).toBe('menu');
+    }
+    expect(escapeAction({ ...base, screen: 'briefing' })).toBe('sectors');
+  });
+
   it('escape on other screens does nothing', () => {
     expect(escapeAction({ ...base, screen: 'result' })).toBe('none');
     expect(escapeAction({ ...base, screen: 'menu' })).toBe('none');

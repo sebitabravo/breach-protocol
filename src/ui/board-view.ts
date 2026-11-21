@@ -30,7 +30,12 @@ export function renderBoardPanel(view: BoardPanel): void {
   const form = byId('board-form');
   const send = byId<HTMLButtonElement>('board-send');
   panel.dataset.state = view.kind;
+  const focusWasInForm = form.contains(document.activeElement);
   form.hidden = view.kind === 'ineligible' || view.kind === 'ranked';
+  // Si el formulario se oculta con el foco dentro, el foco caería al <body>: pasa al primer botón de la pantalla.
+  if (form.hidden && focusWasInForm) {
+    document.querySelector<HTMLElement>('#screen-result .page__foot [data-action]')?.focus({ preventScroll: true });
+  }
   rank.hidden = view.kind !== 'ranked';
   send.disabled = view.kind === 'sending';
 

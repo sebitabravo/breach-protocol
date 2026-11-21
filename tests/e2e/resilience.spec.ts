@@ -39,7 +39,7 @@ test('escape from settings opened on the menu returns to the menu', async ({ pag
     await page.locator('#screen-calibrate [data-action="play"]').click();
     await expect(app).toHaveAttribute('data-screen', 'playing');
     await page.keyboard.press('Escape');
-    await page.locator('#screen-pause [data-action="menu"]').click();
+    await page.locator('#screen-pause [data-action="menu"]').dblclick();
   }
   await expect(app).toHaveAttribute('data-screen', 'menu');
   await page.locator('#screen-menu [data-action="settings"]').click();

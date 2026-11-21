@@ -7,7 +7,7 @@
 import { safeStorage } from './storage';
 
 export const SETTINGS_KEY = 'bp.settings';
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 
 export type Quality = 'auto' | 'low' | 'medium' | 'high';
 export type Handedness = 'right' | 'left';
@@ -24,6 +24,8 @@ export interface Settings {
   autoReload: boolean;
   aimAssistTouch: boolean;
   reduceMotion: boolean;
+  /** Atenúa los destellos de daño (fotosensibilidad). Independiente de reduceMotion, que también lo activa. */
+  reduceFlashes: boolean;
   audioEnabled: boolean;
   volume: number;
   hudScale: number;
@@ -42,6 +44,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoReload: true,
   aimAssistTouch: true,
   reduceMotion: false,
+  reduceFlashes: false,
   audioEnabled: true,
   volume: 0.7,
   hudScale: 1,
@@ -84,6 +87,7 @@ export function sanitize(raw: unknown): Settings {
     autoReload: bool(src.autoReload, DEFAULT_SETTINGS.autoReload),
     aimAssistTouch: bool(src.aimAssistTouch, DEFAULT_SETTINGS.aimAssistTouch),
     reduceMotion: bool(src.reduceMotion, DEFAULT_SETTINGS.reduceMotion),
+    reduceFlashes: bool(src.reduceFlashes, DEFAULT_SETTINGS.reduceFlashes),
     audioEnabled: bool(src.audioEnabled, DEFAULT_SETTINGS.audioEnabled),
     volume: num(src.volume, DEFAULT_SETTINGS.volume, 0, 1),
     hudScale: num(src.hudScale, DEFAULT_SETTINGS.hudScale, 0.8, 1.4),

@@ -49,7 +49,11 @@ test('pausing stops the simulation and restarting begins from a clean tick', asy
   await page.waitForTimeout(400);
   expect(await tick(page)).toBe(frozen);
 
-  await page.locator('#screen-pause [data-action="restart"]').click();
+  const restart = page.locator('#screen-pause [data-action="restart"]');
+  await restart.click();
+  await expect(restart).toHaveText('¿Seguro? Tocá de nuevo');
+  await screenIs(page, 'pause');
+  await restart.click();
   await screenIs(page, 'playing');
   expect(await tick(page)).toBeLessThan(frozen);
 });

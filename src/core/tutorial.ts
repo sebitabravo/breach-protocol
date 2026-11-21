@@ -36,8 +36,10 @@ export const SKIP_CONFIRM_MS = 2000;
 export class SkipConfirm {
   private armedAt: number | null = null;
 
+  constructor(private readonly windowMs = SKIP_CONFIRM_MS) {}
+
   press(now: number): 'confirm' | 'skip' {
-    if (this.armedAt !== null && now - this.armedAt <= SKIP_CONFIRM_MS) {
+    if (this.armedAt !== null && now - this.armedAt <= this.windowMs) {
       this.armedAt = null;
       return 'skip';
     }

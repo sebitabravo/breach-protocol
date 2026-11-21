@@ -480,7 +480,7 @@
       <p id="rotate-hint" class="rotate-hint" role="status">Girá el teléfono para jugar mejor</p>
 
       <!-- ============================= PAUSE ========================= -->
-      <section id="screen-pause" class="screen screen--overlay" aria-label="Pausa">
+      <section id="screen-pause" class="screen screen--overlay" role="dialog" aria-modal="true" aria-label="Pausa">
         <div class="sheet sheet--pause">
           <header class="sheet__head">
             <h2>En pausa</h2>
@@ -496,7 +496,7 @@
             </nav>
             <div class="pause__panes">
               <div class="pane is-active" data-pane="game">
-                <button class="btn btn--primary btn--block" data-action="resume">Continuar ▸</button>
+                <button class="btn btn--primary btn--block" data-action="resume" data-autofocus>Continuar ▸</button>
                 <button class="btn btn--ghost btn--block" data-action="restart">Reiniciar</button>
                 <button class="btn btn--ghost btn--block" data-action="tutorial-replay">Repetir tutorial</button>
                 <button class="btn btn--ghost btn--block" data-action="engineering">Engineering Mode</button>
@@ -540,6 +540,7 @@
               <div class="pane" data-pane="access">
                 <label class="field" for="set-sens"><span class="field__label">Sensibilidad <b id="set-sens-val">1.00×</b></span><input id="set-sens" type="range" min="0.2" max="3" step="0.05" value="1" /></label>
                 <label class="field field--row" for="set-invert"><span class="field__label">Invertir eje Y</span><input id="set-invert" class="switch" role="switch" type="checkbox" /></label>
+                <label class="field field--row" for="set-flashes"><span class="field__label">Reducir destellos de daño</span><input id="set-flashes" class="switch" role="switch" type="checkbox" /></label>
                 <label class="field" for="set-hud"><span class="field__label">Escala de HUD <b id="set-hud-val">100%</b></span><input id="set-hud" type="range" min="0.8" max="1.4" step="0.05" value="1" /></label>
                 <label class="field field--row" for="set-handed"><span class="field__label">Mano dominante: zurdo</span><input id="set-handed" class="switch" role="switch" type="checkbox" /></label>
                 <label class="field field--row" for="set-autoreload"><span class="field__label">Auto-recarga</span><input id="set-autoreload" class="switch" role="switch" type="checkbox" checked /></label>
@@ -608,7 +609,7 @@
               <span class="panel__label">tablero</span>
               <span class="board-submit__where" id="board-where">—</span>
             </div>
-            <p class="board-submit__text" id="board-text">Enviá la partida para verificarla en el servidor.</p>
+            <p class="board-submit__text" id="board-text" role="status" aria-live="polite">Enviá la partida para verificarla en el servidor.</p>
             <p class="board-submit__text" id="result-prefix" hidden>Registro recortado: cuenta el prefijo de 20 min.</p>
             <div class="board-submit__rank" id="board-rank" hidden></div>
             <div class="board-submit__form" id="board-form">
@@ -654,7 +655,7 @@
         <p class="eng__note" id="eng-note">datos reales del renderer y del bucle de simulación.</p>
       </aside>
 
-      <div id="toast" class="toast" hidden></div>
+      <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
       <div id="context-lost" class="ctx-lost" role="alert" hidden>
         <strong>Gráficos interrumpidos</strong>
         <span>El navegador soltó el contexto WebGL. Esperando recuperación…</span>

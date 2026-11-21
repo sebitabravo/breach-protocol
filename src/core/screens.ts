@@ -24,7 +24,7 @@ export interface ScreenState {
   pauseOrigin: PauseOrigin;
 }
 
-export type EscapeAction = 'pause' | 'resume' | 'menu' | 'none';
+export type EscapeAction = 'pause' | 'resume' | 'menu' | 'sectors' | 'none';
 
 export function startMatch(state: ScreenState, mode: Mode): ScreenState {
   return { ...state, screen: 'playing', mode, pauseOrigin: 'game' };
@@ -34,6 +34,8 @@ export function startMatch(state: ScreenState, mode: Mode): ScreenState {
 export function escapeAction(state: ScreenState): EscapeAction {
   if (state.screen === 'playing') return 'pause';
   if (state.screen === 'pause') return state.pauseOrigin === 'menu' ? 'menu' : 'resume';
+  if (state.screen === 'briefing') return 'sectors';
+  if (['sectors', 'leaderboard', 'about', 'calibrate'].includes(state.screen)) return 'menu';
   return 'none';
 }
 

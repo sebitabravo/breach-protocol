@@ -66,6 +66,7 @@ export class SettingsForm {
 
     bind('set-quality', (node) => this.hooks.onPatch({ quality: node.value as Quality }));
     bind('set-motion', (node) => this.hooks.onPatch({ reduceMotion: isChecked(node) }));
+    bind('set-flashes', (node) => this.hooks.onPatch({ reduceFlashes: isChecked(node) }));
     bind('set-telemetry', (node) => this.hooks.onTelemetry(isChecked(node)));
     bind('set-audio', (node) => this.hooks.onPatch({ audioEnabled: isChecked(node) }));
     bind('set-volume', (node) => this.hooks.onPatch({ volume: Number(node.value) }));
@@ -108,6 +109,7 @@ export class SettingsForm {
 
     set('set-quality', settings.quality);
     set('set-motion', settings.reduceMotion);
+    set('set-flashes', settings.reduceFlashes);
     set('set-telemetry', view.telemetry);
     set('set-audio', settings.audioEnabled);
     set('set-volume', settings.volume);

@@ -63,6 +63,32 @@ interface FeedEntry {
   el: HTMLElement;
 }
 
+/** Forma del marcador del minimapa por tipo: scout círculo, centinela cuadrado, interceptor triángulo. */
+export function traceEnemyMarker(
+  ctx: Pick<CanvasRenderingContext2D, 'arc' | 'rect' | 'moveTo' | 'lineTo' | 'closePath'>,
+  kind: number,
+  x: number,
+  y: number,
+): void {
+  const r = 2.4;
+  if (kind === 1) {
+    ctx.rect(x - r, y - r, r * 2, r * 2);
+  } else if (kind === 2) {
+    ctx.moveTo(x, y - r - 0.6);
+    ctx.lineTo(x + r + 0.4, y + r);
+    ctx.lineTo(x - r - 0.4, y + r);
+    ctx.closePath();
+  } else {
+    ctx.arc(x, y, 1.9, 0, Math.PI * 2);
+  }
+}
+
+/** Opacidad del destello de daño. Reducido: pico bajo y sin cambios bruscos (WCAG 2.3.1/2.3.3). */
+export function damageFlashAlpha(damageAge: number, reduced: boolean): number {
+  const fade = Math.max(0, 1 - damageAge / 0.6);
+  return fade * (reduced ? 0.25 : 0.9);
+}
+
 export class Hud {
   private wave = byId('hud-wave');
   private waveTotal = byId('hud-wave-total');
@@ -85,6 +111,8 @@ export class Hud {
   private slots = Array.from(document.querySelectorAll<HTMLElement>('#hud-slots .slot'));
   private reloadBar = byId('hud-reload-bar');
   private reloadHint = byId('hud-reload-hint');
+  private reduceFlashes = false;
+  private vitals = document.querySelector<HTMLElement>('.vitals');
   private ammoBlock = document.querySelector<HTMLElement>('.ammo');
   private crosshair = byId('crosshair');
   private hitMarker = byId('hit-marker');
@@ -136,6 +164,10 @@ export class Hud {
 
   setMap(map: MapData): void {
     this.map = map;
+  }
+
+  setReduceFlashes(reduced: boolean): void {
+    this.reduceFlashes = reduced;
   }
 
   reset(): void {
@@ -213,6 +245,7 @@ export class Hud {
       this.hpBar.style.width = `${(hp / Math.max(1, state.hpMax)) * 100}%`;
       const low = hp / Math.max(1, state.hpMax) < 0.32;
       this.hpBar.style.background = low ? 'var(--danger)' : 'var(--primary)';
+      this.vitals?.classList.toggle('is-low', low);
     });
 
     const ammo = Math.max(0, Math.round(state.ammo));
@@ -249,7 +282,7 @@ export class Hud {
       this.crosshair.style.setProperty('--gap', `${gap}px`);
     });
 
-    const damageAlpha = Math.max(0, 1 - state.damageAge / 0.6) * 0.9;
+    const damageAlpha = damageFlashAlpha(state.damageAge, this.reduceFlashes);
     this.set('damage', Math.round(damageAlpha * 20), () => {
       this.damageFlash.style.opacity = String(damageAlpha.toFixed(2));
     });
@@ -359,8 +392,15 @@ export class Hud {
     for (let i = 0; i < nodes.length; i += 1) {
       const node = nodes[i];
       const live = state.node(i);
-      ctx.fillStyle = live.active ? '#5ce08b' : 'rgba(150,170,186,0.75)';
-      ctx.fillRect(node.x * scale - 2, node.z * scale - 2, 4, 4);
+      // Forma además de color: activo = cuadrado lleno, pendiente = cuadrado hueco.
+      if (live.active) {
+        ctx.fillStyle = '#5ce08b';
+        ctx.fillRect(node.x * scale - 2, node.z * scale - 2, 4, 4);
+      } else {
+        ctx.strokeStyle = 'rgba(150,170,186,0.9)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(node.x * scale - 2, node.z * scale - 2, 4, 4);
+      }
     }
 
     for (let i = 0; i < 32; i += 1) {
@@ -368,7 +408,7 @@ export class Hud {
       if (enemy.state === ENEMY_STATE.dead) continue;
       ctx.fillStyle = enemy.kind === 1 ? '#ffce6b' : '#ff5b6b';
       ctx.beginPath();
-      ctx.arc(enemy.x * scale, enemy.z * scale, 1.9, 0, Math.PI * 2);
+      traceEnemyMarker(ctx, enemy.kind, enemy.x * scale, enemy.z * scale);
       ctx.fill();
     }
     ctx.restore();

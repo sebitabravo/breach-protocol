@@ -145,3 +145,19 @@ describe('sensitivity per device', () => {
     expect(sensitivityOf(base, false)).toBe(1.4);
   });
 });
+
+describe('reduceFlashes', () => {
+  it('migrates a v2 payload to v3 with flashes at the default and keeps known values', () => {
+    const migrated = migrate({ version: 2, quality: 'low', reduceMotion: true, volume: 0.3 });
+    expect(migrated.version).toBe(SETTINGS_VERSION);
+    expect(SETTINGS_VERSION).toBe(3);
+    expect(migrated.reduceFlashes).toBe(false);
+    expect(migrated.reduceMotion).toBe(true);
+    expect(migrated.volume).toBe(0.3);
+  });
+
+  it('keeps an explicit true and rejects non-boolean junk', () => {
+    expect(sanitize({ reduceFlashes: true }).reduceFlashes).toBe(true);
+    expect(sanitize({ reduceFlashes: 'yes' }).reduceFlashes).toBe(false);
+  });
+});

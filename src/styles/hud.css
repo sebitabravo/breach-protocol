@@ -58,7 +58,7 @@
 
 .hud__kicker {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--subtle);
@@ -103,7 +103,7 @@
 
 .hud__mode {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -544,6 +544,15 @@
   line-height: 1;
 }
 
+/* Vida baja: el color solo no alcanza, se suma un rótulo. */
+.vitals.is-low .vitals__num::after {
+  content: ' ! crítico';
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--danger);
+}
+
 .vitals .bar {
   width: 220px;
   height: 12px;
@@ -563,7 +572,7 @@
 
 .buff {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--accent);
@@ -649,6 +658,11 @@
   color: var(--danger);
 }
 
+.ammo.is-low .ammo__mag::before {
+  content: '! ';
+  font-size: 0.6em;
+}
+
 .ammo .bar {
   margin-top: 4px;
   width: 170px;
@@ -661,7 +675,7 @@
 
 .ammo__hint {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--subtle);
@@ -696,7 +710,7 @@
 
 .hud__extraction p {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--muted);
