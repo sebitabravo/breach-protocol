@@ -10,7 +10,7 @@ type Zone = 'steel' | 'polymer' | 'rubber' | 'ink' | 'action' | 'heat' | 'glass'
 const P = {
   shell: FINISH.polymer.color, grip: 0x161c22, pad: 0x303940, seam: 0x10151a,
   steel: 0x586975, edge: FINISH.steel.color, oxide: 0x3d505c, bore: 0x2b3439,
-  ink: 0x9baeb1, mint: 0x5ce08b, warn: 0xb08a56, amber: 0xd39a61,
+  ink: 0x9baeb1, mint: 0x5ce08b, warn: 0xb08a56, amber: 0xd39a61, teal: 0x4de3c6, red: 0xff3b4a,
 } as const;
 
 /** Material variants share the same maps, but not per-weapon heat or dot state. */
@@ -22,7 +22,7 @@ export function weaponMaterials(steel: THREE.MeshStandardMaterial, ink: THREE.Me
     heat: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.58, roughness: 0.36, emissive: 0xc66134, emissiveIntensity: 0 }),
     // Single tinted optical pane, not transmission (no separate render pass).
     glass: new THREE.MeshBasicMaterial({ color: FINISH.glass.color, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }),
-    dot: new THREE.MeshBasicMaterial({ color: P.mint }),
+    dot: new THREE.MeshBasicMaterial({ color: P.red }),
   } satisfies Record<Zone, THREE.Material>;
 }
 
@@ -272,13 +272,20 @@ function carbine(p: Parts) {
   p.profile('polymer', P.seam, witness, 0.003, 0, -0.0345);
   p.profile('steel', P.oxide, witness, 0.004, 0.0007, -0.038, holes);
 
-  // Reflex sight with a thin, open frame. The dot is just behind the tinted
-  // pane, separate from the lower flip-up iron sight line.
+  // Visor holográfico de caja, como en la maqueta: cuerpo cerrado, capucha y
+  // ventana tintada; el punto rojo queda detrás del vidrio.
   p.chamfer('polymer', P.shell, [0, 0.122, -0.113], [0.076, 0.017, 0.100], 0.004);
-  for (const s of [-1, 1]) p.chamfer('steel', P.oxide, [s * 0.030, 0.152, -0.139], [0.013, 0.062, 0.031], 0.004, 0.12);
-  p.chamfer('steel', P.steel, [0, 0.183, -0.143], [0.070, 0.012, 0.038], 0.004, 0.11);
-  p.chamfer('glass', 0xffffff, [0, 0.153, -0.142], [0.051, 0.052, 0.002], 0.0003, 0.13);
-  p.volume('dot', P.mint, [0, 0.148, -0.137], [0, 0.153, -0.137], 0.0025, 0.002);
+  for (const s of [-1, 1]) p.chamfer('steel', P.oxide, [s * 0.034, 0.152, -0.132], [0.012, 0.064, 0.064], 0.004, 0.12);
+  p.chamfer('steel', P.steel, [0, 0.186, -0.134], [0.080, 0.012, 0.072], 0.004, 0.11);
+  p.chamfer('polymer', P.grip, [0, 0.131, -0.096], [0.070, 0.020, 0.026], 0.004);
+  p.chamfer('steel', P.edge, [0.043, 0.156, -0.118], [0.008, 0.020, 0.020], 0.002);
+  p.chamfer('glass', 0xffffff, [0, 0.153, -0.142], [0.056, 0.054, 0.002], 0.0003, 0.13);
+  p.volume('dot', P.red, [0, 0.148, -0.137], [0, 0.153, -0.137], 0.0025, 0.002);
+  // Franjas teal del receptor (lectura de la maqueta); sin luz propia, el bloom las marca.
+  for (const s of [-1, 1]) {
+    p.chamfer('ink', P.teal, [s * 0.0405, 0.083, -0.04], [0.002, 0.004, 0.2], 0.0005);
+    p.chamfer('ink', P.teal, [s * 0.044, 0.006, -0.40], [0.002, 0.003, 0.11], 0.0005);
+  }
   const loop: XYZ[] = [[-0.040, 0.013, 0.199], [-0.057, -0.002, 0.211], [-0.057, -0.022, 0.193], [-0.047, -0.016, 0.176], [-0.039, 0.005, 0.178]];
   p.cable('steel', P.edge, loop, 0.004, 10);
   p.cable('rubber', P.grip, [[-0.042, 0.043, -0.200], [-0.058, 0.025, -0.226], [-0.057, 0.019, -0.261], [-0.048, 0.033, -0.283]], 0.0034);

@@ -121,10 +121,11 @@ function frameModel(view: WeaponView, aspect: number): void {
   if (!view.points) return;
   const fx = TAN_HALF * aspect;
   const fy = TAN_HALF;
-  const x = aspect < 1 ? 0.44 : 0.40;
+  const x = aspect < 1 ? 0.44 : 0.42;
   // Wide views preserve extra bottom clearance because the silhouette gets taller.
   const y = aspect < 1 ? -0.40 : -0.45 + THREE.MathUtils.clamp((aspect - 16 / 9) * 0.09, 0, 0.045);
-  const width = 0.44; // NDC span: 22% of the viewport width.
+  // Ancho en NDC: 26 % del viewport en apaisado (la maqueta lo muestra grande, abajo a la derecha); 22 % en vertical.
+  const width = aspect < 1 ? 0.44 : 0.52;
   const position = new THREE.Vector3(x * fx, y * fy, -1);
   const euler = new THREE.Euler(0, 0, HIP_ROLL, 'YXZ');
   const rotation = new THREE.Quaternion();
@@ -149,7 +150,9 @@ function frameModel(view: WeaponView, aspect: number): void {
     // The compact slide needs additional scale on wide displays to retain
     // the same horizontal footprint as the long guns.
     const sidearm = view.authored && view.root.name === 'PB-01';
-    const maxScale = sidearm ? (aspect > 16 / 9 ? 1.28 : 1.18) : 1.24;
+    // Más grande solo entre 4:3 y 16:9; en ultra ancho el alto disponible bajo la mira no alcanza.
+    const big = aspect >= 1 && aspect <= 16 / 9 + 0.01 ? (sidearm ? 1.04 : 1.12) : 1;
+    const maxScale = (sidearm ? (aspect > 16 / 9 ? 1.28 : 1.18) : 1.24) * big;
     scale = Math.min(scale * THREE.MathUtils.clamp(width / (maxX - minX), 0.75, 1.25), maxScale);
   }
   view.modelPose = { ...view.pose, hip: [position.x, position.y, position.z], ads: [0, -0.13, -0.79] };
@@ -362,7 +365,8 @@ export class Viewmodel {
       action.position.z = view.authored.travel * (view.authored.actionTime / ACTION_DURATION) ** 2;
       view.authored.temperature *= Math.exp(-dt * 3.4);
       heat.material.emissiveIntensity = view.authored.temperature * 0.55;
-      dot?.material.color.setHex(0x5ce08b).multiplyScalar(0.42 + ads * 1.55);
+      // Punto rojo del visor, como en la maqueta: tenue en cadera, nítido al apuntar.
+      dot?.material.color.setHex(0xff3b4a).multiplyScalar(0.55 + ads * 1.45);
     }
     // FX read the posed sockets in the same frame.
     view.root.updateMatrixWorld(true);

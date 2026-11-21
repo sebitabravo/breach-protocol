@@ -75,8 +75,10 @@ async function frameBounds(page: Page, width: number, height: number): Promise<v
     expect(frame.t).toBeGreaterThan(height * 0.50);
     expect(frame.r).toBeLessThan(width * 0.95);
     expect(frame.b).toBeLessThan(height * 0.95);
-    expect(frame.span).toBeGreaterThanOrEqual(0.20);
-    expect(frame.span).toBeLessThanOrEqual(0.25);
+    // Apaisado: arma grande como en la maqueta (~26 % del ancho); vertical: 22 %.
+    const [minSpan, maxSpan] = width >= height ? [0.20, 0.28] : [0.20, 0.25];
+    expect(frame.span).toBeGreaterThanOrEqual(minSpan);
+    expect(frame.span).toBeLessThanOrEqual(maxSpan);
     expect(frame.boreInward).toBe(true);
   }
 }
