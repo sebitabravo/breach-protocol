@@ -359,8 +359,8 @@
           </div>
 
           <div class="hud__block hud__block--right">
-            <div class="hud__stat"><span class="hud__kicker" id="hud-time-label">restante</span><span class="hud__mid" id="hud-time">3:00</span></div>
-            <div class="hud__stat"><span class="hud__kicker">enemigos</span><span class="hud__mid" id="hud-remaining">0</span></div>
+            <div class="hud__stat"><span class="hud__kicker"><svg class="hud__ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 9v4l3 2M9 2h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span id="hud-time-label">restante</span></span><span class="hud__mid" id="hud-time">3:00</span></div>
+            <div class="hud__stat"><span class="hud__kicker"><svg class="hud__ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a8 8 0 0 0-8 8c0 2.6 1.2 4.4 3 5.5V20h10v-3.5c1.8-1.1 3-2.9 3-5.5a8 8 0 0 0-8-8z" fill="currentColor"/><circle cx="9" cy="11" r="2" fill="#080f14"/><circle cx="15" cy="11" r="2" fill="#080f14"/><path d="M10 17h1v2h-1zM13 17h1v2h-1z" fill="#080f14"/></svg>enemigos</span><span class="hud__mid" id="hud-remaining">0</span></div>
             <button class="iconbtn" id="btn-pause-hud" aria-label="Pausa">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="4" height="14" fill="currentColor"/><rect x="13" y="5" width="4" height="14" fill="currentColor"/></svg>
             </button>
@@ -368,6 +368,7 @@
         </div>
 
         <div class="hud__block hud__block--objective">
+          <svg class="hud__obj-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 22 12 12 22 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 8 16 12 12 16 8 12z" fill="currentColor"/></svg>
           <span class="hud__kicker">objetivo</span>
           <p class="hud__sub" id="hud-objective-line">reactivá una terminal (0/3)</p>
           <p class="hud__score"><span class="hud__kicker">puntuación</span> <b id="hud-score">0</b></p>
@@ -395,7 +396,7 @@
         <div class="hud__bottom">
           <div class="vitals">
             <div class="vitals__row">
-              <svg class="vitals__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-8-4.7-8-10a4.6 4.6 0 0 1 8-3 4.6 4.6 0 0 1 8 3c0 5.3-8 10-8 10z" fill="currentColor"/></svg>
+              <svg class="vitals__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" fill="currentColor"/></svg>
               <span class="vitals__num" id="hud-hp">100</span>
             </div>
             <div class="bar"><i id="hud-hp-bar"></i></div>
@@ -413,8 +414,9 @@
             </div>
             <div class="ammo__weapon" id="hud-weapon">PB-01</div>
             <div class="ammo__nums">
+              <svg class="ammo__icon" viewBox="0 0 64 24" aria-hidden="true"><path id="hud-weapon-icon" fill="currentColor" d=""/></svg>
               <span class="ammo__mag" id="hud-ammo">12</span>
-              <span class="ammo__sep">/</span>
+              <span class="ammo__sep" aria-hidden="true">|</span>
               <span class="ammo__res" id="hud-reserve">60</span>
             </div>
             <div class="bar bar--thin"><i id="hud-reload-bar"></i></div>
@@ -469,12 +471,12 @@
         <button class="tbtn tbtn--fire" data-touch="fire" aria-label="Disparar">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path d="M12 4v5M12 15v5M4 12h5M15 12h5" stroke="currentColor" stroke-width="1.6"/></svg>
         </button>
-        <button class="tbtn tbtn--jump" data-touch="jump" aria-label="Saltar">⤒</button>
-        <button class="tbtn tbtn--reload" data-touch="reload" aria-label="Recargar">⟳</button>
+        <button class="tbtn tbtn--jump" data-touch="jump" aria-label="Saltar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14M12 20V8M7 13l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="tbtn tbtn--reload" data-touch="reload" aria-label="Recargar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.1-5M19 4v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button class="tbtn tbtn--interact" data-touch="interact" aria-label="Interactuar">Ⓔ</button>
-        <button class="tbtn tbtn--switch" data-touch="switch" aria-label="Cambiar arma">⇄</button>
-        <button class="tbtn tbtn--ads" data-touch="ads" aria-label="Apuntar">⊕</button>
-        <button class="tbtn tbtn--pause" data-touch="pause" aria-label="Pausa">❙❙</button>
+        <button class="tbtn tbtn--switch" data-touch="switch" aria-label="Cambiar arma"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h14l-3-3M20 16H6l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="tbtn tbtn--ads" data-touch="ads" aria-label="Apuntar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg></button>
+        <button class="tbtn tbtn--pause" data-touch="pause" aria-label="Pausa"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="4" height="14" fill="currentColor"/><rect x="13" y="5" width="4" height="14" fill="currentColor"/></svg></button>
       </div>
 
       <p id="rotate-hint" class="rotate-hint" role="status">Girá el teléfono para jugar mejor</p>

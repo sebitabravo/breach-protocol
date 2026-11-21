@@ -158,7 +158,7 @@ Cosas que el plan decía de una forma y se hicieron de otra, o no se hicieron:
 | --- | --- | --- |
 | Proyecto `mobile-portrait` en WebKit | Emulación de iPhone 13 sobre Chromium | Falta el runner `webkit-2215`; instalarlo es una descarga que no se pidió |
 | Rotación: «usar `screen.orientation` cuando exista» | Solo `@media (orientation: portrait)` | `screen.orientation.lock` exige pantalla completa en casi todos los navegadores; el aviso es informativo |
-| Pista contextual de recarga en el paso 2 del tutorial | No se agregó | El HUD ya muestra «R para recargar» o «tocá ⟳» con el cargador vacío |
+| Pista contextual de recarga en el paso 2 del tutorial | No se agregó | El HUD ya muestra «R para recargar» o «tocá recargar» con el cargador vacío |
 | E2E táctil: «el tutorial se puede completar y omitir» | Solo se prueba continuar paso a paso y omitir | Completar exige llegar a un terminal y activarlo con toque; no se automatizó |
 | Pruebas de HUD en 320×568 vertical | Excluidas (`HUD_MIN_PORTRAIT_HEIGHT = 640`) | A esa altura el bloque de munición, la vida y el objetivo no caben sin solaparse; es un límite conocido, no un arreglo |
 | `--subtle` «≥4.5:1 sobre surface-2 (medido)» | 4.86:1 sobre `surface-2`; 4.05:1 sobre `surface-3` | Se midió sobre `bg`, `surface-1` y `surface-2`, que son las superficies donde hay texto |

@@ -12,6 +12,13 @@ import { damageBearing } from '../core/bearing';
 import { FIXED_DT } from '../core/loop';
 import { byId } from './dom';
 
+/** Siluetas de arma para el bloque de munición (viewBox 64×24), leídas de las mismas proporciones del viewmodel. */
+export const WEAPON_ICON: Record<number, string> = {
+  [WEAPON.sidearm]: 'M18 6h30l2 2v4H38l-2 2h-6l-3 8h-7l3-9-6-1V8z',
+  [WEAPON.carbine]: 'M2 9h8V7h22l2-3h8l1 3h14v3h5v3H44l-3 2h-7l-2 7h-7l2-7h-6l-4 4H8l4-5H2z',
+  [WEAPON.shotgun]: 'M1 8h40l2-2h10l1 2h9v4H44l-4 2H29l-3 8h-7l3-8h-8l-6 5H2l6-6H1z',
+};
+
 export const WEAPON_SHORT: Record<number, string> = {
   [WEAPON.sidearm]: 'PB-01',
   [WEAPON.carbine]: 'AR-04',
@@ -108,6 +115,7 @@ export class Hud {
   private ammo = byId('hud-ammo');
   private reserve = byId('hud-reserve');
   private weaponName = byId('hud-weapon');
+  private weaponIcon = byId('hud-weapon-icon');
   private slots = Array.from(document.querySelectorAll<HTMLElement>('#hud-slots .slot'));
   private reloadBar = byId('hud-reload-bar');
   private reloadHint = byId('hud-reload-hint');
@@ -259,6 +267,7 @@ export class Hud {
     });
     this.set('weapon', state.weapon, () => {
       this.weaponName.textContent = WEAPON_SHORT[state.weapon] ?? WEAPON_SHORT[WEAPON.sidearm];
+      this.weaponIcon.setAttribute('d', WEAPON_ICON[state.weapon] ?? WEAPON_ICON[WEAPON.sidearm]);
       for (const slot of this.slots) {
         slot.classList.toggle('is-active', Number(slot.dataset.weapon) === state.weapon);
       }
@@ -270,7 +279,7 @@ export class Hud {
       ? 'recargando'
       : ammo === 0
         ? usingTouch
-          ? 'tocá ⟳'
+          ? 'tocá recargar'
           : 'R para recargar'
         : '';
     this.set('hint', hint, () => {

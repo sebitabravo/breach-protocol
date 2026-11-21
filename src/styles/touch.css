@@ -77,6 +77,11 @@
   user-select: none;
 }
 
+.tbtn svg {
+  width: 24px;
+  height: 24px;
+}
+
 .tbtn.is-down {
   background: rgba(92, 224, 139, 0.28);
   border-color: var(--primary);

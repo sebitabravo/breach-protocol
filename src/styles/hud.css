@@ -133,6 +133,64 @@
   justify-items: center;
 }
 
+/* Tarjeta de objetivo de la maqueta: rombo, rótulo menta y la instrucción. */
+.hud__obj-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--primary);
+}
+
+@media (min-width: 1101px) {
+  .hud__block--objective {
+    grid-template-columns: auto 1fr;
+    column-gap: 12px;
+    align-items: center;
+    justify-items: start;
+    width: auto;
+    max-width: min(440px, 36vw);
+    padding: 8px 16px 8px 12px;
+    border: 1px solid var(--border);
+    background: rgba(8, 15, 20, 0.72);
+    text-align: left;
+  }
+
+  .hud__obj-icon {
+    grid-row: 1 / span 3;
+    width: 24px;
+    height: 24px;
+  }
+
+  .hud__block--objective > .hud__kicker {
+    color: var(--primary);
+  }
+
+  /* La tarjeta es más alta que el bloque anterior: los terminales bajan para no tocarla. */
+  .hud__objective-track {
+    top: calc(124px + var(--safe-t));
+  }
+}
+
+@media (max-width: 1100px) {
+  .hud__obj-icon {
+    display: none;
+  }
+}
+
+.hud__ico {
+  width: 12px;
+  height: 12px;
+  margin-right: 5px;
+  vertical-align: -1px;
+  color: var(--muted);
+}
+
+/* Teléfono: los íconos del reloj y de enemigos no caben junto al objetivo compacto. */
+@media (max-width: 760px) {
+  .hud__ico {
+    display: none;
+  }
+}
+
 .hud__block--objective .hud__kicker,
 .hud__objective-track .hud__kicker {
   color: var(--muted);
@@ -556,6 +614,9 @@
 .vitals .bar {
   width: 220px;
   height: 12px;
+  /* Barra segmentada en 10 tramos, como en la maqueta: cada tramo es 10 de vida. */
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 calc(10% - 3px), transparent calc(10% - 3px) 10%);
+  mask-image: repeating-linear-gradient(90deg, #000 0 calc(10% - 3px), transparent calc(10% - 3px) 10%);
 }
 
 .vitals__buffs {
@@ -645,7 +706,17 @@
 
 .ammo__sep {
   color: var(--subtle);
-  font-size: 16px;
+  font-size: 22px;
+  font-weight: 300;
+}
+
+.ammo__icon {
+  width: 64px;
+  height: 24px;
+  margin-right: 8px;
+  align-self: center;
+  color: var(--text);
+  opacity: 0.85;
 }
 
 .ammo__res {
