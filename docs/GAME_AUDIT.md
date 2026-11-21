@@ -107,6 +107,9 @@ Pines que cambiaron a propósito (la regla de pruebas, paso 4, quedó autorizada
 | `resilience`, `smoke`: `startRun` | `playFromLanding()` | Mismo motivo |
 | `Backspace skips…` | Dos pulsaciones y comprobación del aviso | A-05 |
 | pausa → menú | `dblclick()` | Confirmación de Salir al menú |
+| `objective-marker`: texto del paso 3 | Ahora nombra el botón Ⓔ | A-05 |
+| `screens`: omitir el tutorial con Retroceso | Dos pulsaciones | A-05 |
+| `gameplay`: rumbo del daño real, ventana de 1800 a 4000 ticks | La primera herida llega más tarde porque las patrullas esperan 20 s | A-13; la intención del test no cambió |
 
 ## Decisiones abiertas
 
