@@ -7,7 +7,7 @@
  */
 import * as THREE from 'three';
 import { ENEMY_KIND } from '../wasm/protocol';
-import { buildMergedGeometry, type BoxPart } from './geometry';
+import { buildMergedGeometry, MeshBuilder, type BoxPart } from './geometry';
 
 /** Robot palette: albedo-compensated so the FINAL pixel on the enemy's
  * player-facing faces lands on the ladder: body ≈ #45596a, joints ≈ #2e3d4a
@@ -138,6 +138,35 @@ export function createRobotMesh(kind: number): THREE.Mesh {
   const visor = new THREE.Mesh(assets.visor, assets.visorMat);
   visor.castShadow = false;
   mesh.add(visor);
+  return mesh;
+}
+
+/** Combat uses one instanced draw per kind, including the emissive visor. */
+export function buildRobotBatch(kind: number, capacity: number): THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial> {
+  const parts = partsFor(kind);
+  const builder = new MeshBuilder();
+  const c = new THREE.Color();
+  for (const part of parts.body) {
+    c.setHex(part.color);
+    builder.addBox(part.x, part.y, part.z, part.sx, part.sy, part.sz, { rgb: [c.r, c.g, c.b] });
+  }
+  c.setHex(C.eye);
+  for (const part of parts.eyes) {
+    builder.addBox(part.x, part.y, part.z, part.sx, part.sy, part.sz, { rgb: [c.r, c.g, c.b], blink: 1 });
+  }
+  const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute float aBlink;\nflat varying float vVisor;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvVisor = aBlink;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nflat varying float vVisor;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vVisor * 2.6;');
+  };
+  material.customProgramCacheKey = () => 'bp-instanced-robot-visor';
+  const mesh = new THREE.InstancedMesh(builder.build(), material, capacity);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.frustumCulled = false;
+  mesh.count = 0;
+  mesh.visible = false;
   return mesh;
 }
 

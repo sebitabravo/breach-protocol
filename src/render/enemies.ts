@@ -1,13 +1,9 @@
-/**
- * Pool de robots: un Mesh por slot (se reconstruye solo si cambia el tipo),
- * visibilidad desde el estado del snapshot y telegrafía por FSM. Lee los floats
- * del snapshot directamente (sin `state.enemy(i)`, que aloca un objeto por slot).
- */
+/** One preallocated instance batch per robot kind; snapshots drive poses and telegraphs. */
 import * as THREE from 'three';
 import type { Snapshot } from '../wasm/bridge';
 import { MAX_ENEMIES } from '../wasm/bridge';
 import { E, ENEMY_BASE, ENEMY_KIND, ENEMY_STATE, ENEMY_STRIDE } from '../wasm/protocol';
-import { createRobotMesh } from './entities';
+import { buildRobotBatch } from './entities';
 import { Telegraph } from './telegraph';
 
 const EYE_HEX = 0xff5b6b;
@@ -97,41 +93,57 @@ export function sentinelMuzzle(x: number, y: number, z: number, yaw: number, out
 }
 
 export class EnemyPool {
-  private readonly meshes: (THREE.Mesh | null)[] = new Array(MAX_ENEMIES).fill(null);
-  private readonly kinds: number[] = new Array(MAX_ENEMIES).fill(-1);
+  private readonly batches = [ENEMY_KIND.scout, ENEMY_KIND.sentinel, ENEMY_KIND.interceptor]
+    .map((kind) => buildRobotBatch(kind, MAX_ENEMIES));
+  // Singletons use ordinary frustum culling and avoid uploading an instance buffer.
+  private readonly singletons = this.batches.map((batch) => {
+    const mesh = new THREE.Mesh(batch.geometry, batch.material);
+    mesh.matrixAutoUpdate = false;
+    mesh.visible = false;
+    return mesh;
+  });
   private readonly telegraph: Telegraph;
-  // scratch por frame: el pool no aloca dentro de update()
+  private readonly pose = new THREE.Object3D();
   private readonly look = newLook();
   private readonly muzzle = new Float64Array(3);
   private readonly target = new Float64Array(3);
 
-  constructor(private readonly scene: THREE.Scene) {
+  constructor(scene: THREE.Scene) {
     this.telegraph = new Telegraph(scene);
+    for (let i = 0; i < this.batches.length; i += 1) scene.add(this.batches[i], this.singletons[i]);
+  }
+
+  hide(): void {
+    for (let i = 0; i < this.batches.length; i += 1) {
+      this.batches[i].visible = false;
+      this.singletons[i].visible = false;
+    }
+    this.telegraph.halo.visible = false;
+    this.telegraph.laser.visible = false;
   }
 
   /** Actualiza todos los slots desde el snapshot. `time` alimenta el pulso de la mira. */
   update(state: Snapshot, reducedMotion: boolean, camera: THREE.Camera, time: number): void {
     const f = state.float;
     this.telegraph.beginFrame();
+    for (let i = 0; i < this.batches.length; i += 1) this.batches[i].count = 0;
     for (let i = 0; i < MAX_ENEMIES; i += 1) {
       const base = ENEMY_BASE + i * ENEMY_STRIDE;
       const st = f[base + E.state];
+      if (st === ENEMY_STATE.dead) continue;
       const kind = f[base + E.kind] | 0;
-      const mesh = this.meshFor(i, kind);
-      if (st === ENEMY_STATE.dead) {
-        mesh.visible = false;
-        continue;
-      }
+      const mesh = this.batches[kind] ?? this.batches[0];
       const x = f[base + E.x];
       const y = f[base + E.y];
       const z = f[base + E.z];
       const yaw = f[base + E.yaw];
       const look = robotLookInto(kind, st, this.look);
       const bob = reducedMotion ? 0 : Math.sin(f[base + E.anim] * 7) * 0.03;
-      mesh.visible = true;
-      mesh.position.set(x, y + bob, z);
-      mesh.rotation.set(look.lean, yaw, 0);
-      mesh.scale.set(1, look.squash, 1);
+      this.pose.position.set(x, y + bob, z);
+      this.pose.rotation.set(look.lean, yaw, 0, 'YXZ');
+      this.pose.scale.set(1, look.squash, 1);
+      this.pose.updateMatrix();
+      mesh.setMatrixAt(mesh.count++, this.pose.matrix);
       if (look.glow > 0) this.telegraph.addHalo(x, y + look.headY, z, look.haloRadius, look.hex, look.glow);
       if (look.laser) {
         sentinelMuzzle(x, y, z, yaw, this.muzzle);
@@ -142,27 +154,28 @@ export class EnemyPool {
         this.telegraph.addLaser(this.muzzle, this.target, EYE_HEX, pulse);
       }
     }
+    for (let i = 0; i < this.batches.length; i += 1) {
+      const batch = this.batches[i];
+      const single = this.singletons[i];
+      batch.visible = batch.count > 1;
+      single.visible = batch.count === 1;
+      if (batch.visible) batch.instanceMatrix.needsUpdate = true;
+      if (single.visible) {
+        batch.getMatrixAt(0, single.matrix);
+        single.matrixWorldNeedsUpdate = true;
+      }
+    }
     this.telegraph.endFrame(camera);
   }
 
   dispose(): void {
-    for (const mesh of this.meshes) mesh?.removeFromParent();
-    this.meshes.fill(null);
-    this.kinds.fill(-1);
-    this.telegraph.dispose();
-  }
-
-  /** Mesh del slot; se reconstruye solo si el tipo cambia. */
-  private meshFor(index: number, kind: number): THREE.Mesh {
-    let mesh = this.meshes[index];
-    if (!mesh || this.kinds[index] !== kind) {
-      mesh?.removeFromParent();
-      mesh = createRobotMesh(kind);
-      mesh.rotation.order = 'YXZ';
-      this.kinds[index] = kind;
-      this.scene.add(mesh);
-      this.meshes[index] = mesh;
+    for (const single of this.singletons) single.removeFromParent();
+    for (const batch of this.batches) {
+      batch.removeFromParent();
+      batch.dispose();
+      batch.geometry.dispose();
+      batch.material.dispose();
     }
-    return mesh;
+    this.telegraph.dispose();
   }
 }

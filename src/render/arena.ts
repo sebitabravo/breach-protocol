@@ -1,284 +1,215 @@
-/**
- * Arena del sector: todo lo estático se funde en cuatro batches (lit, unlit,
- * charcos de luz y decals) para mantener el presupuesto de draw calls. Los
- * materiales de piso y paredes comparten una textura de paneles; las tiras
- * emisivas parpadean en shader con un único uniform de tiempo.
- */
 import * as THREE from 'three';
 import { wallHeight, type ArenaBox, type Material } from '../world/layout';
-import { SOLID_KIND, type MapData, type Solid } from '../world/map';
-import { dressingFor, type DressBox } from './dressing';
+import { SOLID_KIND, type MapData } from '../world/map';
+import { cargo, controlCore, controlRunway, fixture, floorPaint, planters, services, STENCIL_UV, tint, wallDecal, type Tint } from './architecture';
+import { catwalkRail, serverPanels, towerRings, type DressBox } from './dressing';
 import { FACE, MeshBuilder } from './geometry';
+import type { QualityName } from './presets';
 import { mulberry32 } from './random';
-import { domCanvas, paintDecalAtlas, paintPanelTile, paintRadialGlow, toCanvasTexture, type SurfaceFactory } from './textures';
-import { MATERIAL_COLORS, PALETTE, type ThemeLook } from './themes';
-import { perimeterFaces, type WallFace } from './walls';
+import { serviceBay, serviceNotes } from './service-bay';
+import { ArenaSurfaces, groupSurfaces, interiorDepth, SURFACE, TILE } from './surfaces';
+import { domCanvas, paintDecalAtlas, toCanvasTexture, type SurfaceFactory } from './textures';
+import { TerminalConsoles } from './terminals';
+import { MATERIAL_COLORS, type ThemeLook } from './themes';
+import { perimeterFaces } from './walls';
 
-/** Tile de paneles en metros: 2×2 paneles de 2 m por textura de 4 m. */
-const PANEL_TILE_M = 4;
-const STENCIL_WIDTH_M = 7;
-/** Media diagonal de un charco de luz bajo una luminaria (metros). */
-const POOL_HALF_M = 1.6;
-const HAZARD_LEN_M = 1.4;
+const TILE_M = 4;
 
-type Rgb = readonly [number, number, number];
-type Canvas = HTMLCanvasElement;
-
-/** Color lineal de un hex, opcionalmente escalado (HDR > 1 para el bloom). */
-export function linear(hex: number, k = 1): Rgb {
-  const c = new THREE.Color(hex);
-  return [c.r * k, c.g * k, c.b * k];
-}
-
-/** Variación por instancia (±6/255 sRGB, sembrada) para que paredes y tapas no sean planas. */
-function jitteredLinear(hex: number, rng: () => number): Rgb {
-  const jit = (): number => Math.round((rng() * 2 - 1) * 6);
-  const clamp255 = (v: number): number => Math.min(Math.max(v, 0), 255);
-  const r8 = (hex >> 16) & 0xff;
-  const g8 = (hex >> 8) & 0xff;
-  const b8 = hex & 0xff;
-  const c = new THREE.Color().setRGB(
-    clamp255(r8 + jit()) / 255,
-    clamp255(g8 + jit()) / 255,
-    clamp255(b8 + jit()) / 255,
-    THREE.SRGBColorSpace,
-  );
-  return [c.r, c.g, c.b];
-}
-
-/** Lámpara de techo: caja emisiva cerca del cielorraso (la lista de luminarias de layout). */
-function isCeilingLamp(b: ArenaBox, h: number): boolean {
-  return b.material === 'glow' && b.y > 5 && b.y < h;
-}
-
-/** Un rectángulo horizontal sobre el piso, centrado en (cx, cz). */
-function floorQuad(
-  builder: MeshBuilder,
-  cx: number,
-  cz: number,
-  hw: number,
-  hd: number,
-  y: number,
-  uv: readonly [number, number, number, number],
-  rgb: Rgb,
-): void {
-  builder.addQuad(
-    [cx - hw, y, cz - hd, cx - hw, y, cz + hd, cx + hw, y, cz + hd, cx + hw, y, cz - hd],
-    [0, 1, 0],
-    [uv[0], uv[1], uv[0], uv[3], uv[2], uv[3], uv[2], uv[1]],
-    rgb,
-  );
-}
-
-/** Estarcido vertical sobre una pared interior: centro, medio ancho y alto. */
-function wallDecalQuad(
-  builder: MeshBuilder,
-  face: WallFace,
-  halfW: number,
-  halfH: number,
-  yc: number,
-  uv: readonly [number, number, number, number],
-  rgb: Rgb,
-): void {
-  const off = 0.012; // separa el decal de la pared para evitar z-fighting
-  const nx = face.axis === 'x' ? face.dir : 0;
-  const nz = face.axis === 'z' ? face.dir : 0;
-  const cx = face.axis === 'x' ? face.at + nx * off : face.centre;
-  const cz = face.axis === 'z' ? face.at + nz * off : face.centre;
-  // eje "derecha" de un observador mirando la pared desde el interior: (nz, 0, -nx).
-  // Sin esto el texto se lee espejado en los muros este/oeste.
-  const ax = nz * halfW;
-  const az = -nx * halfW;
-  builder.addQuad(
-    [cx - ax, yc - halfH, cz - az, cx + ax, yc - halfH, cz + az, cx + ax, yc + halfH, cz + az, cx - ax, yc + halfH, cz - az],
-    [nx, 0, nz],
-    [uv[0], uv[1], uv[2], uv[1], uv[2], uv[3], uv[0], uv[3]],
-    rgb,
-  );
-}
-
-/**
- * Batches estáticos de un sector. El grupo se agrega a la escena y `dispose`
- * libera todo lo que creó (geometrías, materiales y texturas).
- */
+/** Four static batches: PBR, emissives, atmosphere/streaks, printed decals. */
 export class ArenaBuild {
   readonly group = new THREE.Group();
+  readonly terminals: TerminalConsoles | null;
   private readonly time = { value: 0 };
+  private readonly glossy = { value: 0 };
   private readonly disposables: { dispose(): void }[] = [];
-  private readonly factory: SurfaceFactory<Canvas>;
 
-  constructor(map: MapData, boxes: ArenaBox[], look: ThemeLook, factory: SurfaceFactory<Canvas> = domCanvas) {
-    this.factory = factory;
-    const lit = new MeshBuilder();
-    const unlit = new MeshBuilder();
-    const pools = new MeshBuilder();
-    const decals = new MeshBuilder();
+  constructor(map: MapData, boxes: ArenaBox[], look: ThemeLook, factory: SurfaceFactory<HTMLCanvasElement> = domCanvas, shared?: ArenaSurfaces) {
+    const lit = new MeshBuilder(), emit = new MeshBuilder(), mist = new MeshBuilder(), decals = new MeshBuilder();
     const h = wallHeight(map);
     const rng = mulberry32(0x5eed11);
-
     let lampIndex = 0;
     for (const b of boxes) {
-      if (b.material === 'ceiling') {
-        unlit.addBox(b.x, b.y, b.z, b.sx, b.sy, b.sz, { rgb: linear(PALETTE.ceiling), faces: FACE.negY });
+      if (b.terminal) continue;
+      const { x, y, z, sx, sy, sz, material } = b;
+      if (material === 'glow') {
+        const lamp = y > 5 && y < h;
+        const hex = lamp ? (lampIndex++ % 2 === 0 ? look.strip : look.stripAlt) : look.accent;
+        emit.addBox(x, y, z, sx, sy, sz, { rgb: tint(hex, lamp ? look.stripIntensity : look.accentIntensity) });
+        if (lamp) fixture(lit, mist, b, tint(look.pool, look.poolIntensity));
         continue;
       }
-      if (b.material === 'beam') {
-        unlit.addBox(b.x, b.y, b.z, b.sx, b.sy, b.sz, { rgb: linear(0x171f27) });
+      const rgb = litColour(material, look, rng);
+      if (material === 'crate' || material === 'cover') {
+        cargo(lit, decals, b, rgb);
         continue;
       }
-      if (b.material === 'glow') {
-        const lamp = isCeilingLamp(b, h);
-        const hex = lamp && lampIndex % 2 === 1 ? look.stripAlt : look.strip;
-        if (lamp) lampIndex += 1;
-        unlit.addBox(b.x, b.y, b.z, b.sx, b.sy, b.sz, { rgb: linear(hex, look.stripIntensity) });
-        if (lamp) floorQuad(pools, b.x, b.z, POOL_HALF_M, POOL_HALF_M, 0.012, [0, 0, 1, 1], linear(look.pool, look.poolIntensity));
-        continue;
-      }
-      lit.addBox(b.x, b.y, b.z, b.sx, b.sy, b.sz, { rgb: litColour(b.material, look, rng), uvTile: PANEL_TILE_M });
+      const surface = material === 'floor' ? SURFACE.floor
+        : material === 'wall' || material === 'pillar' || material === 'ceiling' ? SURFACE.concrete : SURFACE.metal;
+      const enclosure = material === 'floor' || material === 'beam' || material === 'ceiling'
+        || (material === 'wall' && sy >= h - 0.01);
+      lit.addBox(x, y, z, sx, sy, sz, {
+        rgb, uvTile: surface === SURFACE.floor ? TILE.floor : surface === SURFACE.concrete ? TILE.wall : TILE.metal,
+        surface: surface + (enclosure ? SURFACE.enclosure : 0), faces: material === 'ceiling' ? FACE.negY : material === 'floor' ? FACE.posY : undefined,
+      });
     }
 
     for (const s of map.solids) {
       if (s.kind !== SOLID_KIND.plinth) continue;
-      addTerminalAccent(unlit, s, look);
-      addHazard(decals, s);
+      const cx = (s.min[0] + s.max[0]) / 2, cz = (s.min[2] + s.max[2]) / 2;
+      const dx = (s.max[0] - s.min[0]) / 2, dz = (s.max[2] - s.min[2]) / 2;
+      const onX = Math.abs(cx) > Math.abs(cz);
+      floorPaint(decals, onX ? cx - Math.sign(cx) * (dx + 0.3) : cx,
+        onX ? cz : cz - Math.sign(cz) * (dz + 0.3), onX ? 0.18 : 0.7, onX ? 0.7 : 0.18,
+        0.015, [1, 1, 1], [0.008, 0.015, 0.992, 0.485]);
     }
+    if (map.theme === 'cryo') for (const d of towerRings(map, look)) route(d, lit, emit);
+    if (map.theme === 'archive') map.solids.forEach((s, i) => {
+      if (s.kind === SOLID_KIND.rack) for (const d of serverPanels(s, look, i + 1)) route(d, lit, emit);
+      if (s.kind === SOLID_KIND.deck) for (const d of catwalkRail(s, look)) route(d, lit, emit);
+    });
 
-    for (const d of dressingFor(map, look, h)) routeDressing(d, lit, unlit);
-
+    const stencil = tint(look.stencil);
     for (const f of perimeterFaces(map)) {
-      const halfW = Math.min(f.span, STENCIL_WIDTH_M / 2);
-      wallDecalQuad(decals, f, halfW, halfW / 4, h * 0.5, [0, 0.5, 1, 1], linear(look.stencil));
+      services(lit, emit, mist, f, h);
+      // Sector 01's core already identifies the room ahead; mark only the entry wall behind spawn.
+      if (map.id === 0 && (f.axis !== 'z' || f.dir !== -1)) continue;
+      const labelFace = map.id === 0 ? { ...f, centre: f.centre - 5.4 } : f;
+      wallDecal(decals, labelFace, 2.45, 0.66, h * 0.54, STENCIL_UV, stencil);
+    }
+    if (map.id === 0) {
+      controlCore(map, lit, decals, emit, mist, stencil);
+      controlRunway(lit, decals);
+      planters(map, lit);
+      serviceBay(lit, emit, decals, mist);
+      serviceNotes(lit, emit, mist);
     }
 
-    this.addLit(lit);
-    this.addUnlit(unlit);
-    this.addPools(pools);
-    this.addDecals(decals, `SECTOR 0${map.id + 1}`);
+    this.terminals = map.nodes.length ? new TerminalConsoles(map, lit) : null;
+    const surfaces = shared ?? new ArenaSurfaces();
+    const geo = lit.build();
+    groupSurfaces(geo);
+    const caster = new THREE.Mesh(geo, surfaces.materials);
+    caster.castShadow = caster.receiveShadow = true;
+    caster.customDepthMaterial = interiorDepth();
+    this.group.add(caster);
+    this.disposables.push(geo, caster.customDepthMaterial);
+    if (!shared) this.disposables.push(surfaces);
+    this.add(emit, this.emissives());
+    this.add(mist, this.atmosphere());
+    const decalCanvas = paintDecalAtlas(factory, `SECTOR 0${map.id + 1}`);
+    const decalMap = decalCanvas ? toCanvasTexture(decalCanvas, { wrap: false }) : null;
+    if (decalMap) this.disposables.push(decalMap);
+    const ink = new THREE.MeshStandardMaterial({
+      vertexColors: true, map: decalMap, roughness: 0.94, alphaTest: 0.45, envMapIntensity: 0.49,
+    });
+    const printed = this.add(decals, ink);
+    printed.visible = decalMap !== null;
+    printed.receiveShadow = true;
+    if (this.terminals) this.group.add(this.terminals.batch);
   }
 
-  /** Avanza el tiempo de las tiras parpadeantes. Un solo uniform, sin JS por LED. */
-  setTime(seconds: number): void {
-    this.time.value = seconds;
+  setTime(seconds: number): void { this.time.value = seconds; }
+  setQuality(preset: QualityName): void {
+    this.glossy.value = preset === 'low' ? 0 : 1;
   }
 
   dispose(): void {
+    this.terminals?.dispose();
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;
     this.group.removeFromParent();
   }
 
-  private texture(paint: Canvas | null, wrap: boolean): THREE.CanvasTexture | null {
-    if (!paint) return null;
-    const tex = toCanvasTexture(paint, { wrap });
-    this.disposables.push(tex);
-    return tex;
-  }
-
-  private addLit(builder: MeshBuilder): void {
-    if (builder.vertexCount === 0) return;
-    const tex = this.texture(paintPanelTile(this.factory), true);
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: tex });
+  private add(builder: MeshBuilder, mat: THREE.Material): THREE.Mesh {
     const geo = builder.build();
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
     this.group.add(mesh);
     this.disposables.push(geo, mat);
+    return mesh;
   }
 
-  private addUnlit(builder: MeshBuilder): void {
-    if (builder.vertexCount === 0) return;
-    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
-    const time = this.time;
+  private emissives(): THREE.MeshBasicMaterial {
+    const mat = new THREE.MeshBasicMaterial({ vertexColors: true });
     mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uTime = time;
+      shader.uniforms.uTime = this.time;
       shader.vertexShader = shader.vertexShader
         .replace('#include <color_pars_vertex>', '#include <color_pars_vertex>\nattribute float aBlink;\nvarying float vBlink;')
         .replace('#include <color_vertex>', '#include <color_vertex>\nvBlink = aBlink;');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <color_pars_fragment>', '#include <color_pars_fragment>\nuniform float uTime;\nvarying float vBlink;')
-        .replace(
-          '#include <color_fragment>',
-          '#include <color_fragment>\nif (vBlink > 0.0) diffuseColor.rgb *= step(0.5, fract(uTime * 1.7 + vBlink));',
-        );
+        .replace('#include <color_fragment>', '#include <color_fragment>\nif (vBlink > 0.0) diffuseColor.rgb *= mix(0.18, 1.0, step(0.5, fract(uTime * 1.7 + vBlink)));');
     };
     mat.customProgramCacheKey = () => 'bp-unlit-blink';
-    const geo = builder.build();
-    this.group.add(new THREE.Mesh(geo, mat));
-    this.disposables.push(geo, mat);
+    return mat;
   }
 
-  private addPools(builder: MeshBuilder): void {
-    if (builder.vertexCount === 0) return;
-    const tex = this.texture(paintRadialGlow(this.factory), false);
-    const mat = new THREE.MeshBasicMaterial({
-      map: tex,
+  private atmosphere(): THREE.ShaderMaterial {
+    return new THREE.ShaderMaterial({
+      uniforms: { uGlossy: this.glossy },
       vertexColors: true,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true,
+      // Additive lights output alpha zero; premultiplied wear can also darken the floor.
+      premultipliedAlpha: true,
+      vertexShader: `
+        uniform float uGlossy;
+        attribute float aSurface;
+        varying vec2 vCard;
+        varying vec3 vLight;
+        varying vec3 vWorld;
+        flat varying float vMode;
+        void main() {
+          vCard = uv;
+          vLight = color;
+          vMode = aSurface;
+          vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = aSurface > 1.5 && aSurface < 2.5 && uGlossy < 0.5 ? vec4(2.0, 2.0, 2.0, 1.0)
+            : projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        varying vec2 vCard;
+        varying vec3 vLight;
+        varying vec3 vWorld;
+        flat varying float vMode;
+        void main() {
+          vec2 xy = 2.0 * vCard - 1.0;
+          float a;
+          if (vMode < 0.5) {
+            a = pow(max(0.0, 1.0 - dot(xy, xy)), 2.0) * 0.52;
+          } else if (vMode < 1.5) {
+            a = pow(max(0.0, 1.0 - xy.x * xy.x), 3.0) * smoothstep(0.06, 0.85, vCard.y)
+              * (1.0 - smoothstep(0.94, 1.0, vCard.y)) * 0.18;
+          } else if (vMode < 2.5) {
+            float grazing = 1.0 - abs(normalize(cameraPosition - vWorld).y);
+            float ripple = 0.50 + 0.50 * sin(vWorld.z * 34.0 + sin(vWorld.x * 28.0) * 2.5);
+            a = pow(max(0.0, 1.0 - abs(xy.x)), 1.5) * pow(max(0.0, 1.0 - abs(xy.y)), 4.0)
+              * (0.3 + 0.7 * ripple) * grazing * 0.83;
+          } else {
+            float grain = fract(sin(dot(floor(vWorld.xz * vec2(153.0, 181.0)), vec2(86.7, 231.9))) * 17251.3);
+            float ellipse = dot(xy, xy);
+            float edge = pow(max(0.0, 1.0 - ellipse * (0.96 + 0.14 * grain)), 1.8);
+            a = edge * (vMode < 3.5 ? 0.77 : 0.29) * (0.54 + 0.46 * grain);
+          }
+          gl_FragColor = vec4(vLight, a);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+          gl_FragColor.rgb *= a;
+          if (vMode < 2.5) gl_FragColor.a = 0.0;
+        }`,
     });
-    const geo = builder.build();
-    this.group.add(new THREE.Mesh(geo, mat));
-    this.disposables.push(geo, mat);
-  }
-
-  private addDecals(builder: MeshBuilder, label: string): void {
-    if (builder.vertexCount === 0) return;
-    const tex = this.texture(paintDecalAtlas(this.factory, label), false);
-    const mat = new THREE.MeshBasicMaterial({
-      map: tex,
-      vertexColors: true,
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-    });
-    const geo = builder.build();
-    this.group.add(new THREE.Mesh(geo, mat));
-    this.disposables.push(geo, mat);
   }
 }
 
-/** Decoración `lit` al batch lit; emisiva o LED al unlit (con su fase de parpadeo). */
-function routeDressing(d: DressBox, lit: MeshBuilder, unlit: MeshBuilder): void {
-  if (d.role === 'lit') {
-    lit.addBox(d.x, d.y, d.z, d.sx, d.sy, d.sz, { rgb: linear(d.hex), uvTile: PANEL_TILE_M, faces: d.faces });
-    return;
-  }
-  unlit.addBox(d.x, d.y, d.z, d.sx, d.sy, d.sz, { rgb: linear(d.hex, d.intensity), faces: d.faces, blink: d.blink });
+function route(d: DressBox, lit: MeshBuilder, emit: MeshBuilder): void {
+  (d.role === 'lit' ? lit : emit).addBox(d.x, d.y, d.z, d.sx, d.sy, d.sz, {
+    rgb: tint(d.hex, d.intensity), faces: d.faces, uvTile: TILE_M, surface: SURFACE.metal, blink: d.blink,
+  });
 }
 
-/** Color lineal del batch lit para un material; paredes y tapas reciben jitter y tinte del tema. */
-export function litColour(material: Material, look: ThemeLook, rng: () => number): Rgb {
+export function litColour(material: Material, look: ThemeLook, rng: () => number): Tint {
   const hex = MATERIAL_COLORS[material];
-  if (material === 'wall' || material === 'trim') {
-    const base = jitteredLinear(hex, rng);
-    const tint = linear(look.wallTint);
-    return [base[0] * tint[0], base[1] * tint[1], base[2] * tint[2]];
-  }
-  return linear(hex);
-}
-
-function addTerminalAccent(builder: MeshBuilder, s: Solid, look: ThemeLook): void {
-  const cx = (s.min[0] + s.max[0]) / 2;
-  const cz = (s.min[2] + s.max[2]) / 2;
-  const hw = (s.max[0] - s.min[0]) / 2 - 0.12;
-  const hd = (s.max[2] - s.min[2]) / 2 - 0.12;
-  floorQuad(builder, cx, cz, hw, hd, s.max[1] + 0.008, [0, 0, 1, 1], linear(look.accent, look.accentIntensity));
-}
-
-/** Franja de peligro en el piso, frente al terminal y hacia el centro del sector. */
-function addHazard(builder: MeshBuilder, s: Solid): void {
-  const cx = (s.min[0] + s.max[0]) / 2;
-  const cz = (s.min[2] + s.max[2]) / 2;
-  const onX = Math.abs(cx) > Math.abs(cz);
-  const side = onX ? -Math.sign(cx) : -Math.sign(cz);
-  const hx = onX ? 0.18 : HAZARD_LEN_M / 2;
-  const hz = onX ? HAZARD_LEN_M / 2 : 0.18;
-  const ox = onX ? cx + side * (Math.abs(s.max[0] - s.min[0]) / 2 + 0.3) : cx;
-  const oz = onX ? cz : cz + side * (Math.abs(s.max[2] - s.min[2]) / 2 + 0.3);
-  floorQuad(builder, ox, oz, hx, hz, 0.015, [0, 0, 1, 0.5], [1, 1, 1]);
+  if (material !== 'wall' && material !== 'trim') return tint(hex);
+  const clamp = (v: number): number => Math.max(0, Math.min(255, v + (rng() * 2 - 1) * 6)) / 255;
+  const base = new THREE.Color().setRGB(clamp(hex >> 16), clamp((hex >> 8) & 255), clamp(hex & 255), THREE.SRGBColorSpace);
+  base.multiply(new THREE.Color(look.wallTint));
+  return [base.r, base.g, base.b];
 }

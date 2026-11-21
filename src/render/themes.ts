@@ -8,20 +8,17 @@
 import type { Material } from '../world/layout';
 import type { ThemeName } from '../world/map';
 
-/** Ladder palette: each entry is the albedo fed to the lighting rig so the
- * FINAL sRGB pixel lands on the composition targets (measured from frames):
- * floor ≈ #10171d (clearly darker than walls), walls ≈ #1e2833, cover ≈
- * #2a3844, ceiling ≈ #0c1216. Value steps between surfaces do the reading. */
+/** Material albedos; evaluate the rendered ladder after ACES (art-direction.md). */
 export const PALETTE = {
   bg: 0x070d12, // sky / background above the walls
-  floor: 0x0e161b, // × grid map (base 0.83) × light → ≈ #10171d
-  wall: 0x242d36, // → ≈ #1e2833
-  cover: 0x32404b, // → ≈ #2a3844, one step above walls
-  crate: 0x2c3944,
-  pillar: 0x2d3a44,
-  trim: 0x415164, // lighter panel/cap accent
-  beam: 0x0b1015, // structural ceiling beams, darker than the ceiling
-  ceiling: 0x0c1216, // enclosed dark roof (unlit basic material → exact)
+  floor: 0x28363e,
+  wall: 0x768994,
+  cover: 0x9a9e9d,
+  crate: 0x8599a0,
+  pillar: 0x85949a,
+  trim: 0x657682,
+  beam: 0x27333b,
+  ceiling: 0x394249,
   glow: 0x5ce08b, // mint accent (unlit basic material)
   sun: 0xe6ecf2,
   fill: 0x9fb0bd,
@@ -75,22 +72,22 @@ export interface ThemeLook {
 
 const CONTROL: ThemeLook = {
   background: PALETTE.bg,
-  fogColor: PALETTE.bg,
-  fogDensity: 0.01,
-  hemiSky: PALETTE.hemiSky,
-  hemiGround: PALETTE.hemiGround,
-  hemiIntensity: 3.75,
-  sun: PALETTE.sun,
-  sunIntensity: 3.2,
-  fill: PALETTE.fill,
-  strip: PALETTE.glow,
-  stripAlt: PALETTE.glow,
-  stripIntensity: 2,
-  pool: PALETTE.glow,
-  poolIntensity: 0.06,
+  fogColor: 0x19313c,
+  fogDensity: 0.019,
+  hemiSky: 0xc6e2f1,
+  hemiGround: 0x8c7464,
+  hemiIntensity: 0.98,
+  sun: 0xc3e9fb,
+  sunIntensity: 2.32,
+  fill: 0xcdb19b,
+  strip: 0x89e9ff,
+  stripAlt: 0xb3f6ff,
+  stripIntensity: 3.15,
+  pool: 0x8adfff,
+  poolIntensity: 0.23,
   accent: PALETTE.glow,
-  accentIntensity: 1.6,
-  stencil: 0x8fa3b3,
+  accentIntensity: 2.05,
+  stencil: 0xd1cdc0,
   wallTint: 0xffffff,
 };
 
@@ -101,17 +98,18 @@ export const THEME_LOOKS: Record<ThemeName, ThemeLook> = {
     ...CONTROL,
     background: 0x061018,
     fogColor: 0x0a1a24,
-    fogDensity: 0.018,
+    fogDensity: 0.024,
     hemiSky: 0xcfeaf6,
     hemiGround: 0x1f2b33,
-    hemiIntensity: 3.6,
+    hemiIntensity: 1.07,
     sun: 0xe8f6ff,
     sunIntensity: 3.0,
     fill: 0x8fc2d6,
     strip: 0x7fe8ff,
     stripAlt: 0xf0fbff,
-    stripIntensity: 2.2,
+    stripIntensity: 2.9,
     pool: 0x7fe8ff,
+    poolIntensity: 0.22,
     accent: 0x7fe8ff,
     accentIntensity: 1.5,
     stencil: 0xa9d8e8,
@@ -125,15 +123,15 @@ export const THEME_LOOKS: Record<ThemeName, ThemeLook> = {
     fogDensity: 0.014,
     hemiSky: 0xf0dcc4,
     hemiGround: 0x2c2620,
-    hemiIntensity: 3.5,
+    hemiIntensity: 1.08,
     sun: 0xffe2bd,
     sunIntensity: 3.0,
     fill: 0xa3896a,
     strip: 0xffa640,
     stripAlt: 0xffb860,
-    stripIntensity: 2.2,
+    stripIntensity: 3.4,
     pool: 0xffa640,
-    poolIntensity: 0.08,
+    poolIntensity: 0.24,
     accent: 0x4de3c6,
     accentIntensity: 1.7,
     stencil: 0xd9c7a8,

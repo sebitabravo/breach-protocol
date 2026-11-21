@@ -1,97 +1,23 @@
 /**
- * Viewmodels de primera persona: PB-01 (sidearm), AR-04 (carbine) y SG-08
- * (shotgun). Cada arma son dos meshes: el cuerpo lit (Lambert) y un batch
- * emisivo (mira y franjas mint, MeshBasic). Solo el arma equipada dibuja, así
- * que el costo es 2 draws por frame. El pose (hip, ADS, retroceso, recarga)
- * sale del snapshot; la clase no conoce la simulación.
+ * Camera-local weapon rig. Authored weapons are the default; the Kenney GLB
+ * route remains available for asset comparison and fallback.
  */
 import * as THREE from 'three';
 import type { Snapshot } from '../wasm/bridge';
 import { WEAPON } from '../wasm/protocol';
-import { buildMergedGeometry, MeshBuilder, type BoxPart } from './geometry';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { authorWeapon, weaponMaterials, type AuthoredWeapon } from './authored-weapon';
+import { FINISH } from './finishes';
+import { addHardware, COLLAR_FRONT, profileWeapon } from './weapon-hardware';
 
 const IDENTITY = new THREE.Matrix4();
-
-/** Weapon viewmodel palette: darker than the arena surfaces so the gun sits
- * BELOW the HUD and never becomes the brightest object in the frame, ONE
- * mint accent stripe so it reads as foreground geometry, not UI. */
-const W = {
-  dark: 0x1f262e,
-  body: 0x3a4753,
-  border: 0x4a5865,
-  accent: 0x5ce08b,
-  sight: 0x5ce08b,
-} as const;
-
-/** Franjas y mira emisivas: >1 entra al bloom en medium y high. */
-const EMIT_K = 1.6;
-
-/** PB-01 sidearm parts. Origin at the grip / hand. Muzzle ≈ (0, 0.02, -0.2). */
-function sidearmBody(): BoxPart[] {
-  return [
-    { x: 0, y: 0.02, z: -0.02, sx: 0.05, sy: 0.06, sz: 0.24, color: W.body }, // slide
-    { x: 0, y: -0.02, z: -0.02, sx: 0.045, sy: 0.05, sz: 0.2, color: W.dark }, // frame
-    { x: 0, y: -0.09, z: 0.06, sx: 0.045, sy: 0.15, sz: 0.07, color: W.dark }, // grip
-    { x: 0, y: -0.05, z: -0.03, sx: 0.04, sy: 0.02, sz: 0.08, color: W.dark }, // guard
-    { x: 0, y: 0.02, z: -0.17, sx: 0.024, sy: 0.024, sz: 0.09, color: W.border }, // barrel
-    { x: 0, y: 0.02, z: -0.225, sx: 0.032, sy: 0.032, sz: 0.024, color: W.dark }, // muzzle block
-    { x: 0, y: 0.06, z: 0.02, sx: 0.03, sy: 0.02, sz: 0.05, color: W.dark }, // rear sight
-  ];
-}
-
-/** Emisivo del PB-01: franja lateral y punto de mira en el frente del slide. */
-function sidearmGlow(): BoxPart[] {
-  return [
-    { x: 0.027, y: 0.02, z: 0, sx: 0.004, sy: 0.012, sz: 0.1, color: W.accent }, // stripe
-    { x: 0, y: 0.06, z: -0.1, sx: 0.012, sy: 0.012, sz: 0.012, color: W.sight }, // sight dot
-  ];
-}
-
-/** AR-04 carbine parts. Origin at the grip / hand. Muzzle ≈ (0, 0.03, -0.58). */
-function carbineBody(): BoxPart[] {
-  return [
-    { x: 0, y: 0.02, z: -0.1, sx: 0.05, sy: 0.08, sz: 0.5, color: W.body }, // body
-    { x: 0, y: 0.03, z: -0.45, sx: 0.03, sy: 0.03, sz: 0.22, color: W.border }, // barrel
-    { x: 0, y: 0.03, z: -0.575, sx: 0.038, sy: 0.038, sz: 0.03, color: W.dark }, // muzzle block
-    { x: 0, y: -0.01, z: 0.24, sx: 0.045, sy: 0.1, sz: 0.16, color: W.dark }, // stock
-    { x: 0, y: -0.08, z: 0.1, sx: 0.04, sy: 0.12, sz: 0.06, color: W.dark }, // grip
-    { x: 0, y: -0.1, z: -0.05, sx: 0.04, sy: 0.14, sz: 0.05, color: W.dark }, // magazine
-    { x: 0, y: 0.08, z: -0.08, sx: 0.025, sy: 0.05, sz: 0.1, color: W.dark }, // sight housing
-  ];
-}
-
-/** Emisivo del AR-04: franja lateral y punto rojo de la mira holográfica. */
-function carbineGlow(): BoxPart[] {
-  return [
-    { x: 0.027, y: 0.03, z: -0.15, sx: 0.004, sy: 0.012, sz: 0.12, color: W.accent }, // stripe
-    { x: 0, y: 0.115, z: -0.08, sx: 0.014, sy: 0.014, sz: 0.014, color: W.sight }, // red dot
-  ];
-}
-
-/**
- * SG-08 Scatter: pump shotgun. Long receiver, tube magazine under a wide
- * barrel, a pump forend and a bell muzzle, so it reads as a different class of
- * weapon from the two rifles/pistols at a glance.
- */
-function shotgunBody(): BoxPart[] {
-  return [
-    { x: 0, y: 0.03, z: -0.02, sx: 0.06, sy: 0.09, sz: 0.22, color: W.body }, // receiver
-    { x: 0, y: 0.05, z: -0.3, sx: 0.035, sy: 0.035, sz: 0.5, color: W.border }, // barrel
-    { x: 0, y: 0.05, z: -0.56, sx: 0.07, sy: 0.07, sz: 0.05, color: W.dark }, // bell muzzle
-    { x: 0, y: 0.005, z: -0.3, sx: 0.024, sy: 0.024, sz: 0.42, color: W.border }, // tube magazine
-    { x: 0, y: -0.005, z: -0.26, sx: 0.07, sy: 0.05, sz: 0.14, color: W.dark }, // pump forend
-    { x: 0, y: -0.01, z: 0.2, sx: 0.05, sy: 0.11, sz: 0.22, color: W.dark }, // stock
-    { x: 0, y: -0.09, z: 0.07, sx: 0.045, sy: 0.13, sz: 0.06, color: W.dark }, // grip
-  ];
-}
-
-/** Emisivo del SG-08: franja lateral y cuenta de mira en la boca del cañón. */
-function shotgunGlow(): BoxPart[] {
-  return [
-    { x: 0.034, y: 0.03, z: -0.02, sx: 0.004, sy: 0.012, sz: 0.16, color: W.accent }, // stripe
-    { x: 0, y: 0.1, z: -0.5, sx: 0.01, sy: 0.01, sz: 0.01, color: W.sight }, // front bead
-  ];
-}
+export const CAMERA_FOV = 75;
+export const VIEW_FOV = 70;
+export const VIEW_NEAR = 0.025;
+const TAN_HALF = Math.tan(THREE.MathUtils.degToRad(VIEW_FOV / 2));
+const TUCK_DISTANCE = 0.24;
+const TUCK_DROP = 0.060;
+const TUCK_PITCH = 0.10;
 
 /** Camera-space weapon anchors: hip position, ADS position, muzzle tip, flash size. */
 interface WeaponPose {
@@ -138,55 +64,267 @@ const RELOAD_DROP = 0.09;
 interface WeaponView {
   root: THREE.Group;
   pose: WeaponPose;
+  modelPose?: WeaponPose;
+  points?: THREE.Vector3[];
+  aim?: readonly [number, number];
+  scale?: number;
+  muzzle: THREE.Object3D;
+  worldMuzzle: THREE.Object3D;
+  authored?: AuthoredWeapon;
 }
 
-function buildWeapon(weaponId: number): WeaponView {
-  const root = new THREE.Group();
-  const body = weaponId === WEAPON.carbine ? carbineBody() : weaponId === WEAPON.shotgun ? shotgunBody() : sidearmBody();
-  const glow = weaponId === WEAPON.carbine ? carbineGlow() : weaponId === WEAPON.shotgun ? shotgunGlow() : sidearmGlow();
-  const lit = new THREE.Mesh(buildMergedGeometry(body), new THREE.MeshLambertMaterial({ vertexColors: true }));
-  const emit = new THREE.Mesh(buildEmissiveGeometry(glow), new THREE.MeshBasicMaterial({ vertexColors: true }));
-  root.add(lit, emit);
-  return { root, pose: POSES[weaponId] ?? POSES[WEAPON.sidearm] };
+// Socket coordinates on the GLBs, where +Z is forward. The repeater has two
+// apertures: the center of their combined bounds is not inside either bore.
+const SOCKETS = {
+  blaster: [0, 0.45, 0.89],
+  'blaster-repeater': [0.2, 0.45, 1.17],
+} as const;
+type ModelFile = keyof typeof SOCKETS;
+
+/** Point the asset along -Z and center the marked bore on the rig's axis. */
+export function fitModel(model: THREE.Object3D, length: number, file: ModelFile): THREE.Object3D {
+  model.position.set(0, 0, 0);
+  model.rotation.set(0, Math.PI, 0);
+  model.scale.setScalar(1);
+  const bounds = new THREE.Box3().setFromObject(model, true);
+  const scale = length / (bounds.max.z - bounds.min.z);
+  const [x, y, z] = SOCKETS[file];
+  model.scale.set(scale * 0.8, scale, scale);
+  const fittedBounds = bounds.setFromObject(model, true);
+  model.position.set(x * model.scale.x, -y * scale, 0.18 - fittedBounds.max.z);
+  model.updateMatrix();
+  const anchor = new THREE.Object3D();
+  anchor.name = 'muzzle';
+  anchor.position.set(x, y, z).applyMatrix4(model.matrix);
+  return anchor;
 }
 
-/** Batch emisivo: el color lineal se escala por EMIT_K (>1) para que el bloom lo tome. */
-function buildEmissiveGeometry(parts: BoxPart[]): THREE.BufferGeometry {
-  const builder = new MeshBuilder();
-  const c = new THREE.Color();
-  for (const p of parts) {
-    c.setHex(p.color);
-    builder.addBox(p.x, p.y, p.z, p.sx, p.sy, p.sz, { rgb: [c.r * EMIT_K, c.g * EMIT_K, c.b * EMIT_K] });
+function meshPoints(root: THREE.Object3D): THREE.Vector3[] {
+  const points: THREE.Vector3[] = [];
+  root.updateMatrixWorld(true);
+  root.traverse((part) => {
+    const positions = (part as THREE.Mesh).geometry?.getAttribute('position');
+    if (!positions) return;
+    for (let i = 0; i < positions.count; ++i) {
+      points.push(new THREE.Vector3().fromBufferAttribute(positions, i).applyMatrix4(part.matrixWorld));
+    }
+  });
+  return points;
+}
+
+const HIP_ROLL = -0.12;
+const ACTION_DURATION = 0.115;
+
+/** Fit the projected mesh at load/resize, not per frame. A fixed vertical
+ * FOV needs different camera-local offsets and scales in portrait. */
+function frameModel(view: WeaponView, aspect: number): void {
+  if (!view.points) return;
+  const fx = TAN_HALF * aspect;
+  const fy = TAN_HALF;
+  const x = aspect < 1 ? 0.44 : 0.40;
+  // Wide views preserve extra bottom clearance because the silhouette gets taller.
+  const y = aspect < 1 ? -0.40 : -0.45 + THREE.MathUtils.clamp((aspect - 16 / 9) * 0.09, 0, 0.045);
+  const width = 0.44; // NDC span: 22% of the viewport width.
+  const position = new THREE.Vector3(x * fx, y * fy, -1);
+  const euler = new THREE.Euler(0, 0, HIP_ROLL, 'YXZ');
+  const rotation = new THREE.Quaternion();
+  const p = new THREE.Vector3();
+  let scale = Math.min(0.95, aspect * 0.85);
+  for (let pass = 0; pass < 8; ++pass) {
+    // The barrel axis intersects the center camera ray; roll is along that axis.
+    const reach = Math.max(0.68, position.x * 1.9);
+    euler.y = Math.atan2(position.x, reach);
+    euler.x = Math.atan2(-position.y, Math.hypot(reach, position.x));
+    rotation.setFromEuler(euler);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const point of view.points) {
+      p.copy(point).multiplyScalar(scale).applyQuaternion(rotation).add(position);
+      const nx = p.x / (-p.z * fx), ny = p.y / (-p.z * fy);
+      minX = Math.min(minX, nx); maxX = Math.max(maxX, nx);
+      minY = Math.min(minY, ny); maxY = Math.max(maxY, ny);
+    }
+    if (pass === 7) break;
+    position.x += (x - (minX + maxX) / 2) * fx * 0.78;
+    position.y += (y - (minY + maxY) / 2) * fy * 0.78;
+    // The compact slide needs additional scale on wide displays to retain
+    // the same horizontal footprint as the long guns.
+    const sidearm = view.authored && view.root.name === 'PB-01';
+    const maxScale = sidearm ? (aspect > 16 / 9 ? 1.28 : 1.18) : 1.24;
+    scale = Math.min(scale * THREE.MathUtils.clamp(width / (maxX - minX), 0.75, 1.25), maxScale);
   }
-  return builder.build();
+  view.modelPose = { ...view.pose, hip: [position.x, position.y, position.z], ads: [0, -0.13, -0.79] };
+  view.aim = [euler.x, euler.y];
+  view.scale = scale;
+}
+
+function disposeMeshes(root: THREE.Object3D, shared: readonly THREE.Material[] = []): void {
+  const resources = new Set<{ dispose(): void }>();
+  root.traverse((part) => {
+    const mesh = part as THREE.Mesh;
+    if (!mesh.geometry) return;
+    resources.add(mesh.geometry);
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of materials) {
+      if (shared.includes(mat)) continue;
+      resources.add(mat);
+      const map = (mat as THREE.MeshStandardMaterial).map;
+      if (map) resources.add(map);
+    }
+  });
+  for (const resource of resources) resource.dispose();
+}
+
+/** The Kenney UVs point at the right half of each swatch; the remap is on
+ * the left half. Retarget the runtime UVs without changing the source GLBs. */
+function finishAtlas(model: THREE.Object3D): void {
+  const materials = new Set<THREE.MeshStandardMaterial>();
+  model.traverse((part) => {
+    if (!(part instanceof THREE.Mesh)) return;
+    const material = part.material;
+    if (material instanceof THREE.MeshStandardMaterial) materials.add(material);
+    const uv = part.geometry.getAttribute('uv');
+    for (let i = 0; i < uv.count; ++i) {
+      const u = uv.getX(i), v = uv.getY(i);
+      // The yellow swatch covers the entire rear housing and a side rail;
+      // direct those large parts to graphite. Keep mint off the broad faces.
+      if (u < 0.125 && v < 0.75) uv.setXY(i, 16 / 512, v + 0.25);
+      else if (u >= 0.375) uv.setX(i, 272 / 512);
+      else uv.setX(i, u - 32 / 512);
+    }
+  });
+  for (const mat of materials) {
+    mat.side = THREE.FrontSide;
+    mat.roughness = 0.63;
+    mat.metalness = 0.36;
+  }
 }
 
 export class Viewmodel {
+  private readonly metal = new THREE.MeshStandardMaterial({
+    vertexColors: true, metalness: FINISH.steel.metalness, roughness: FINISH.steel.roughness, normalScale: new THREE.Vector2(0.022, 0.022),
+  });
+  private readonly markings = new THREE.MeshBasicMaterial({ vertexColors: true });
+  private readonly materials = weaponMaterials(this.metal, this.markings);
+  private readonly shared = [...new Set(Object.values(this.materials))];
   private readonly views = new Map<number, WeaponView>();
   private active: WeaponView | null = null;
   private adsAmount = 0;
+  private tuckAmount = 0;
+  private readonly viewToWorld = new THREE.Matrix4();
+  private aspect = 16 / 9;
+  private hipScale = 1;
+  private screenScale = 1;
+  private started = false;
+  private disposed = false;
 
-  constructor(parent: THREE.Object3D) {
+  constructor(parent: THREE.Object3D, private readonly useAuthored = true) {
+    // The shared tiles depict heavy tread plate at arena scale. Keep the same
+    // PBR channels but suppress their macro pattern on machined parts.
+    this.metal.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <map_fragment>', `#ifdef USE_MAP
+          diffuseColor *= mix(vec4(1.0), texture2D(map, vMapUv), 0.10);
+        #endif`)
+        .replace('#include <roughnessmap_fragment>', `float roughnessFactor = roughness;
+        #ifdef USE_ROUGHNESSMAP
+          roughnessFactor *= mix(1.0, texture2D(roughnessMap, vRoughnessMapUv).g, 0.25);
+        #endif`);
+    };
+    this.metal.customProgramCacheKey = () => 'bp-viewmodel-machined';
     for (const id of [WEAPON.sidearm, WEAPON.carbine, WEAPON.shotgun]) {
-      const view = buildWeapon(id);
-      view.root.visible = false;
-      parent.add(view.root);
+      const root = new THREE.Group();
+      root.rotation.order = 'YXZ';
+      const authored = authorWeapon(root, id, this.materials);
+      const view: WeaponView = { root, pose: POSES[id], points: meshPoints(root), muzzle: authored.muzzle, worldMuzzle: new THREE.Object3D(), authored };
+      frameModel(view, this.aspect);
+      root.visible = false;
+      parent.add(root);
       this.views.set(id, view);
     }
+  }
+
+  /** Borrow the arena's metal textures. ArenaSurfaces owns their disposal. */
+  setMetalMaps(metal: THREE.MeshStandardMaterial): void {
+    if (!metal.map || this.metal.map === metal.map || this.disposed) return;
+    this.metal.map = metal.map;
+    this.metal.normalMap = metal.normalMap;
+    this.metal.roughnessMap = metal.roughnessMap;
+    this.metal.metalnessMap = metal.metalnessMap;
+    this.metal.needsUpdate = true;
+  }
+
+  load(): void {
+    if (this.useAuthored || this.started || this.disposed) return;
+    this.started = true;
+    const loader = new GLTFLoader();
+    const load = (file: ModelFile, ids: readonly number[]): void => {
+      void loader.loadAsync(`${import.meta.env.BASE_URL}assets/models/${file}.glb`).then(({ scene }) => {
+        if (this.disposed) {
+          disposeMeshes(scene);
+          return;
+        }
+        finishAtlas(scene);
+        profileWeapon(scene);
+        ids.forEach((id, i) => {
+          const view = this.views.get(id)!;
+          const model = i === 0 ? scene : scene.clone();
+          const small = id === WEAPON.sidearm;
+          const carrier = new THREE.Group();
+          carrier.name = file;
+          const anchor = fitModel(model, small ? 0.64 : id === WEAPON.carbine ? 0.74 : 0.82, file);
+          carrier.add(model, anchor);
+          addHardware(carrier, model.matrix, SOCKETS[file], small, this.metal, this.markings);
+          // Advance the FX socket along the same bore to clear the collar lip.
+          anchor.position.z -= (COLLAR_FRONT + 0.004) * model.scale.z;
+          view.points = meshPoints(carrier);
+          frameModel(view, this.aspect);
+          disposeMeshes(view.root, this.shared);
+          view.authored = undefined;
+          view.root.clear().add(carrier);
+          view.root.rotation.order = 'YXZ';
+          view.muzzle = anchor;
+        });
+      }).catch((error: unknown) => {
+        if (!this.disposed) console.warn(`Viewmodel ${file}.glb unavailable: using authored fallback`, error);
+      });
+    };
+    load('blaster', [WEAPON.sidearm]);
+    load('blaster-repeater', [WEAPON.carbine, WEAPON.shotgun]);
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    const detached = new THREE.Group();
+    for (const { root } of this.views.values()) detached.add(root);
+    disposeMeshes(detached, this.shared);
+    for (const material of this.shared) material.dispose();
+    this.views.clear();
+    this.active = null;
+  }
+
+  setAspect(aspect: number): void {
+    if (aspect === this.aspect) return;
+    this.aspect = aspect;
+    for (const view of this.views.values()) frameModel(view, aspect);
+    this.hipScale = Math.min(1, aspect / 1.16);
+    this.screenScale = THREE.MathUtils.clamp(0.40 + aspect * 0.61, 0.62, 1);
   }
 
   hide(): void {
     if (this.active) this.active.root.visible = false;
     this.active = null;
+    this.tuckAmount = 0;
   }
 
   /** Muzzle flash size for the weapon (world units of the sprite). */
   flashSize(weaponId: number): number {
-    return (this.views.get(weaponId) ?? this.views.get(WEAPON.sidearm))?.pose.flash ?? 0.24;
+    const view = this.views.get(weaponId) ?? this.views.get(WEAPON.sidearm);
+    const framing = view?.authored ? this.screenScale : Math.min(1, view?.scale ?? 1);
+    return (view?.pose.flash ?? 0.24) * framing * 0.65;
   }
 
   /** Pose the weapon for the snapshot; `bobY` is the camera bob this frame. */
-  update(state: Snapshot, dt: number, bobY: number): void {
+  update(state: Snapshot, dt: number, bobY: number, obstruction = 0, viewToWorld = IDENTITY): void {
     const view = this.views.get(state.weapon) ?? this.views.get(WEAPON.sidearm);
     if (!view) return;
     if (this.active !== view) {
@@ -194,29 +332,82 @@ export class Viewmodel {
       this.active = view;
       view.root.visible = true;
     }
-    const pose = view.pose;
+    const pose = view.modelPose ?? view.pose;
     const targetAds = state.ads > 0.5 ? 1 : 0;
     this.adsAmount += (targetAds - this.adsAmount) * Math.min(dt * 10, 1);
+    // Faster in than out. Scaling around the eye brings the gun back without
+    // inflating it on screen; the drop and dip are the visible tuck.
+    this.tuckAmount = THREE.MathUtils.damp(this.tuckAmount, obstruction, obstruction > this.tuckAmount ? 16 : 10, dt);
+    const tuck = this.tuckAmount;
+    const reach = 1 - tuck * TUCK_DISTANCE;
 
-    const kick = Math.min(Math.max(state.recoilPitch * 0.6, 0), 0.09);
-    const reloadT = state.reloading ? Math.sin(state.reloadProgress * Math.PI) : 0;
-    const reloadRot = reloadT * 0.8;
-    const reloadDrop = reloadT * RELOAD_DROP;
+    const kick = THREE.MathUtils.clamp(state.recoilPitch * 0.58, 0, 0.048);
+    const reload = state.reloading ? Math.sin(state.reloadProgress * Math.PI) : 0;
+    const ads = this.adsAmount;
+    const model = view.modelPose !== undefined;
+    const hip = model ? 1 - ads : 0;
     view.root.position.set(
-      pose.hip[0] + (pose.ads[0] - pose.hip[0]) * this.adsAmount,
-      pose.hip[1] + (pose.ads[1] - pose.hip[1]) * this.adsAmount + bobY * 0.5 - reloadDrop,
-      pose.hip[2] + (pose.ads[2] - pose.hip[2]) * this.adsAmount + kick,
-    );
-    view.root.rotation.set(kick * 1.5 + reloadRot, 0, 0);
-    view.root.scale.set(VIEWMODEL_SCALE, VIEWMODEL_SCALE, VIEWMODEL_SCALE);
-    // el muzzle se lee en este mismo frame: la matriz debe estar al día
+      THREE.MathUtils.lerp(pose.hip[0] * (model ? 1 : this.hipScale), pose.ads[0], ads),
+      THREE.MathUtils.lerp(pose.hip[1], pose.ads[1], ads) * (model ? 1 : this.screenScale)
+        + bobY * 0.35 - reload * (model ? 0.055 : RELOAD_DROP),
+      THREE.MathUtils.lerp(pose.hip[2], pose.ads[2], ads) + kick,
+    ).multiplyScalar(reach);
+    view.root.position.y -= tuck * TUCK_DROP;
+    view.root.rotation.set((view.aim?.[0] ?? 0) * hip + 0.08 * ads + kick * 0.75 + reload * 0.36 - tuck * TUCK_PITCH,
+      (view.aim?.[1] ?? 0) * hip, HIP_ROLL * hip + bobY * 0.4 + reload * 0.16);
+    view.root.scale.setScalar((view.scale ?? VIEWMODEL_SCALE * this.screenScale) * reach);
+    if (view.authored) {
+      const { action, dot, heat } = view.authored;
+      view.authored.actionTime = Math.max(0, view.authored.actionTime - dt);
+      action.position.z = view.authored.travel * (view.authored.actionTime / ACTION_DURATION) ** 2;
+      view.authored.temperature *= Math.exp(-dt * 3.4);
+      heat.material.emissiveIntensity = view.authored.temperature * 0.55;
+      dot?.material.color.setHex(0x5ce08b).multiplyScalar(0.42 + ads * 1.55);
+    }
+    // FX read the posed sockets in the same frame.
     view.root.updateMatrixWorld(true);
+    this.viewToWorld.copy(viewToWorld);
+    view.worldMuzzle.matrixWorld.multiplyMatrices(this.viewToWorld, view.muzzle.matrixWorld);
+  }
+
+  /** Visual-only shot cues; never drive these from the player's input. */
+  fire(weaponId: number): void {
+    const authored = this.views.get(weaponId)?.authored;
+    if (!authored) return;
+    authored.actionTime = ACTION_DURATION;
+    authored.action.position.z = authored.travel;
+    authored.temperature = Math.min(1, authored.temperature + 0.34);
+    authored.heat.material.emissiveIntensity = authored.temperature * 0.55;
   }
 
   /** Muzzle tip in world space for the given weapon id (written into `out`). */
   muzzleWorld(weaponId: number, out: THREE.Vector3): THREE.Vector3 {
-    const view = this.views.get(weaponId) ?? this.views.get(WEAPON.sidearm);
-    const m = view?.pose.muzzle ?? POSES[WEAPON.sidearm].muzzle;
-    return out.set(m[0], m[1], m[2]).applyMatrix4(view?.root.matrixWorld ?? IDENTITY);
+    return out.setFromMatrixPosition(this.worldMuzzleSocket(weaponId)?.matrixWorld ?? IDENTITY);
   }
+
+  /** Receiver-side port in the same posed rig as the muzzle. */
+  ejectFrame(weaponId: number, position: THREE.Vector3, velocity: THREE.Vector3): void {
+    const view = this.views.get(weaponId) ?? this.views.get(WEAPON.sidearm)!;
+    const authored = view.authored;
+    if (authored) {
+      position.set(weaponId === WEAPON.shotgun ? -0.07 : -0.052, 0.064,
+        weaponId === WEAPON.sidearm ? -0.12 : -0.075).applyMatrix4(view.root.matrixWorld);
+    } else {
+      position.set(-0.055, 0.043, -0.12).applyMatrix4(view.root.matrixWorld);
+    }
+    // Camera-facing receiver side: the arc stays readable without blocking the sight.
+    position.applyMatrix4(this.viewToWorld);
+    velocity.set(-0.92, 2.7, -1.85).transformDirection(view.root.matrixWorld)
+      .transformDirection(this.viewToWorld).multiplyScalar(3.35);
+  }
+
+  /** Detached, projection-corrected anchor for the world-space tracer pool. */
+  worldMuzzleSocket(weaponId: number): THREE.Object3D | undefined {
+    return (this.views.get(weaponId) ?? this.views.get(WEAPON.sidearm))?.worldMuzzle;
+  }
+
+  muzzleSocket(weaponId: number): THREE.Object3D | undefined {
+    return (this.views.get(weaponId) ?? this.views.get(WEAPON.sidearm))?.muzzle;
+  }
+
 }

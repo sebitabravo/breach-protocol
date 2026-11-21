@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { ArenaBuild, litColour } from '../../src/render/arena';
+import { STENCIL_UV } from '../../src/render/architecture';
 import { mulberry32 } from '../../src/render/random';
 import { lookFor, MATERIAL_COLORS } from '../../src/render/themes';
 import { perimeterFaces } from '../../src/render/walls';
@@ -55,6 +56,26 @@ describe('ArenaBuild batching', () => {
     const meshes = arena.group.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh);
     expect(meshes).toHaveLength(4);
     expect(arena.group.children.some((c) => c instanceof THREE.InstancedMesh)).toBe(false);
+  });
+
+  it('keeps both core stencils and reserves the perimeter marking for the entry wall', () => {
+    const map = sectorMap();
+    const arena = new ArenaBuild(map, arenaBoxes(map), lookFor('control'));
+    try {
+      const decals = arena.group.children.find((child) => (child as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>).material.alphaTest > 0) as THREE.Mesh;
+      const uv = decals.geometry.getAttribute('uv');
+      const position = decals.geometry.getAttribute('position');
+      const depths: number[] = [];
+      for (let i = 0; i < uv.count; i += 1) {
+        // The bottom-left atlas corner identifies each sector stencil quad once.
+        if (uv.getX(i) === Math.fround(STENCIL_UV[0]) && uv.getY(i) === Math.fround(STENCIL_UV[1])) {
+          depths.push(Number(position.getZ(i).toFixed(3)));
+        }
+      }
+      expect(depths.sort((a, b) => a - b)).toEqual([2.097, 2.097, 16.988]);
+    } finally {
+      arena.dispose();
+    }
   });
 
   it('casts shadows only from the lit batch', () => {

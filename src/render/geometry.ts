@@ -47,6 +47,8 @@ export interface BoxOptions {
   uvTile?: number;
   /** Fase de parpadeo (0 = sin parpadeo); lo consume el material unlit. */
   blink?: number;
+  /** Arena surface tile; +3 marks enclosure faces that do not cast shadows. */
+  surface?: number;
 }
 
 /** Acumulador de geometría: cajas y quads a una sola BufferGeometry. */
@@ -56,6 +58,7 @@ export class MeshBuilder {
   private readonly colors: number[] = [];
   private readonly uvs: number[] = [];
   private readonly blinks: number[] = [];
+  private readonly surfaces: number[] = [];
   private readonly indices: number[] = [];
 
   get vertexCount(): number {
@@ -85,13 +88,14 @@ export class MeshBuilder {
         const [u, v] = face.ny !== 0 ? [px, pz] : face.nx !== 0 ? [pz, py] : [px, py];
         this.uvs.push(tile > 0 ? u / tile : 0, tile > 0 ? v / tile : 0);
         this.blinks.push(blink);
+        this.surfaces.push(opts.surface ?? 0);
       }
       this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
   }
 
   /** Quad de cuatro esquinas (CCW vista desde el frente) con UV explícitas. */
-  addQuad(corners: readonly number[], normal: readonly [number, number, number], uv: readonly number[], rgb: readonly [number, number, number], blink = 0): void {
+  addQuad(corners: readonly number[], normal: readonly [number, number, number], uv: readonly number[], rgb: readonly [number, number, number], blink = 0, surface = 0): void {
     const base = this.vertexCount;
     for (let i = 0; i < 4; i += 1) {
       this.positions.push(corners[i * 3], corners[i * 3 + 1], corners[i * 3 + 2]);
@@ -99,8 +103,30 @@ export class MeshBuilder {
       this.colors.push(rgb[0], rgb[1], rgb[2]);
       this.uvs.push(uv[i * 2], uv[i * 2 + 1]);
       this.blinks.push(blink);
+      this.surfaces.push(surface);
     }
     this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+
+  /** Copy a geometry into this static batch. Caller owns the source. */
+  addGeometry(geometry: THREE.BufferGeometry, rgb: readonly [number, number, number], surface: number, tile?: number, preserveColors = false, preserveSurfaces = false): void {
+    const base = this.vertexCount;
+    const pos = geometry.getAttribute('position');
+    const norm = geometry.getAttribute('normal');
+    const uv = geometry.getAttribute('uv');
+    const color = preserveColors ? geometry.getAttribute('color') : undefined;
+    const surfaces = preserveSurfaces ? geometry.getAttribute('aSurface') : undefined;
+    for (let i = 0; i < pos.count; i += 1) {
+      this.positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+      this.normals.push(norm.getX(i), norm.getY(i), norm.getZ(i));
+      if (color) this.colors.push(color.getX(i), color.getY(i), color.getZ(i));
+      else this.colors.push(rgb[0], rgb[1], rgb[2]);
+      this.uvs.push(uv.getX(i) * (tile ?? 1), uv.getY(i) * (tile ?? 1));
+      this.blinks.push(0);
+      this.surfaces.push(surfaces?.getX(i) ?? surface);
+    }
+    const index = geometry.getIndex();
+    for (let i = 0; i < (index?.count ?? pos.count); i += 1) this.indices.push(base + (index ? index.getX(i) : i));
   }
 
   build(): THREE.BufferGeometry {
@@ -110,6 +136,7 @@ export class MeshBuilder {
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(this.colors, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(this.uvs, 2));
     geometry.setAttribute('aBlink', new THREE.Float32BufferAttribute(this.blinks, 1));
+    geometry.setAttribute('aSurface', new THREE.Float32BufferAttribute(this.surfaces, 1));
     geometry.setIndex(this.indices);
     return geometry;
   }

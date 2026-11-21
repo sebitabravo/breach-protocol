@@ -2,7 +2,7 @@
  * Geometría visual de cada sector. La colisión viene del núcleo (`MapData`);
  * acá se agregan las cajas solo-visuales (techo, luminarias, vigas, paneles).
  */
-import { materialOfKind, type MapData, type Material } from './map';
+import { materialOfKind, SOLID_KIND, type MapData, type Material } from './map';
 
 export type { Material } from './map';
 
@@ -17,6 +17,8 @@ export interface ArenaBox {
   material: Material;
   /** Visual-only boxes (light strips, labels) never become colliders. */
   solid?: boolean;
+  /** Draw the authored console instead of this box; the AABB stays in MapData. */
+  terminal?: boolean;
 }
 
 
@@ -28,10 +30,11 @@ export interface ArenaBox {
 function ceilingLamps(y: number, at: number, axis: 'x' | 'z'): ArenaBox[] {
   const out: ArenaBox[] = [];
   for (let c = -14; c <= 14; c += 3.5) {
+    if (axis === 'z' && Math.abs(c) === 7) continue; // no overlapping fixtures at the crossing
     out.push(
       axis === 'x'
-        ? { x: c, y, z: at, sx: 1.6, sy: 0.06, sz: 0.12, material: 'glow', solid: false }
-        : { x: at, y, z: c, sx: 0.12, sy: 0.06, sz: 1.6, material: 'glow', solid: false },
+        ? { x: c, y, z: at, sx: 1.82, sy: 0.066, sz: 0.23, material: 'glow', solid: false }
+        : { x: at, y, z: c, sx: 0.23, sy: 0.066, sz: 1.82, material: 'glow', solid: false },
     );
   }
   return out;
@@ -73,6 +76,7 @@ function solidBox(s: MapData['solids'][number]): ArenaBox {
     sz: s.max[2] - s.min[2],
     material: materialOfKind(s.kind),
     solid: true,
+    terminal: s.kind === SOLID_KIND.plinth,
   };
 }
 
@@ -86,25 +90,12 @@ function sector01Decor(h: number): ArenaBox[] {
   return [
     { x: 0, y: h, z: 0, sx: 36, sy: 0.2, sz: 36, material: 'ceiling', solid: false },
     capEdge(0, 0, 4, 4, h),
-    capEdge(-7, -7, 4, 2.4, 2),
-    capEdge(7, -7, 2.4, 4, 2),
-    capEdge(-7, 7, 2.4, 4, 2),
-    capEdge(7, 7, 4, 2.4, 2),
     ...ceilingLamps(5.85, -6, 'x'),
     ...ceilingLamps(5.85, 6, 'x'),
     ...ceilingLamps(5.85, -6, 'z'),
     ...ceilingLamps(5.85, 6, 'z'),
     ...ceilingBeams(5.62),
-    { x: -1.95, y: 2.4, z: 0, sx: 0.06, sy: 3.2, sz: 0.3, material: 'glow', solid: false },
-    { x: 1.95, y: 2.4, z: 0, sx: 0.06, sy: 3.2, sz: 0.3, material: 'glow', solid: false },
-    { x: -7.7, y: 0.01, z: 0, sx: 6.8, sy: 0.02, sz: 0.14, material: 'glow', solid: false },
-    { x: 7.7, y: 0.01, z: 0, sx: 6.8, sy: 0.02, sz: 0.14, material: 'glow', solid: false },
-    { x: -0.35, y: 0.01, z: -7.7, sx: 0.14, sy: 0.02, sz: 6.8, material: 'glow', solid: false },
-    { x: 0.35, y: 0.01, z: -7.7, sx: 0.14, sy: 0.02, sz: 6.8, material: 'glow', solid: false },
-    { x: -8, y: 1.5, z: -16.7, sx: 5, sy: 3, sz: 0.25, material: 'trim', solid: false },
-    { x: 8, y: 1.5, z: 16.7, sx: 5, sy: 3, sz: 0.25, material: 'trim', solid: false },
-    { x: -16.7, y: 1.5, z: 8, sx: 0.25, sy: 3, sz: 5, material: 'trim', solid: false },
-    { x: 16.7, y: 1.5, z: -8, sx: 0.25, sy: 3, sz: 5, material: 'trim', solid: false },
+
   ];
 }
 
@@ -120,7 +111,7 @@ function genericDecor(map: MapData, h: number): ArenaBox[] {
     }
   }
   for (const s of map.solids) {
-    if (s.kind === 5 || s.kind === 3 || s.kind === 6) {
+    if (s.kind === 3 || s.kind === 6) {
       const sol = solidBox(s);
       if (sol.sy < h - 0.1) out.push(capEdge(sol.x, sol.z, sol.sx, sol.sz, s.max[1]));
     }
