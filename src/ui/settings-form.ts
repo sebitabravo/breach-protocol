@@ -24,6 +24,15 @@ function field(id: string): Field | null {
   return document.getElementById(id) as Field | null;
 }
 
+/** El deslizador de ajustes solo toca la sensibilidad del dispositivo en uso. */
+export function sensitivityPatch(usingTouch: boolean, value: number): Partial<Settings> {
+  return usingTouch ? { sensitivityTouch: value } : { sensitivityMouse: value };
+}
+
+export function sensitivityOf(settings: Settings, usingTouch: boolean): number {
+  return usingTouch ? settings.sensitivityTouch : settings.sensitivityMouse;
+}
+
 function isChecked(node: Field): boolean {
   return (node as HTMLInputElement).checked;
 }
@@ -61,8 +70,7 @@ export class SettingsForm {
     bind('set-audio', (node) => this.hooks.onPatch({ audioEnabled: isChecked(node) }));
     bind('set-volume', (node) => this.hooks.onPatch({ volume: Number(node.value) }));
     bind('set-sens', (node) => {
-      const value = Number(node.value);
-      this.hooks.onPatch({ sensitivityMouse: value, sensitivityTouch: value });
+      this.hooks.onPatch(sensitivityPatch(this.hooks.usingTouch(), Number(node.value)));
     });
     bind('set-invert', (node) => this.hooks.onPatch({ invertY: isChecked(node) }));
     bind('set-hud', (node) => this.hooks.onPatch({ hudScale: Number(node.value) }));
@@ -71,8 +79,7 @@ export class SettingsForm {
     bind('set-aimassist', (node) => this.hooks.onPatch({ aimAssistTouch: isChecked(node) }));
 
     bind('calib-sens', (node) => {
-      const value = Number(node.value);
-      this.hooks.onPatch(this.hooks.usingTouch() ? { sensitivityTouch: value } : { sensitivityMouse: value });
+      this.hooks.onPatch(sensitivityPatch(this.hooks.usingTouch(), Number(node.value)));
     });
     bind('calib-invert', (node) => this.hooks.onPatch({ invertY: isChecked(node) }));
     bind('calib-autoreload', (node) => this.hooks.onPatch({ autoReload: isChecked(node) }));
@@ -97,14 +104,14 @@ export class SettingsForm {
       if (node instanceof HTMLInputElement && node.type === 'checkbox') node.checked = Boolean(value);
       else node.value = String(value);
     };
-    const calibSens = view.usingTouch ? settings.sensitivityTouch : settings.sensitivityMouse;
+    const calibSens = sensitivityOf(settings, view.usingTouch);
 
     set('set-quality', settings.quality);
     set('set-motion', settings.reduceMotion);
     set('set-telemetry', view.telemetry);
     set('set-audio', settings.audioEnabled);
     set('set-volume', settings.volume);
-    set('set-sens', settings.sensitivityMouse);
+    set('set-sens', calibSens);
     set('set-invert', settings.invertY);
     set('set-hud', settings.hudScale);
     set('set-handed', settings.handedness === 'left');
@@ -116,7 +123,7 @@ export class SettingsForm {
     set('calib-aimassist', settings.aimAssistTouch);
 
     byId('calib-sens-val').textContent = `${calibSens.toFixed(2)}×`;
-    byId('set-sens-val').textContent = `${settings.sensitivityMouse.toFixed(2)}×`;
+    byId('set-sens-val').textContent = `${calibSens.toFixed(2)}×`;
     byId('set-volume-val').textContent = `${Math.round(settings.volume * 100)}%`;
     byId('set-hud-val').textContent = `${Math.round(settings.hudScale * 100)}%`;
     byId('gfx-detail').textContent = view.gfxDetail;

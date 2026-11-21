@@ -6,7 +6,7 @@
 | --- | --- |
 | Mover / mirar | WASD o flechas / mouse |
 | Correr / saltar | Shift / Espacio |
-| Disparar | Clic izquierdo |
+| Disparar / apuntar | Clic izquierdo / mantener clic derecho |
 | Recargar / activar un terminal | R / mantener E |
 | Cambiar de arma | 1, 2, 3 (si está desbloqueada) |
 | Pausar / continuar | Esc |
@@ -32,7 +32,7 @@ con **Repetir tutorial** en el menú.
 
 ## Pantalla táctil
 
-Movete con el joystick izquierdo y arrastrá en la arena para mirar. Usá los
+Movete con el joystick izquierdo y arrastrá en la arena para mirar. Empujá el joystick hasta el borde para correr. Usá los
 botones de pantalla para disparar, apuntar, saltar, recargar, cambiar de arma o
 pausar. Para activar un terminal, acercate y mantené su botón de interacción.
 El tutorial se puede omitir con el botón **Omitir tutorial**.

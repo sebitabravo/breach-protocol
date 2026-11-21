@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 // Puerto configurable para poder correr varias suites en paralelo (worktrees).
 const port = Number(process.env.PW_PORT ?? 4173);
@@ -15,6 +15,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: /mobile-.*\.spec\.ts/,
       use: {
         browserName: 'chromium',
         baseURL: `http://localhost:${port}`,
@@ -24,6 +25,28 @@ export default defineConfig({
         // Artefactos baratos: solo cuando algo falla.
         screenshot: 'only-on-failure',
         trace: 'retain-on-failure',
+      },
+    },
+    {
+      name: 'mobile-landscape',
+      testMatch: /mobile-.*\.spec\.ts/,
+      use: {
+        ...devices['Pixel 7 landscape'],
+        baseURL: `http://localhost:${port}`,
+        screenshot: 'only-on-failure',
+      },
+    },
+    {
+      name: 'mobile-portrait',
+      testMatch: /mobile-.*\.spec\.ts/,
+      use: {
+        // WebKit del runner (webkit-2215) no está instalado en este equipo: se emula el iPhone 13
+        // sobre Chromium. Safari real queda como pendiente humano (ver docs/QA_TEST_PLAN.md).
+        ...devices['iPhone 13'],
+        browserName: 'chromium',
+        defaultBrowserType: 'chromium',
+        baseURL: `http://localhost:${port}`,
+        screenshot: 'only-on-failure',
       },
     },
   ],

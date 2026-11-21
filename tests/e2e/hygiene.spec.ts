@@ -53,3 +53,17 @@ test('pausing stops the simulation and restarting begins from a clean tick', asy
   await screenIs(page, 'playing');
   expect(await tick(page)).toBeLessThan(frozen);
 });
+
+test('holding the right mouse button aims down sights and releasing it stops', async ({ page }) => {
+  await seedStorage(page, { tutorialSeen: true });
+  await page.goto('/');
+  await screenIs(page, 'menu');
+  await page.locator('#screen-menu [data-action="practice"]').click();
+  await screenIs(page, 'playing');
+  const ads = () => page.evaluate(() => (window.__BREACH__ as unknown as { engine: Engine }).engine.state.ads);
+  await page.mouse.move(640, 400);
+  await page.mouse.down({ button: 'right' });
+  await expect.poll(ads).toBeGreaterThan(0.8);
+  await page.mouse.up({ button: 'right' });
+  await expect.poll(ads).toBeLessThan(0.2);
+});

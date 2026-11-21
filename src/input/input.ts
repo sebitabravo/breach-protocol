@@ -27,6 +27,13 @@ export interface InputHooks {
   unlockedWeapons(): readonly number[];
 }
 
+/** Deflexión del stick (0..1) a partir de la cual se corre: no depende de la simulación, solo se registra en el input. */
+export const STICK_SPRINT_THRESHOLD = 0.9;
+
+export function stickSprints(x: number, y: number): boolean {
+  return Math.hypot(x, y) > STICK_SPRINT_THRESHOLD;
+}
+
 /** Siguiente arma desbloqueada en orden de ids; si la actual está bloqueada, vuelve a la primera. */
 export function nextWeapon(current: number, unlocked: readonly number[]): number {
   if (unlocked.length === 0) return 0;
@@ -188,7 +195,8 @@ export class InputManager {
     target[I.jump] = first && this.frameJumpPressed ? 1 : 0;
     target[I.interact] = this.kb.has('KeyE') || this.touchInteract ? 1 : 0;
     target[I.reload] = first && this.frameReloadPressed ? 1 : 0;
-    target[I.run] = this.kb.has('ShiftLeft') || this.kb.has('ShiftRight') ? 1 : 0;
+    target[I.run] =
+      this.kb.has('ShiftLeft') || this.kb.has('ShiftRight') || stickSprints(this.stickX, this.stickY) ? 1 : 0;
     target[I.switch] = first ? this.frameSwitch : 0;
     target[I.ads] = this.adsHeld ? 1 : 0;
   }
@@ -312,6 +320,8 @@ export class InputManager {
       if (event.button === 0) {
         this.fireHeld = true;
         this.firePressed = true;
+      } else if (event.button === 2) {
+        this.adsHeld = true;
       }
       if (!this.pointerLocked) {
         void this.requestPointerLock();
@@ -365,6 +375,7 @@ export class InputManager {
 
   private onWindowPointerUp = (event: PointerEvent): void => {
     if (event.pointerType === 'mouse' && event.button === 0) this.fireHeld = false;
+    if (event.pointerType === 'mouse' && event.button === 2) this.adsHeld = false;
     const tracked = this.pointers.get(event.pointerId);
     if (!tracked) return;
     if (tracked.kind === 'stick') {

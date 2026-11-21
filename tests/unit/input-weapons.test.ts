@@ -20,3 +20,13 @@ describe('nextWeapon', () => {
     expect(nextWeapon(1, [])).toBe(0);
   });
 });
+
+describe('touch sprint', () => {
+  it('sprints only when the stick is pushed near its edge', async () => {
+    const { stickSprints } = await import('../../src/input/input');
+    expect(stickSprints(0, 0)).toBe(false);
+    expect(stickSprints(0.5, 0.5)).toBe(false);
+    expect(stickSprints(0, 0.95)).toBe(true);
+    expect(stickSprints(-1, 0)).toBe(true);
+  });
+});

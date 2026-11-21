@@ -134,3 +134,14 @@ describe('settings', () => {
     expect(resetSettings()).not.toBe(DEFAULT_SETTINGS);
   });
 });
+
+describe('sensitivity per device', () => {
+  it('patches only the active device so the other keeps its own value', async () => {
+    const { sensitivityOf, sensitivityPatch } = await import('../../src/ui/settings-form');
+    const base = { ...DEFAULT_SETTINGS, sensitivityMouse: 1.4, sensitivityTouch: 0.7 };
+    expect(sensitivityPatch(true, 2)).toEqual({ sensitivityTouch: 2 });
+    expect(sensitivityPatch(false, 2)).toEqual({ sensitivityMouse: 2 });
+    expect(sensitivityOf(base, true)).toBe(0.7);
+    expect(sensitivityOf(base, false)).toBe(1.4);
+  });
+});

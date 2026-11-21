@@ -22,8 +22,16 @@
 
 /* Share the stick's footprint with the HUD so its clearance tracks both breakpoints. */
 #app.is-touch {
-  --touch-stick-bottom: calc(84px + var(--safe-b));
+  --touch-stick-bottom: calc(56px + var(--safe-b));
   --touch-stick-size: 132px;
+  /* Cluster de botones: fire (--f) y cuatro secundarios (--s) en dos columnas, separados por --g. */
+  --f: 88px;
+  --s: 56px;
+  --g: 12px;
+  --r0: calc(28px + var(--safe-r));
+  --b0: calc(56px + var(--safe-b));
+  --col-a: var(--r0);
+  --col-b: calc(var(--r0) + var(--f) + var(--g));
 }
 
 .touch__stick {
@@ -56,8 +64,8 @@
   position: absolute;
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
+  width: var(--s, 56px);
+  height: var(--s, 56px);
   border: 1px solid rgba(46, 63, 79, 0.9);
   border-radius: 50%;
   background: rgba(16, 24, 32, 0.5);
@@ -76,10 +84,10 @@
 }
 
 .tbtn--fire {
-  right: calc(28px + var(--safe-r));
-  bottom: calc(96px + var(--safe-b));
-  width: 88px;
-  height: 88px;
+  right: var(--col-a);
+  bottom: var(--b0);
+  width: var(--f);
+  height: var(--f);
   border-color: rgba(92, 224, 139, 0.45);
 }
 
@@ -88,16 +96,27 @@
   height: 30px;
 }
 
+/* Columna A: encima de fire. Columna B: a su izquierda, apiladas de abajo hacia arriba. */
 .tbtn--jump {
-  right: calc(124px + var(--safe-r));
-  bottom: calc(150px + var(--safe-b));
+  right: var(--col-a);
+  bottom: calc(var(--b0) + var(--f) + var(--g));
 }
 
 .tbtn--reload {
-  right: calc(120px + var(--safe-r));
-  bottom: calc(64px + var(--safe-b));
-  width: 56px;
-  height: 56px;
+  right: var(--col-b);
+  bottom: var(--b0);
+}
+
+.tbtn--ads {
+  right: var(--col-b);
+  bottom: calc(var(--b0) + var(--s) + var(--g));
+  font-size: 15px;
+}
+
+.tbtn--switch {
+  right: var(--col-b);
+  bottom: calc(var(--b0) + 2 * (var(--s) + var(--g)));
+  font-size: 15px;
 }
 
 .tbtn--interact {
@@ -121,22 +140,6 @@
   }
 }
 
-.tbtn--switch {
-  right: calc(210px + var(--safe-r));
-  bottom: calc(84px + var(--safe-b));
-  width: 48px;
-  height: 48px;
-  font-size: 15px;
-}
-
-.tbtn--ads {
-  right: calc(200px + var(--safe-r));
-  bottom: calc(150px + var(--safe-b));
-  width: 48px;
-  height: 48px;
-  font-size: 15px;
-}
-
 .tbtn--pause {
   top: calc(10px + var(--safe-t));
   right: calc(12px + var(--safe-r));
@@ -152,71 +155,117 @@
   right: calc(20px + var(--safe-l));
 }
 
-#app[data-hand="left"] .tbtn--fire {
-  right: auto;
-  left: calc(24px + var(--safe-l));
-}
-
+#app[data-hand="left"] .tbtn--fire,
 #app[data-hand="left"] .tbtn--jump {
   right: auto;
-  left: calc(120px + var(--safe-l));
+  left: var(--col-a);
 }
 
-#app[data-hand="left"] .tbtn--reload {
-  right: auto;
-  left: calc(116px + var(--safe-l));
-}
-
+#app[data-hand="left"] .tbtn--reload,
+#app[data-hand="left"] .tbtn--ads,
 #app[data-hand="left"] .tbtn--switch {
   right: auto;
-  left: calc(206px + var(--safe-l));
-}
-
-#app[data-hand="left"] .tbtn--ads {
-  right: auto;
-  left: calc(196px + var(--safe-l));
+  left: var(--col-b);
 }
 
 @media (max-width: 760px) {
   #app.is-touch {
     --touch-stick-size: 116px;
+    --touch-stick-bottom: calc(44px + var(--safe-b));
+    --f: 76px;
+    --s: 52px;
+    --g: 10px;
+    --r0: calc(16px + var(--safe-r));
+    --b0: calc(44px + var(--safe-b));
+  }
+}
+
+/* Teléfono vertical: el terminal sube a la columna A, sobre el salto, lejos del stick y de la columna B. */
+@media (max-width: 480px) {
+  .tbtn--interact {
+    left: auto;
+    right: var(--col-a);
+    bottom: calc(var(--b0) + var(--f) + var(--s) + 2 * var(--g));
+    transform: none;
   }
 
-  .tbtn--fire {
-    width: 76px;
-    height: 76px;
-  }
-
-  .tbtn {
-    width: 58px;
-    height: 58px;
+  #app[data-hand="left"] .tbtn--interact {
+    right: auto;
+    left: var(--col-a);
   }
 }
 
 @media (max-height: 430px) {
   #app.is-touch {
     --touch-stick-size: 104px;
-    --touch-stick-bottom: calc(56px + var(--safe-b));
+    --touch-stick-bottom: calc(20px + var(--safe-b));
+    --f: 70px;
+    --s: 46px;
+    --g: 8px;
+    --r0: calc(16px + var(--safe-r));
+    --b0: calc(20px + var(--safe-b));
   }
 
-  .tbtn--fire {
-    width: 70px;
-    height: 70px;
-    bottom: calc(60px + var(--safe-b));
+  .tbtn--interact {
+    bottom: calc(20px + var(--safe-b));
   }
+}
 
-  .tbtn--jump {
-    bottom: calc(104px + var(--safe-b));
-    right: calc(104px + var(--safe-r));
-  }
+/* Aviso no bloqueante: solo en teléfono vertical durante la partida; se desvanece solo. */
+.rotate-hint {
+  display: none;
+  position: absolute;
+  z-index: 15;
+  left: 50%;
+  bottom: calc(4px + var(--safe-b));
+  transform: translateX(-50%);
+  max-width: calc(100vw - 24px);
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: rgba(8, 15, 20, 0.9);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--text);
+  pointer-events: none;
+}
 
-  .tbtn--reload {
-    bottom: calc(44px + var(--safe-b));
-    right: calc(100px + var(--safe-r));
+@media (orientation: portrait) and (max-width: 600px) {
+  #app.is-touch[data-screen="playing"] .rotate-hint {
+    display: block;
+    animation: rotate-hint-fade 600ms 7s forwards;
   }
+}
 
-  .tbtn--switch,
-  .tbtn--ads {
-    display: none;
+@keyframes rotate-hint-fade {
+  to {
+    opacity: 0;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app.is-touch[data-screen="playing"] .rotate-hint {
+    animation: none;
+  }
+}
+
+/* Objetivos de toque de al menos 44 px en táctil (WCAG 2.5.8 recomienda 44; el mínimo AA es 24). */
+#app.is-touch .btn,
+#app.is-touch .btn--sm,
+#app.is-touch .seg,
+#app.is-touch .tab,
+#app.is-touch .navlink {
+  min-height: 44px;
+}
+
+#app.is-touch .navlink {
+  display: inline-flex;
+  align-items: center;
+  min-width: 44px;
+}
+
+#app.is-touch .iconbtn--sm {
+  width: 44px;
+  height: 44px;
 }
