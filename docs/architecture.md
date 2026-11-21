@@ -9,7 +9,7 @@ puntos reales de extensión con sus rutas.
 ## Mapa de módulos
 
 ```
-core/src/               Rust — núcleo de simulación (solo std, sin dependencias)
+core/src/               Rust — núcleo de simulación (std y libm para matemática determinista)
   math.rs               vectores, AABB, raycasts, utilidades deterministas
   arena.rs              colisiones y líneas de visión sobre los sólidos del sector
   maps.rs               sectores 0-2: sólidos, terminales, puntos de aparición
@@ -34,13 +34,17 @@ src/
   wasm/bridge.ts        carga del módulo, punteros, tick y lectura del snapshot
   wasm/protocol.ts      espejo TS del contrato binario (protocol.rs)
   render/renderer.ts    Three.js: escena, cámara, presets de calidad, draw calls
-  render/entities.ts    mallas de enemigos instanciadas, viewmodel
+  render/arena.ts       geometría estática fusionada en lotes
+  render/entities.ts    geometrías y materiales de robots compartidos por tipo
+  render/enemies.ts     pool de mallas por slot: cuerpo y visor por robot
+  render/telegraph.ts   halos instanciados y miras agrupadas
+  render/viewmodel.ts   modelo de arma en primera persona
   render/fx.ts          pool de efectos (impactos, fogonazos)
   input/input.ts        pointer lock, teclado, multitouch con pointerId
   audio/audio.ts        SFX sintetizados con Web Audio (sin archivos)
   ui/hud.ts             actualización del HUD desde el snapshot
   ui/engineering.ts     Engineering Mode: métricas reales
-  world/layout.ts       SECTOR_01: única fuente de verdad de la geometría
+  world/layout.ts       geometría visual; el núcleo provee sólidos y terminales por mapa
 ```
 
 ## Flujo de datos por frame
@@ -63,17 +67,25 @@ src/
 
 ## Por qué no wasm-bindgen
 
-El contrato entre Rust y TypeScript es un único buffer `f32` con offsets
-constantes (`core/src/protocol.rs` y `src/wasm/protocol.ts`). No hay
-wasm-bindgen porque:
+El ABI usa memoria lineal y buffers de `f32` con offsets constantes para el
+input y el snapshot (`core/src/protocol.rs`, `src/wasm/protocol.ts`). También
+expone una tabla de mapa y bytes de replay. No usa `wasm-bindgen`.
 
-- **Cero copia y cero GC en el camino caliente.** El shell lee posiciones,
-  salud, munición y eventos directamente sobre la memoria lineal; ningún
-  objeto cruza la frontera, así que no hay allocations por frame.
-- **Superficie mínima.** Las exportaciones son las de `core/src/lib.rs`
-  (`bp_init`, `bp_start`, `bp_tick_fixed`, `bp_snapshot_ptr`, `bp_load_map`,
-  `bp_replay_hash`, `bp_daily_config`, `bp_scenario_hash`, entre otras) y
-  `memory`; el binario queda en ~80 KiB.
+- **Snapshot sin copia.** El bridge reutiliza una vista `Float32Array` sobre
+  la memoria wasm y la crea de nuevo si cambia el buffer. Eso no garantiza
+  cero asignaciones: `Engine.tick` crea vistas para copiar el input,
+  los eventos nuevos se materializan en objetos JS y `EnemyPool` crea una
+  malla al usar un slot por primera vez o cambiar su tipo. En el caso estable
+  se reutilizan mallas y buffers auxiliares. Los robots no son instancias GPU;
+  `InstancedMesh` se usa para los halos de telegrafía.
+- **ABI C plano.** `core/src/lib.rs` exporta `bp_init`, `bp_start`,
+  `bp_tick_fixed`, `bp_input_len`, `bp_snapshot_ptr`, `bp_snapshot_len`,
+  `bp_map_data_ptr`, `bp_map_data_len`, `bp_load_map`, `bp_log_encode`,
+  `bp_log_ptr`, `bp_log_truncated`, `bp_replay_hash`, `bp_daily_config`,
+  `bp_golden_hash`, `bp_scenario_hash`, `bp_note_dropped`, `bp_alloc` y
+  `bp_free`. El módulo wasm también exporta `memory`. Las reexportaciones
+  Rust (`Game`, `decode`, `run`, `Outcome`, etc.) son la API nativa de
+  `bp-core`, no nuevas funciones C.
 - **El contrato es verificable.** `SNAPSHOT_LEN = 620` y los offsets están
   pineados por tests en ambos lados (`snapshot_layout_is_stable` en Rust y
   `tests/unit/protocol.test.ts` en TS); `assertProtocol` corta el boot si el
@@ -98,6 +110,20 @@ El input es otro buffer de 16 `f32` (offsets en `protocol.rs::I_*`): movimiento,
 look deltas, fire held/pressed, salto, interactuar, recargar, correr, cambiar
 arma, ADS. Los eventos son efímeros (audio y feed del HUD); el shell consume
 hasta el último `seq` visto por frame.
+
+## Terminales y director de oleadas
+
+Una terminal completada encola la siguiente composición detrás de los enemigos
+pendientes, sin retirar a los vivos. La oleada sube en ese mismo tick y omite el
+intermedio, con 60 ticks de gracia antes del siguiente spawn. Al tope, encola
+un refuerzo de dos scouts y un especialista sin subir el número. Sin activaciones,
+las oleadas siguen avanzando cuando se vacía la cola y no queda ningún enemigo vivo.
+`WAVE_START` conserva el número en `a`; `b` distingue inicio normal (`0`),
+aceleración (`1`) y refuerzo al tope (`2`).
+
+Las tres terminales son de un solo uso, también en Overflow (500 puntos y 25 PV
+por terminal, sin extracción). Misión y Diario conservan la extracción de 12 s;
+el Simulador sigue en bucle y no termina por tiempo ni derrota.
 
 ## Registro de partidas y truncamiento de Overflow
 
@@ -175,12 +201,11 @@ lados) y su entrada en la composición de oleadas (`core/src/waves.rs`). El
 shell ya renderiza cualquier enemigo genérico desde el snapshot
 (`src/render/entities.ts`); si necesita silueta propia, ahí va el caso.
 
-**Agregar una arena** — todo vive en `src/world/layout.ts`: cajas sólidas y
-visuales (`ARENA_BOXES`), terminales (`NODES`), spawns (`SPAWNS`) y arranque
-del jugador (`PLAYER_START`). `colliderData()` serializa los sólidos para
-`Engine.setArena` y el renderer construye las mallas desde la misma tabla, así
-que la geometría de colisión y la visual no pueden divergir. Si la arena nueva
-cambia dimensiones máximas, revisar los límites en `core/src/arena.rs`.
+**Agregar una arena** — definir el mapa jugable (sólidos, terminales, spawns,
+arranque y salida) en `core/src/maps.rs`. El shell lee la tabla de mapa con
+`bp_map_data_ptr` / `bp_map_data_len`; `src/world/layout.ts` añade el detalle
+visual y `src/render/arena.ts` fusiona la geometría estática por material.
+Para cambios de dimensiones, revisar los límites en `core/src/arena.rs`.
 
 **Agregar un ajuste** — campo en `Settings` + default en `DEFAULT_SETTINGS`
 (`src/core/settings.ts`), sanitizador en `sanitize()`; si cambia el shape,

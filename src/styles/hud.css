@@ -4,7 +4,8 @@
   z-index: 15;
   display: none;
   pointer-events: none;
-  zoom: var(--hud-scale);
+  --hud-zoom: var(--hud-scale);
+  zoom: var(--hud-zoom);
   font-variant-numeric: tabular-nums;
   /* No `touch-action: none` here: only the canvas and the touch zones need it. */
 }
@@ -23,8 +24,8 @@
 
 #hud::before {
   top: 0;
-  height: 24%;
-  background: linear-gradient(to bottom, rgba(6, 10, 14, 0.82) 0%, rgba(6, 10, 14, 0.55) 55%, transparent 100%);
+  height: max(24%, 165px);
+  background: linear-gradient(to bottom, rgba(6, 10, 14, 0.93) 0%, rgba(6, 10, 14, 0.86) 92px, rgba(6, 10, 14, 0.60) 120px, transparent 100%);
 }
 
 #hud::after {
@@ -123,10 +124,18 @@
 }
 
 .hud__block--objective {
-  flex: 1;
-  max-width: 420px;
+  position: absolute;
+  top: calc(var(--dist-2) + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 34vw);
   text-align: center;
   justify-items: center;
+}
+
+.hud__block--objective .hud__kicker,
+.hud__objective-track .hud__kicker {
+  color: var(--muted);
 }
 
 .hud__sub {
@@ -137,11 +146,23 @@
 }
 
 .hud__score {
+  position: relative;
+  isolation: isolate;
   display: flex;
   gap: var(--dist);
   align-items: baseline;
   font-family: var(--mono);
   font-size: 16px;
+}
+
+/* Reinforce the scrim only where the ceiling lamp crosses the score. */
+.hud__score::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -5px -16px;
+  background: linear-gradient(90deg, transparent, rgba(6, 10, 14, 0.85) 12% 88%, transparent);
+  mask-image: linear-gradient(transparent, #000 28% 72%, transparent);
 }
 
 .hud__score .hud__kicker {
@@ -280,6 +301,15 @@
   --gap: 6px;
 }
 
+.crosshair.is-channeling::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  background: conic-gradient(var(--primary) var(--channel, 0%), #81929488 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+}
+
 .crosshair__dot {
   position: absolute;
   top: 50%;
@@ -343,6 +373,32 @@
     linear-gradient(-45deg, transparent 46%, var(--text) 46% 54%, transparent 54%) center / 16px 16px no-repeat;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  #app:not([data-motion="reduce"]) .hitmarker.is-hot { animation: hit-pop 160ms cubic-bezier(0.18, 0.67, 0.34, 1) both; }
+  #app:not([data-motion="reduce"]) .hitmarker.is-hot.is-repeat { animation-name: hit-pop-repeat; }
+}
+
+@keyframes hit-pop { from { transform: scale(1.7); } to { transform: scale(1); } }
+@keyframes hit-pop-repeat { from { transform: scale(1.7); } to { transform: scale(1); } }
+
+.vitals .bar[data-flash]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--danger);
+  box-shadow: 0 0 10px #ff5b6b73;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #app:not([data-motion="reduce"]) .vitals .bar[data-flash="a"]::after { animation: hp-flash 230ms ease-out both; }
+  #app:not([data-motion="reduce"]) .vitals .bar[data-flash="b"]::after { animation: hp-flash-repeat 230ms ease-out both; }
+}
+
+@keyframes hp-flash { from { opacity: 0.94; } to { opacity: 0; } }
+@keyframes hp-flash-repeat { from { opacity: 0.94; } to { opacity: 0; } }
+
 .hitmarker.is-hot.is-kill {
   background:
     linear-gradient(45deg, transparent 46%, var(--danger) 46% 54%, transparent 54%) center / 16px 16px no-repeat,
@@ -380,41 +436,75 @@
   border-bottom: 14px solid var(--danger);
 }
 
-/* ------------------------------------------------------------------ E prompt */
-.hud__prompt {
+/* ------------------------------------------------------------------ objective cue */
+#objective-marker {
   position: absolute;
-  left: 50%;
-  bottom: 26%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: var(--dist);
-  padding: 6px var(--dist-2);
-  border: 1px solid var(--primary-dim);
-  background: rgba(8, 15, 20, 0.85);
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.hud__prompt[hidden] {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 16;
+  pointer-events: none;
   display: none;
 }
 
-.hud__key {
-  display: inline-grid;
-  place-items: center;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 6px;
-  border: 1px solid var(--primary);
-  color: var(--primary);
-  font-family: var(--mono);
-  font-weight: 600;
+#app[data-screen="playing"] #objective-marker { display: block; }
+#objective-marker[data-mode="hidden"] #objective-anchor { display: none; }
+#objective-marker[data-occluded] :is(.objective-diamond, .objective-chevron, .objective-label > *) {
+  opacity: 0.55;
 }
+
+#objective-insets {
+  position: absolute;
+  inset: calc(min(88px, 13vh) + var(--safe-t)) var(--safe-r) var(--safe-b) var(--safe-l);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+#app.is-touch #objective-insets { bottom: calc(min(218px, 29vh) + var(--safe-b)); }
+
+#objective-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.objective-diamond,
+.objective-chevron {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2.2px;
+  stroke-linejoin: round;
+  stroke-linecap: square;
+  filter: drop-shadow(0 0 2px #02080b) drop-shadow(0 0 1px #02080b);
+}
+
+.objective-chevron { stroke-width: 3.5px; }
+#objective-marker[data-mode="onscreen"] .objective-chevron,
+#objective-marker:not([data-mode="onscreen"]) .objective-diamond,
+#objective-marker[data-close] .objective-diamond { display: none; }
+
+.objective-label {
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 3px 7px;
+  background: rgba(8, 15, 20, 0.94);
+  border: 1px solid var(--primary-dim);
+  color: var(--text);
+  font: 600 12px/1.25 var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.objective-label b { color: var(--primary); }
+.objective-label span:not([hidden]) { margin-left: 4px; }
+#objective-marker[data-close] .objective-label b { display: none; }
+#objective-marker[data-close] .objective-label span { margin-left: 0; }
+#objective-marker[data-close] .objective-label { font-size: 14px; }
+#objective-marker[data-ready] .objective-label { border-color: var(--primary); }
 
 /* ------------------------------------------------------------------ bottom row */
 .hud__bottom {
@@ -429,6 +519,8 @@
 }
 
 .vitals {
+  display: flex;
+  flex-direction: column;
   min-width: 220px;
 }
 
@@ -458,9 +550,15 @@
 }
 
 .vitals__buffs {
+  order: -1;
+  align-self: flex-start;
   display: flex;
-  gap: 6px;
-  margin-top: 4px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.vitals__buffs:has(.buff:not([hidden])) {
+  margin-bottom: 4px;
 }
 
 .buff {
@@ -469,7 +567,9 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--accent);
+  background: rgba(8, 15, 20, 0.85);
   border: 1px solid rgba(77, 227, 198, 0.3);
+  line-height: 16px;
   padding: 0 4px;
 }
 
@@ -529,6 +629,7 @@
 }
 
 .ammo__mag {
+  min-width: 2ch;
   font-size: 36px;
   font-weight: 500;
 }
@@ -539,6 +640,7 @@
 }
 
 .ammo__res {
+  min-width: 3ch;
   font-size: 16px;
   color: var(--muted);
 }
@@ -705,7 +807,7 @@
   }
 
   .hud__block--sector {
-    width: 136px;
+    width: min(180px, calc(100vw - 200px));
   }
 
   .hud__block--right {
@@ -730,6 +832,59 @@
   }
 }
 
+/* El tutorial usa la franja entre los terminales y la mira. Compactá su HUD
+   superior y reservá esa franja para las instrucciones, no para el feed. */
+@media (max-width: 480px) and (min-height: 501px) {
+  #hud:has(.tutorial:not([hidden])) {
+    --hud-zoom: min(var(--hud-scale), 1);
+  }
+
+  #hud:has(.tutorial:not([hidden])) .hud__top {
+    gap: 4px;
+    line-height: 1.2;
+  }
+
+  #hud:has(.tutorial:not([hidden])) .hud__objective-track {
+    top: calc(141px + var(--safe-t));
+    line-height: 1.1;
+  }
+
+  #hud:has(.tutorial:not([hidden])) .hud__feed {
+    display: none;
+  }
+
+  #hud .tutorial {
+    top: calc(160px + var(--safe-t));
+    gap: 2px;
+    padding: 5px 12px;
+    line-height: 1.3;
+  }
+
+  #hud .tutorial h3 {
+    font-size: 16px;
+    line-height: 1.2;
+  }
+
+  #hud .tutorial__foot {
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin-top: 2px;
+  }
+
+  #hud .tutorial__dots,
+  #hud .tutorial__keys i {
+    display: none;
+  }
+
+  #hud .tutorial__keys {
+    grid-area: 1 / 1;
+    font-size: 11px;
+  }
+
+  #hud .tutorial__keys span {
+    display: block;
+  }
+}
+
 /* Controles táctiles: la munición, el feed y los vitales se mueven fuera del área de los pulgares.
    La fila inferior deja de posicionarse para que sus hijos se midan desde #hud, no desde ella. */
 #app.is-touch .hud__bottom {
@@ -748,9 +903,12 @@
 }
 
 #app.is-touch .vitals {
+  /* The joystick and safe insets are measured outside the zoomed HUD. */
+  --vitals-left: 24px;
+  --vitals-bottom: 248px;
   position: absolute;
-  left: calc(24px + var(--safe-l));
-  bottom: 232px;
+  left: calc(var(--vitals-left) + var(--safe-l) / var(--hud-zoom));
+  bottom: max(var(--vitals-bottom), calc((var(--touch-stick-size) + var(--touch-stick-bottom) + 12px) / var(--hud-zoom)));
   min-width: 0;
 }
 
@@ -770,12 +928,12 @@
     top: auto;
     bottom: 220px;
     right: calc(12px + var(--safe-r));
-    min-width: 140px;
+    min-width: 128px;
   }
 
   #app.is-touch .vitals {
-    bottom: 210px;
-    left: calc(16px + var(--safe-l));
+    --vitals-left: 16px;
+    --vitals-bottom: 226px;
     width: 120px;
   }
 
@@ -785,6 +943,12 @@
 
   #app.is-touch .vitals .bar {
     width: 110px;
+  }
+}
+
+@media (max-width: 480px) and (min-height: 740px) {
+  #app.is-touch #hud:not(:has(.tutorial:not([hidden]))) .ammo {
+    bottom: 41%;
   }
 }
 
@@ -802,7 +966,7 @@
   }
 
   #app.is-touch .vitals {
-    bottom: 176px;
+    --vitals-bottom: 176px;
   }
 
   #app.is-touch .hud__feed {

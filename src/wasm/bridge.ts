@@ -33,6 +33,7 @@ export interface WasmExports {
   bp_log_encode(): number;
   bp_log_ptr(): number;
   bp_log_truncated(): number;
+  bp_score_version(): number;
   bp_replay_hash(ptr: number, len: number): bigint;
   bp_golden_hash(ticks: number): bigint;
   bp_note_dropped(n: number): void;
@@ -362,6 +363,10 @@ export class Engine {
     const len = this.exports.bp_log_encode();
     const ptr = this.exports.bp_log_ptr();
     return new Uint8Array(this.exports.memory.buffer, ptr, len).slice();
+  }
+
+  get scoreVersion(): number {
+    return this.exports.bp_score_version();
   }
 
   /** Verdadero si la partida superó el techo de ticks verificables. */

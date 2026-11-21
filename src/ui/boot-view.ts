@@ -16,8 +16,9 @@ export class BootView {
     byId('boot-meta').textContent = text;
   }
 
-  setFallbackDetail(message: string): void {
-    byId('fallback-detail').textContent = message;
+  setFailure(error: unknown): void {
+    const detail = error instanceof Error ? error.message : String(error);
+    byId('fallback-detail').textContent = fallbackMessage(detail);
   }
 }
 

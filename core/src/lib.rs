@@ -10,7 +10,7 @@
 //!   bp_tick_fixed(input_ptr)           -> tick count (fixed step, host never picks dt)
 //!   bp_snapshot_ptr() / bp_snapshot_len()
 //!   bp_map_data_ptr() / bp_map_data_len() / bp_load_map(id)
-//!   bp_log_encode() / bp_log_ptr() / bp_log_truncated()
+//!   bp_log_encode() / bp_log_ptr() / bp_log_truncated() / bp_score_version()
 //!   bp_replay_hash(ptr, len) / bp_golden_hash(ticks)
 //!   bp_note_dropped(n)
 //!   bp_alloc(len) / bp_free(ptr, len)
@@ -169,6 +169,12 @@ pub extern "C" fn bp_log_ptr() -> *const u8 {
 #[no_mangle]
 pub extern "C" fn bp_log_truncated() -> u32 {
     game().log_truncated() as u32
+}
+
+/// Versión de puntuación del modo que se está simulando.
+#[no_mangle]
+pub extern "C" fn bp_score_version() -> u32 {
+    u32::from(game().score_version())
 }
 
 /// Re-simula un registro y devuelve el hash del estado final (0 si es inválido).

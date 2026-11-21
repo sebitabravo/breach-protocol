@@ -10,7 +10,7 @@ use crate::math::{clamp, forward_from_yaw, right_from_yaw, v3, V3};
 use crate::player::{Input, Player, EYE_HEIGHT, HEIGHT, RADIUS};
 use crate::protocol::*;
 use crate::rng::Rng;
-use crate::waves::{endless_composition, mission_composition, Waves};
+use crate::waves::{endless_composition, mission_composition, surge_composition, Composition, Waves};
 use crate::weapons;
 
 pub const MATCH_SECONDS: f32 = 180.0;
@@ -29,16 +29,16 @@ pub const MODE_OVERFLOW: u8 = 1;
 pub const MODE_DAILY: u8 = 2;
 pub const MODE_PRACTICE: u8 = 3;
 
-/// Versión de la fórmula de puntaje; el servidor la guarda junto a cada marca.
-pub const SCORE_VERSION: u8 = 1;
+/// Versión de puntuación de misión y diario, incluida la simulación.
+pub const SCORE_VERSION: u8 = 3;
 
 pub const FLAG_AIM_ASSIST: u8 = 1;
 pub const FLAG_AUTO_RELOAD: u8 = 2;
 /// El arma 3 (SG-08) puede equiparse. El progreso es del cliente; el servidor lo registra pero no lo juzga.
 pub const FLAG_SHOTGUN: u8 = 4;
 
-/// Versión de la fórmula del modo Overflow. La misión conserva `SCORE_VERSION`.
-pub const OVERFLOW_SCORE_VERSION: u8 = 1;
+/// Versión de puntuación de Overflow, incluida la simulación que genera el puntaje.
+pub const OVERFLOW_SCORE_VERSION: u8 = 3;
 const OVERFLOW_KILL_POINTS: f32 = 100.0;
 const OVERFLOW_NODE_POINTS: f32 = 500.0;
 const OVERFLOW_WAVE_POINTS: f32 = 250.0;
@@ -285,8 +285,8 @@ impl Game {
         }
     }
 
-    /// Verdadero si la partida superó `replay::MAX_TICKS`. Su registro no es verificable: el
-    /// servidor debe rechazarlo aunque se pueda codificar.
+    /// Verdadero si la partida superó `replay::MAX_TICKS`. El prefijo registrado sigue
+    /// siendo verificable y el servidor lo puntúa según las reglas del modo.
     pub fn log_truncated(&self) -> bool {
         self.recorder.as_ref().is_some_and(|r| r.truncated())
     }
@@ -335,7 +335,7 @@ impl Game {
         let rules = daily::rules(self.mutator);
         self.player.hp_max = rules.player_hp_max;
         self.player.hp = rules.player_hp_max;
-        self.player.reserve = self.player.reserve.saturating_mul(rules.reserve_mult);
+        self.player.scale_starting_reserves(rules.reserve_mult);
         for e in self.enemies.iter_mut() {
             *e = EMPTY_ENEMY;
         }
@@ -367,15 +367,29 @@ impl Game {
         self.write_snapshot();
     }
 
-    /// Arranca la oleada `wave` con la composición del sector actual.
-    fn begin_wave(&mut self, wave: u32) {
+    fn wave_composition(&self, wave: u32) -> Composition {
         let base = if self.mode == MODE_OVERFLOW {
             endless_composition(self.map_id, wave)
         } else {
             mission_composition(self.map_id, wave)
         };
-        self.waves
-            .begin(wave, daily::rules(self.mutator).scale(base));
+        daily::rules(self.mutator).scale(base)
+    }
+
+    fn begin_wave(&mut self, wave: u32) {
+        self.waves.begin(wave, self.wave_composition(wave));
+    }
+
+    fn accelerate_wave(&mut self) {
+        let wave = self.waves.wave;
+        let (wave, plan, reason) = if self.waves.has_next() {
+            let next = wave.saturating_add(1);
+            (next, self.wave_composition(next), WAVE_ACCELERATED)
+        } else {
+            (wave, surge_composition(self.map_id), WAVE_SURGE)
+        };
+        self.waves.accelerate(wave, plan);
+        self.push_event(ev::WAVE_START, wave as f32, reason, 0.0, 0.0);
     }
 
     /// Segundos que quedan. Overflow no tiene reloj: se reporta 0 y `waveTotal == 0` lo indica.
@@ -384,14 +398,6 @@ impl Game {
             0.0
         } else {
             (MATCH_SECONDS - self.time_elapsed).max(0.0)
-        }
-    }
-
-    /// Terminales listas para otra oleada: se desactivan al limpiar la anterior.
-    fn reset_terminals(&mut self) {
-        for n in self.nodes.iter_mut() {
-            n.active = false;
-            n.progress = 0.0;
         }
     }
 
@@ -406,7 +412,7 @@ impl Game {
         }
     }
 
-    /// Versión de la fórmula de `final_score` para el modo actual.
+    /// Versión de puntuación para el modo actual.
     pub fn score_version(&self) -> u8 {
         if self.mode == MODE_OVERFLOW {
             OVERFLOW_SCORE_VERSION
@@ -433,13 +439,13 @@ impl Game {
     }
 
     /// Enemies still to come in the current wave (alive plus queued).
-    fn enemies_remaining(&self) -> u32 {
+    fn enemies_remaining(&self) -> u64 {
         let queued = if self.waves.running {
-            self.waves.queued() as u32
+            self.waves.queued()
         } else {
             0
         };
-        self.alive_count() + queued
+        u64::from(self.alive_count()) + queued
     }
 
     pub fn compute_score(&self) -> f32 {
@@ -506,31 +512,29 @@ impl Game {
 
         self.update_weapons(dt, input);
         self.player.tick(dt, &input, &self.arena);
-        self.update_nodes(dt, input);
+        let accelerated = self.update_nodes(dt, input);
         self.update_enemies(dt);
-        self.update_waves(dt);
+        // The activation tick itself doesn't spend any of the new spawn grace.
+        if !accelerated {
+            self.update_waves(dt);
+        }
         self.update_phase(dt);
         self.write_snapshot();
     }
 
     fn update_weapons(&mut self, dt: f32, input: Input) {
         let _ = dt;
-        let def = *weapons::def(self.player.weapon);
-        if self.practice && self.player.reserve < 999 {
-            self.player.reserve = 999;
+        if self.practice {
+            let slot = self.player.active_slot_mut();
+            slot.reserve = slot.reserve.max(999);
         }
 
         // El arma 3 solo existe si la partida se inició con FLAG_SHOTGUN.
         let unlocked = input.switch != weapons::ID_SHOTGUN || self.shotgun_unlocked;
-        if input.switch != 0
-            && input.switch != self.player.weapon
-            && unlocked
-            && self.player.equip(input.switch)
-        {
-            let reserve_mult = daily::rules(self.mutator).reserve_mult;
-            self.player.reserve = self.player.reserve.saturating_mul(reserve_mult);
+        if unlocked && self.player.equip(input.switch) {
             self.push_event(ev::RELOAD_END, self.player.weapon as f32, 0.0, 0.0, 0.0);
         }
+        let def = *weapons::def(self.player.weapon);
 
         if input.reload && self.player.start_reload() {
             self.push_event(ev::RELOAD_START, self.player.weapon as f32, 0.0, 0.0, 0.0);
@@ -540,15 +544,13 @@ impl Game {
         if !wants || self.player.fire_cd > 0.0 || self.player.is_reloading() {
             return;
         }
-        if self.player.ammo == 0 {
+        if !self.player.fire() {
             self.push_event(ev::EMPTY_MAG, 0.0, 0.0, 0.0, 0.0);
             self.player.fire_cd = 0.25;
             self.player.start_reload();
             return;
         }
 
-        self.player.ammo -= 1;
-        self.player.fire_cd = weapons::interval(&def);
         self.shots += 1;
 
         let origin = self.player.eye();
@@ -577,8 +579,7 @@ impl Game {
             .add_recoil(def.recoil_pitch, self.rng.signed(def.recoil_yaw));
 
         if self.auto_reload
-            && self.player.ammo == 0
-            && self.player.reserve > 0
+            && self.player.active_slot().ammo == 0
             && self.player.start_reload()
         {
             self.push_event(ev::RELOAD_START, self.player.weapon as f32, 0.0, 0.0, 0.0);
@@ -751,7 +752,8 @@ impl Game {
         }
     }
 
-    fn update_nodes(&mut self, dt: f32, input: Input) {
+    fn update_nodes(&mut self, dt: f32, input: Input) -> bool {
+        let mut accelerated = false;
         self.interacting = -1;
         let nodes = self.nodes;
         for (i, &n) in nodes.iter().enumerate() {
@@ -778,18 +780,28 @@ impl Game {
                         self.player.heal(OVERFLOW_NODE_HEAL);
                     }
                     self.push_event(ev::NODE_ACTIVATED, i as f32, n.x, n.y, n.z);
+                    self.accelerate_wave();
+                    accelerated = true;
                 }
             } else {
                 self.nodes[i].progress = (n.progress - dt * 1.5).max(0.0);
             }
         }
+        accelerated
     }
 
     fn update_waves(&mut self, dt: f32) {
         if self.practice && self.waves.finished {
-            self.waves.finished = false;
             self.begin_wave(1);
             self.push_event(ev::WAVE_START, 1.0, 0.0, 0.0, 0.0);
+        }
+        if self.waves.spawn_grace > 0.0 {
+            self.waves.spawn_grace -= dt;
+            // The tolerance keeps f32 rounding from adding a 61st tick at 60 Hz.
+            if self.waves.spawn_grace > 0.000_01 {
+                return;
+            }
+            self.waves.spawn_grace = 0.0;
         }
         let boost = if self.phase == phase::EXTRACTION {
             2.0
@@ -808,19 +820,16 @@ impl Game {
             }
             if self.waves.queued() == 0 && alive == 0 {
                 self.waves.running = false;
-                if self.mode == MODE_OVERFLOW {
-                    self.reset_terminals();
+                if self.waves.has_next() {
                     self.waves.intermission = 4.0;
-                } else if self.waves.wave >= self.waves.total {
-                    self.waves.finished = true;
                 } else {
-                    self.waves.intermission = 4.0;
+                    self.waves.finished = true;
                 }
             }
         } else if self.waves.intermission > 0.0 {
             self.waves.intermission -= dt;
             if self.waves.intermission <= 0.0 && self.waves.has_next() {
-                let next = self.waves.wave + 1;
+                let next = self.waves.wave.saturating_add(1);
                 self.begin_wave(next);
                 self.push_event(ev::WAVE_START, next as f32, 0.0, 0.0, 0.0);
             }
@@ -927,9 +936,9 @@ impl Game {
         s[H_PITCH] = self.player.pitch;
         s[H_GROUNDED] = if self.player.grounded { 1.0 } else { 0.0 };
         s[H_WEAPON] = self.player.weapon as f32;
-        s[H_AMMO] = self.player.ammo as f32;
+        s[H_AMMO] = self.player.active_slot().ammo as f32;
         s[H_MAG] = weapons::def(self.player.weapon).mag as f32;
-        s[H_RESERVE] = self.player.reserve as f32;
+        s[H_RESERVE] = self.player.active_slot().reserve as f32;
         s[H_RELOADING] = if self.player.is_reloading() { 1.0 } else { 0.0 };
         s[H_RELOAD_PROGRESS] = self.player.reload_progress();
         s[H_SPREAD] = self.player.spread();
@@ -1063,7 +1072,7 @@ mod tests {
             ..Default::default()
         };
         g.tick(1.0 / 60.0, input);
-        assert_eq!(g.player.ammo, weapons::SIDEARM.mag - 1);
+        assert_eq!(g.player.active_slot().ammo, weapons::SIDEARM.mag - 1);
         assert_eq!(g.shots, 1);
         run_steps(&mut g, 30, Input::default());
         assert!(g.player.recoil_pitch.abs() < 0.02);
@@ -1131,6 +1140,7 @@ mod tests {
             },
         );
         assert!(g.nodes[0].progress > 0.0 && g.nodes[0].progress < 1.0);
+        assert_eq!(g.waves.wave, 1, "partial channels do not escalate");
         run_steps(&mut g, 10, Input::default());
         assert!(
             g.nodes[0].progress < 0.3,
@@ -1147,6 +1157,151 @@ mod tests {
         );
         assert!(g.nodes[0].active);
         assert_eq!(g.nodes_active, 1);
+    }
+
+    fn channel_at(g: &mut Game, index: usize) {
+        let node = g.nodes[index];
+        g.player.pos = v3(node.x, node.y, node.z + 1.0);
+        g.player.vel = V3::ZERO;
+        for _ in 0..90 {
+            if g.nodes[index].active {
+                return;
+            }
+            g.step(Input {
+                interact: true,
+                ..Input::default()
+            });
+        }
+        assert!(g.nodes[index].active, "terminal {index} did not activate");
+    }
+
+    fn last_event(g: &Game, kind: f32) -> Option<(u32, f32, f32)> {
+        (0..MAX_EVENTS)
+            .map(|slot| EVENT_BASE + slot * EVENT_STRIDE)
+            .filter(|&base| g.snapshot[base + EV_TYPE] == kind)
+            .map(|base| {
+                (
+                    g.snapshot[base + EV_SEQ] as u32,
+                    g.snapshot[base + EV_A],
+                    g.snapshot[base + EV_B],
+                )
+            })
+            .max_by_key(|event| event.0)
+    }
+
+    #[test]
+    fn terminal_acceleration_preserves_live_enemies_and_fifo_spawn_order() {
+        let mut g = game_with_arena();
+        // Start with one real wave-2 spawn and keep the rest queued during channeling.
+        g.begin_wave(2);
+        g.spawn_one();
+        g.waves.spawn_timer = 99.0;
+        let sentry = g.enemies[0];
+        let before = g.waves.queued();
+        assert!(before > 0);
+        let mut expected = g.waves;
+        expected.begin(3, mission_composition(0, 3));
+        let kinds: Vec<u8> = (g.waves.queue_head..g.waves.queue_len)
+            .map(|i| g.waves.queue[i])
+            .chain((0..expected.queue_len).map(|i| expected.queue[i]))
+            .collect();
+        channel_at(&mut g, 0);
+        assert_eq!(g.waves.wave, 3);
+        assert_eq!(g.alive_count(), 1);
+        assert_eq!(g.enemies[0].hp, sentry.hp);
+        assert_eq!(g.enemies[0].kind, sentry.kind);
+        assert_eq!(g.waves.queued() as usize, kinds.len());
+        assert_eq!(g.snapshot[H_ENEMIES_REMAINING], (1 + kinds.len()) as f32);
+        assert_eq!(last_event(&g, ev::WAVE_START).map(|(_, a, b)| (a, b)), Some((3.0, 1.0)));
+        assert!(last_event(&g, ev::NODE_ACTIVATED).unwrap().0 < last_event(&g, ev::WAVE_START).unwrap().0);
+        let held = Input {
+            interact: true,
+            ..Input::default()
+        };
+        run_steps(&mut g, 59, held);
+        assert_eq!(g.waves.spawned, 1, "grace ended before one second");
+        g.step(held);
+        assert_eq!(g.waves.spawned, 2);
+        assert_eq!(g.enemies[1].kind, kinds[0]);
+        for kind in &kinds[1..] {
+            g.enemies[1].hurt(f32::MAX);
+            g.spawn_one();
+            assert_eq!(g.enemies[1].kind, *kind);
+        }
+        assert_eq!(g.waves.queued(), 0);
+        assert_eq!((g.waves.wave, g.nodes_active), (3, 1));
+    }
+
+    #[test]
+    fn terminal_skips_intermission_and_normal_wave_starts_keep_their_event() {
+        let mut normal = game_with_arena();
+        normal.waves.queue_head = normal.waves.queue_len;
+        normal.step(Input::default());
+        assert_eq!((normal.waves.wave, normal.waves.intermission), (1, 4.0));
+        let mut accelerated = game_with_arena();
+        accelerated.waves.queue_head = accelerated.waves.queue_len;
+        accelerated.step(Input::default());
+        channel_at(&mut accelerated, 0);
+        assert_eq!((accelerated.waves.wave, accelerated.waves.intermission), (2, 0.0));
+        assert_eq!(accelerated.alive_count(), 0);
+        run_steps(&mut normal, 239, Input::default());
+        assert_eq!(normal.waves.wave, 1);
+        run_steps(&mut normal, 2, Input::default());
+        assert_eq!(normal.waves.wave, 2);
+        assert_eq!(last_event(&normal, ev::WAVE_START).map(|(_, a, b)| (a, b)), Some((2.0, 0.0)));
+    }
+
+    #[test]
+    fn at_cap_terminals_append_bounded_surges_and_restart_a_finished_director() {
+        let mut g = game_with_arena();
+        g.begin_wave(WAVE_TOTAL);
+        g.waves.spawn_timer = 99.0;
+        let queued = g.waves.queued();
+        channel_at(&mut g, 0);
+        assert_eq!(g.waves.wave, WAVE_TOTAL);
+        assert_eq!(g.waves.queued(), queued + 3);
+        assert_eq!(last_event(&g, ev::WAVE_START).map(|(_, a, b)| (a, b)), Some((5.0, 2.0)));
+        while g.waves.queued() > 0 {
+            g.spawn_one();
+            for enemy in &mut g.enemies {
+                enemy.hurt(f32::MAX);
+            }
+        }
+        run_steps(&mut g, 61, Input::default());
+        assert!(g.waves.finished);
+        channel_at(&mut g, 1);
+        assert_eq!(g.waves.queued(), 3);
+        assert!(!g.waves.finished && g.waves.running);
+        channel_at(&mut g, 2);
+        assert_eq!(g.phase, phase::EXTRACTION);
+        assert!((g.extraction - (EXTRACTION_SECONDS - FIXED_DT)).abs() < 0.0001);
+        assert!(last_event(&g, ev::WAVE_START).unwrap().0 < last_event(&g, ev::EXTRACTION).unwrap().0);
+        let spawned = g.waves.spawned;
+        run_steps(&mut g, 59, Input::default());
+        assert_eq!(g.waves.spawned, spawned, "extraction shortened grace");
+        g.step(Input::default());
+        assert_eq!(g.waves.spawned, spawned + 1);
+    }
+
+    #[test]
+    fn practice_cycles_waves_without_extraction_timeout_or_defeat() {
+        let mut g = Game::new(42);
+        assert!(g.start(MODE_PRACTICE, 0, 42, 0));
+        for index in 0..MAX_NODES {
+            channel_at(&mut g, index);
+            assert_eq!(g.waves.wave, 2 + index as u32);
+        }
+        g.begin_wave(WAVE_TOTAL);
+        g.waves.queue_head = g.waves.queue_len;
+        for e in &mut g.enemies {
+            e.hurt(f32::MAX);
+        }
+        g.time_elapsed = MATCH_SECONDS + 1.0;
+        g.player.hp = 0.0;
+        run_steps(&mut g, 2, Input::default());
+        assert_eq!((g.phase, g.time_left, g.waves.wave), (phase::PLAYING, MATCH_SECONDS, 1));
+        assert!(g.player.hp > 0.0);
+        assert!(g.nodes.iter().all(|n| n.active));
     }
 
     #[test]
@@ -1273,7 +1428,7 @@ mod tests {
             },
         );
         let without = g.hits;
-        g.player.ammo = 10;
+        g.player.active_slot_mut().ammo = 10;
         g.player.fire_cd = 0.0;
         g.aim_assist = true;
         g.hits = 0;
@@ -1398,7 +1553,7 @@ mod tests {
             },
         );
         assert_eq!(g.shots, 1);
-        assert_eq!(g.player.ammo, weapons::SHOTGUN.mag - 1);
+        assert_eq!(g.player.active_slot().ammo, weapons::SHOTGUN.mag - 1);
         assert!(
             g.hits <= g.shots,
             "hits {} exceed shots {}",
@@ -1428,7 +1583,7 @@ mod tests {
     #[test]
     fn ironhide_doubles_the_reserve_and_hardens_enemies() {
         let mut g = daily_game(daily::MUTATOR_IRONHIDE);
-        assert_eq!(g.player.reserve, weapons::SIDEARM.reserve * 2);
+        assert_eq!(g.player.active_slot().reserve, weapons::SIDEARM.reserve * 2);
         g.spawn_one();
         let scout = g
             .enemies
@@ -1440,6 +1595,35 @@ mod tests {
             "{}",
             scout.hp
         );
+    }
+
+    #[test]
+    fn ironhide_snapshot_preserves_active_weapon_ammo_and_scaled_reserve() {
+        let mut g = daily_game(daily::MUTATOR_IRONHIDE);
+        g.waves.running = false;
+        let fire = Input {
+            fire_pressed: true,
+            ..Input::default()
+        };
+        g.step(fire);
+        for _ in 0..20 {
+            g.step(Input::default());
+        }
+        g.step(fire);
+        g.step(Input {
+            switch: weapons::ID_CARBINE,
+            ..Input::default()
+        });
+        assert_eq!(g.snapshot[H_MAG], f32::from(weapons::CARBINE.mag));
+        assert_eq!(g.snapshot[H_AMMO], f32::from(weapons::CARBINE.mag));
+        assert_eq!(g.snapshot[H_RESERVE], f32::from(weapons::CARBINE.reserve * 2));
+        g.step(Input {
+            switch: weapons::ID_SIDEARM,
+            ..Input::default()
+        });
+        assert_eq!(g.snapshot[H_MAG], f32::from(weapons::SIDEARM.mag));
+        assert_eq!(g.snapshot[H_AMMO], f32::from(weapons::SIDEARM.mag - 2));
+        assert_eq!(g.snapshot[H_RESERVE], f32::from(weapons::SIDEARM.reserve * 2));
     }
 
     #[test]
@@ -1530,31 +1714,48 @@ mod tests {
     }
 
     #[test]
-    fn terminals_reset_when_a_wave_is_cleared_and_activations_stay_cumulative() {
+    fn overflow_terminal_cannot_be_farmed_after_two_wave_clears() {
         let mut g = overflow_game(0);
-        g.waves.queue_head = g.waves.queue_len;
-        for n in g.nodes.iter_mut() {
-            n.active = true;
-            n.progress = 1.0;
-        }
-        g.nodes_active = 3;
-        for _ in 0..(10 * 60) {
-            if !g.waves.running {
-                break;
+        channel_at(&mut g, 0);
+        assert_eq!(g.waves.wave, 2);
+        for wave in 2..=3 {
+            for _ in 0..1800 {
+                for e in g.enemies.iter_mut().filter(|e| e.is_alive()) {
+                    e.hurt(f32::MAX);
+                }
+                g.step(Input::default());
+                if !g.waves.running {
+                    break;
+                }
             }
-            g.tick(FIXED_DT, Input::default());
+            assert!(!g.waves.running, "wave {wave} never cleared");
+            assert!(g.nodes[0].active);
+            run_steps(&mut g, 241, Input::default());
+            assert_eq!(g.waves.wave, wave + 1);
         }
-        assert!(!g.waves.running, "wave never cleared");
-        for n in g.nodes.iter() {
-            assert!(!n.active && n.progress == 0.0, "{n:?}");
-        }
-        assert_eq!(g.nodes_active, 3, "activations are a running total");
+        g.player.hp = 50.0;
+        g.player.damage_age = 0.0;
+        g.waves.spawn_timer = 99.0;
+        let score = g.final_score();
+        let first_activation = last_event(&g, ev::NODE_ACTIVATED);
+        run_steps(
+            &mut g,
+            90,
+            Input {
+                interact: true,
+                ..Input::default()
+            },
+        );
+        assert!(g.nodes[0].active);
+        assert_eq!((g.nodes_active, g.final_score(), g.player.hp), (1, score, 50.0));
+        assert_eq!(last_event(&g, ev::NODE_ACTIVATED), first_activation);
+        assert_eq!(g.waves.wave, 4);
     }
 
     #[test]
     fn each_overflow_terminal_is_worth_500_and_heals_25() {
         let mut g = overflow_game(0);
-        g.waves.queue_head = g.waves.queue_len;
+        g.waves.spawn_timer = 99.0;
         g.player.hp = 50.0;
         // Sin esto la regeneración sumaría vida y el test no mediría la curación del terminal.
         g.player.damage_age = 0.0;
@@ -1568,8 +1769,8 @@ mod tests {
         }
         assert_eq!(g.nodes_active, 1);
         assert!((g.player.hp - 75.0).abs() < 0.5, "hp {}", g.player.hp);
-        // Un terminal a oleada 1, sin disparos ni daño: 500 + 250 de oleada alcanzada.
-        assert_eq!(g.final_score(), 750);
+        // 500 for the terminal, plus 250 for each wave level reached (now 2).
+        assert_eq!(g.final_score(), 1000);
     }
 
     #[test]

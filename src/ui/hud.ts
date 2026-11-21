@@ -3,11 +3,13 @@
  * cambió. El minimapa es un canvas 2D aparte, redibujado cada dos frames.
  */
 import type { Snapshot } from '../wasm/bridge';
-import { ENEMY_STATE, PHASE, WEAPON } from '../wasm/protocol';
+import { ENEMY_STATE, MAX_NODES, PHASE, WEAPON } from '../wasm/protocol';
 import type { MapData, Mutator } from '../world/map';
 import { MUTATOR_LABEL } from '../world/map';
 import type { Mode } from '../core/screens';
 import type { FeedKind } from '../core/events';
+import { damageBearing } from '../core/bearing';
+import { FIXED_DT } from '../core/loop';
 import { byId } from './dom';
 
 export const WEAPON_SHORT: Record<number, string> = {
@@ -20,7 +22,7 @@ export const WEAPON_SHORT: Record<number, string> = {
 const INFINITE = '∞';
 const RESERVE_UNLIMITED = 999;
 const HIT_FLASH_MS = 160;
-const DAMAGE_DIR_MS = 900;
+const DAMAGE_DIR_TICKS = Math.round(0.9 / FIXED_DT);
 
 export interface MatchView {
   mode: Mode;
@@ -52,7 +54,7 @@ function modeLabel(view: MatchView): string {
     case 'daily':
       return `protocolo diario · ${view.dateKey} · ${MUTATOR_LABEL[view.mutator]}`;
     case 'practice':
-      return 'simulador';
+      return ''; // The sector kicker already identifies the simulator.
   }
 }
 
@@ -76,6 +78,7 @@ export class Hud {
   private nodes = Array.from(document.querySelectorAll<HTMLElement>('#hud-nodes .node'));
   private hp = byId('hud-hp');
   private hpBar = byId('hud-hp-bar');
+  private hpTrack = this.hpBar.parentElement!;
   private ammo = byId('hud-ammo');
   private reserve = byId('hud-reserve');
   private weaponName = byId('hud-weapon');
@@ -83,12 +86,11 @@ export class Hud {
   private reloadBar = byId('hud-reload-bar');
   private reloadHint = byId('hud-reload-hint');
   private ammoBlock = document.querySelector<HTMLElement>('.ammo');
-  private prompt = byId('hud-prompt');
-  private promptText = byId('hud-prompt-text');
   private crosshair = byId('crosshair');
   private hitMarker = byId('hit-marker');
   private damageFlash = byId('damage-flash');
   private damageDir = byId('hud-dmgdir');
+  private damageArrow = this.damageDir.querySelector('span')!;
   private extraction = byId('hud-extraction');
   private extractionTime = byId('hud-extraction-time');
   private feed = byId('hud-feed');
@@ -104,7 +106,11 @@ export class Hud {
   private map: MapData | null = null;
   private view: MatchView | null = null;
   private hitTimer = 0;
-  private dirTimer = 0;
+  private hpTimer = 0;
+  private damageSeen = -1;
+  private damageUntilTick = -1;
+  private readonly damageSource = { x: 0, z: 0 };
+  private readonly playerPosition = { x: 0, z: 0 };
 
   private set(key: string, value: string | number | boolean, apply: () => void): void {
     if (this.cache.get(key) === value) return;
@@ -118,7 +124,9 @@ export class Hud {
     this.cache.clear();
     this.sectorCode.textContent = view.sectorCode;
     this.sectorName.textContent = view.sectorName;
-    this.mode.textContent = modeLabel(view);
+    const mode = modeLabel(view);
+    this.mode.textContent = mode;
+    this.mode.hidden = mode === '';
     this.timeLabel.textContent = view.mode === 'run' || view.mode === 'daily' ? 'restante' : 'transcurrido';
     for (const slot of this.slots) {
       const weapon = Number(slot.dataset.weapon);
@@ -134,7 +142,12 @@ export class Hud {
     this.cache.clear();
     for (const entry of this.entries) entry.el.remove();
     this.entries = [];
-    this.hideDamageDirection();
+    this.damageUntilTick = -1;
+    this.damageDir.hidden = true;
+    window.clearTimeout(this.hitTimer);
+    window.clearTimeout(this.hpTimer);
+    this.damageSeen = -1;
+    delete this.hpTrack.dataset.flash;
     this.hitMarker.classList.remove('is-hot', 'is-kill');
   }
 
@@ -167,7 +180,9 @@ export class Hud {
     const objectiveText =
       state.phase === PHASE.extraction
         ? 'sostené la posición hasta la extracción'
-        : `reactivá el terminal de control (${state.nodesActive}/3)`;
+        : this.view?.mode === 'overflow' && state.nodesActive >= MAX_NODES
+          ? 'terminales aseguradas · resistí'
+          : `reactivá una terminal (${state.nodesActive}/${MAX_NODES})`;
     this.set('objLine', objectiveText, () => {
       this.objectiveLine.textContent = objectiveText;
     });
@@ -184,6 +199,12 @@ export class Hud {
       });
     }
 
+    if (this.damageSeen >= 0 && state.damageTaken > this.damageSeen) {
+      this.hpTrack.dataset.flash = this.hpTrack.dataset.flash === 'a' ? 'b' : 'a';
+      window.clearTimeout(this.hpTimer);
+      this.hpTimer = window.setTimeout(() => { delete this.hpTrack.dataset.flash; }, 235);
+    }
+    this.damageSeen = state.damageTaken;
     const hp = Math.max(0, Math.round(state.hp));
     this.set('hp', hp, () => {
       this.hp.textContent = String(hp);
@@ -255,15 +276,9 @@ export class Hud {
     const canInteract = state.interacting >= 0;
     this.set('interactAvailable', canInteract, () => {
       this.interactBtn?.classList.toggle('is-available', canInteract);
-      this.prompt.hidden = !canInteract;
     });
-    if (canInteract) {
-      const text = `${usingTouch ? 'tocá' : 'mantené'} para activar el terminal ${state.interacting + 1}`;
-      this.set('promptText', text, () => {
-        this.promptText.textContent = text;
-      });
-    }
 
+    this.updateDamageDirection(state);
     this.tickFeed();
     if (this.frame % 2 === 0) this.drawMinimap(state);
   }
@@ -282,23 +297,29 @@ export class Hud {
   /** Marca de impacto; `kill` cambia el color a peligro. Ligada a EVT.enemyHit / EVT.enemyDied. */
   flashHit(kill: boolean): void {
     this.hitMarker.classList.toggle('is-kill', kill);
+    this.hitMarker.classList.toggle('is-repeat');
     this.hitMarker.classList.add('is-hot');
     window.clearTimeout(this.hitTimer);
     this.hitTimer = window.setTimeout(() => this.hitMarker.classList.remove('is-hot'), HIT_FLASH_MS);
   }
 
-  /** Indica de dónde llega el daño: 0 = al frente, +π/2 = derecha, ±π = atrás. */
-  showDamageFrom(bearing: number): void {
-    const degrees = (bearing * 180) / Math.PI;
-    const arrow = this.damageDir.firstElementChild as HTMLElement | null;
-    if (arrow) arrow.style.transform = `rotate(${degrees.toFixed(1)}deg)`;
-    this.damageDir.hidden = false;
-    window.clearTimeout(this.dirTimer);
-    this.dirTimer = window.setTimeout(() => this.hideDamageDirection(), DAMAGE_DIR_MS);
+  /** Keep the world-space hit source; only simulation ticks age the cue. */
+  showDamageFrom(x: number, z: number, tick: number): void {
+    this.damageSource.x = x;
+    this.damageSource.z = z;
+    this.damageUntilTick = tick + DAMAGE_DIR_TICKS;
   }
 
-  private hideDamageDirection(): void {
-    this.damageDir.hidden = true;
+  private updateDamageDirection(state: Snapshot): void {
+    if (state.tick >= this.damageUntilTick) {
+      if (!this.damageDir.hidden) this.damageDir.hidden = true;
+      return;
+    }
+    this.playerPosition.x = state.px;
+    this.playerPosition.z = state.pz;
+    const degrees = Math.round(damageBearing(state.yaw, this.playerPosition, this.damageSource) * 1800 / Math.PI) / 10;
+    this.set('damageBearing', degrees, () => { this.damageArrow.style.transform = `rotate(${degrees}deg)`; });
+    if (this.damageDir.hidden) this.damageDir.hidden = false;
   }
 
   private tickFeed(): void {

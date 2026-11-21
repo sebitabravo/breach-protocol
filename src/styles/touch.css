@@ -20,12 +20,18 @@
   touch-action: none;
 }
 
+/* Share the stick's footprint with the HUD so its clearance tracks both breakpoints. */
+#app.is-touch {
+  --touch-stick-bottom: calc(84px + var(--safe-b));
+  --touch-stick-size: 132px;
+}
+
 .touch__stick {
   position: absolute;
   left: calc(20px + var(--safe-l));
-  bottom: calc(84px + var(--safe-b));
-  width: 132px;
-  height: 132px;
+  bottom: var(--touch-stick-bottom);
+  width: var(--touch-stick-size);
+  height: var(--touch-stick-size);
   border: 1px solid rgba(46, 63, 79, 0.85);
   border-radius: 50%;
   background: radial-gradient(circle, rgba(25, 36, 46, 0.55), rgba(8, 15, 20, 0.25));
@@ -172,9 +178,8 @@
 }
 
 @media (max-width: 760px) {
-  .touch__stick {
-    width: 116px;
-    height: 116px;
+  #app.is-touch {
+    --touch-stick-size: 116px;
   }
 
   .tbtn--fire {
@@ -189,10 +194,9 @@
 }
 
 @media (max-height: 430px) {
-  .touch__stick {
-    width: 104px;
-    height: 104px;
-    bottom: calc(56px + var(--safe-b));
+  #app.is-touch {
+    --touch-stick-size: 104px;
+    --touch-stick-bottom: calc(56px + var(--safe-b));
   }
 
   .tbtn--fire {
