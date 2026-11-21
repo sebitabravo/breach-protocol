@@ -987,6 +987,36 @@
   pointer-events: auto;
 }
 
+/* En táctil no hay Enter ni Retroceso: el avance y el atajo de omitir son botones visibles. */
+.tutorial__continue {
+  display: none;
+}
+
+#app.is-touch .tutorial__continue {
+  display: inline-flex;
+}
+
+#app.is-touch .tutorial__keys {
+  display: none;
+}
+
+.tutorial.is-step-done {
+  animation: tutorial-step-done 520ms ease-out;
+}
+
+@keyframes tutorial-step-done {
+  0% {
+    border-color: var(--primary);
+    background: rgba(92, 224, 139, 0.22);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial.is-step-done {
+    animation: none;
+  }
+}
+
 .tutorial__keys {
   grid-column: 1 / -1;
   font-family: var(--mono);

@@ -1,8 +1,8 @@
 /** Overlay del tutorial: informativo, nunca bloquea la partida. */
-import { TUTORIAL_STEPS, type TutorialOutcome, type TutorialState } from '../core/tutorial';
+import { TUTORIAL_STEPS, tutorialBody, type TutorialDevice, type TutorialOutcome, type TutorialState } from '../core/tutorial';
 import { byId } from './dom';
 
-export function renderTutorial(state: TutorialState | null): void {
+export function renderTutorial(state: TutorialState | null, device: TutorialDevice = 'keyboard'): void {
   const overlay = byId('tutorial');
   if (state?.status !== 'active') {
     overlay.hidden = true;
@@ -12,7 +12,7 @@ export function renderTutorial(state: TutorialState | null): void {
   overlay.hidden = false;
   byId('tut-index').textContent = String(state.step + 1);
   byId('tut-title').textContent = step.title;
-  byId('tut-body').textContent = step.body;
+  byId('tut-body').textContent = tutorialBody(state.step, device);
   overlay.querySelectorAll<HTMLElement>('.tutorial__dots i').forEach((dot, index) => {
     dot.classList.toggle('is-done', index < state.step);
     dot.classList.toggle('is-current', index === state.step);

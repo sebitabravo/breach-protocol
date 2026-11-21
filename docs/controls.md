@@ -12,7 +12,7 @@
 | Pausar / continuar | Esc |
 | Ver ingeniería | F3 |
 | Continuar al paso siguiente del tutorial | Enter |
-| Omitir todo el tutorial | Retroceso (Backspace) |
+| Omitir todo el tutorial | Retroceso (Backspace) dos veces en 2 s; la primera pulsación pide confirmar |
 
 El Simulador también avanza el tutorial automáticamente cuando hacés la acción
 indicada. Los atajos del tutorial funcionan durante la partida, incluso cuando
@@ -35,7 +35,7 @@ con **Repetir tutorial** en el menú.
 Movete con el joystick izquierdo y arrastrá en la arena para mirar. Empujá el joystick hasta el borde para correr. Usá los
 botones de pantalla para disparar, apuntar, saltar, recargar, cambiar de arma o
 pausar. Para activar un terminal, acercate y mantené su botón de interacción.
-El tutorial se puede omitir con el botón **Omitir tutorial**.
+El tutorial avanza con el botón **Continuar** y se puede omitir con **Omitir tutorial**.
 
 ## Encontrar la terminal
 

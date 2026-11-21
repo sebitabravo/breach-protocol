@@ -16,6 +16,7 @@ export type SoundName =
   | 'wave'
   | 'reload'
   | 'reloadEnd'
+  | 'step'
   | 'empty'
   | 'ui'
   | 'win'
@@ -159,6 +160,10 @@ export class AudioManager {
       case 'reloadEnd':
         this.noiseBurst({ duration: 0.04, type: 'bandpass', from: 1400, to: 1000, gain: 0.18, q: 1.6 });
         this.tone({ from: 520, to: 520, duration: 0.05, gain: 0.08, wave: 'square', delay: 0.03 });
+        break;
+      case 'step':
+        this.tone({ from: 740, to: 740, duration: 0.07, gain: 0.14, wave: 'sine' });
+        this.tone({ from: 988, to: 988, duration: 0.11, gain: 0.14, wave: 'sine', delay: 0.07 });
         break;
       case 'empty':
         this.tone({ from: 240, to: 180, duration: 0.05, gain: 0.14, wave: 'square' });

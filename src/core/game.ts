@@ -40,7 +40,17 @@ import {
   type ProgressState,
 } from './progress';
 import { SECTOR_IDS, SECTORS, sectorInfo, type SectorId } from './sectors';
-import { continueTutorial, observeTutorial, skipTutorial, startTutorial, TUTORIAL_TERMINAL, TUTORIAL_TERMINAL_STEP, type TutorialOutcome, type TutorialState } from './tutorial';
+import {
+  continueTutorial,
+  observeTutorial,
+  skipTutorial,
+  SkipConfirm,
+  startTutorial,
+  TUTORIAL_TERMINAL,
+  TUTORIAL_TERMINAL_STEP,
+  type TutorialOutcome,
+  type TutorialState,
+} from './tutorial';
 import { boardFor, fetchBoard, sanitizeName, submitRun, type BoardKey, type RunMode } from '../net/leaderboard';
 import { MUTATORS, type MapData, type Mutator } from '../world/map';
 import {
@@ -146,6 +156,7 @@ export class GameApp {
   private pending: PendingRun | null = null;
   private submitting = false;
   private calibrationOffered = false;
+  private readonly skipConfirm = new SkipConfirm();
   private boardToken = 0;
   private lastSeq = 0;
   private events: WorldEvent[] = [];
@@ -341,7 +352,7 @@ export class GameApp {
     this.tutorialTerminal = -1;
     this.objectiveMarker?.hide();
     this.tutorialOrigin = { x: this.engine.state.px, z: this.engine.state.pz };
-    renderTutorial(this.tutorial);
+    this.renderTutorialNow();
 
     this.dispatch({ type: 'start', mode, mapId });
     this.renderer.setQuality(this.quality.preset, this.dprCap());
@@ -586,14 +597,30 @@ export class GameApp {
       this.endTutorial(next);
       return;
     }
-    this.tutorial = next;
     const state = this.engine?.state;
     if (next.step === TUTORIAL_TERMINAL_STEP && state) {
       this.tutorialTerminal = this.map?.nodes[TUTORIAL_TERMINAL] && !this.terminalActive(state, TUTORIAL_TERMINAL)
         ? TUTORIAL_TERMINAL : this.nearestInactiveTerminal(state);
     }
-    renderTutorial(next);
+    const advanced = this.tutorial?.status === 'active' && next.step > this.tutorial.step;
+    this.tutorial = next;
+    this.renderTutorialNow();
+    if (advanced) this.celebrateTutorialStep();
     this.objectiveMarker?.invalidate();
+  }
+
+  private renderTutorialNow(): void {
+    renderTutorial(this.tutorial, this.input?.usingTouch ? 'touch' : 'keyboard');
+  }
+
+  /** Avance no bloqueante: cue de audio y un destello breve del panel (apagado con reduceMotion). */
+  private celebrateTutorialStep(): void {
+    this.audio.play('step');
+    if (this.settings.reduceMotion) return;
+    const panel = byId('tutorial');
+    panel.classList.remove('is-step-done');
+    void panel.offsetWidth;
+    panel.classList.add('is-step-done');
   }
 
   private endTutorial(outcome: TutorialOutcome): void {
@@ -757,7 +784,10 @@ export class GameApp {
       onEngineering: () => this.toggleEngineering(),
       onTutorialKey: (action, repeat) => {
         if (this.flow.screen !== 'playing' || !this.tutorial) return false;
-        if (!repeat) this.setTutorialStep(action === 'skip' ? skipTutorial(this.tutorial) : continueTutorial(this.tutorial));
+        if (repeat) return true;
+        if (action === 'continue') this.setTutorialStep(continueTutorial(this.tutorial));
+        else if (this.skipConfirm.press(performance.now()) === 'skip') this.setTutorialStep(skipTutorial(this.tutorial));
+        else this.toast('Retroceso otra vez para omitir el tutorial');
         return true;
       },
       onPointerLockLost: () => {
@@ -772,10 +802,12 @@ export class GameApp {
       onTouchDetected: () => {
         this.app.classList.add('is-touch');
         this.applySettings();
+        this.renderTutorialNow();
       },
       onMouseDetected: () => {
         this.app.classList.remove('is-touch');
         this.applySettings();
+        this.renderTutorialNow();
       },
       getWeapon: () => this.engine?.state.weapon ?? WEAPON.sidearm,
       unlockedWeapons: () => this.unlockedWeapons(),
@@ -881,6 +913,9 @@ export class GameApp {
         break;
       case 'tutorial-replay':
         await this.startMatch('practice', 0, { tutorial: true });
+        break;
+      case 'tutorial-continue':
+        if (this.flow.screen === 'playing' && this.tutorial) this.setTutorialStep(continueTutorial(this.tutorial));
         break;
       case 'tutorial-skip':
         if (this.flow.screen === 'playing' && this.tutorial) this.setTutorialStep(skipTutorial(this.tutorial));

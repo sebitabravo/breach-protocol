@@ -60,6 +60,9 @@ for (const method of ['Backspace', 'button'] as const) {
       await page.keyboard.press('Enter');
       await expect(page.locator('#tut-index')).toHaveText('2');
       await page.keyboard.press('Backspace');
+      await expect(page.locator('#toast')).toContainText('Retroceso otra vez');
+      await expect(page.locator('#tutorial')).toBeVisible();
+      await page.keyboard.press('Backspace');
     } else await page.getByRole('button', { name: 'Omitir tutorial' }).tap();
     const handoff = await expectTutorialHandoff(page, 'skipped');
     if (method === 'Backspace') await page.keyboard.press('Escape');
