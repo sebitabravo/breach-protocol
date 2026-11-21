@@ -90,6 +90,19 @@ Overflow larga.
 | `Snapshot.node(index, out)` con objeto reutilizado en `terminals.ts` | No se midió por separado: tres objetos menos por frame. `renderGame` ya estaba en 0.9 ms p50 |
 | `Renderer.resetFeedback()` al iniciar una partida | Coste constante; vacía decals y casquillos |
 
+## Después del pase visual y de combate
+
+`bun run bench:frames --label visual-pass`, mismo equipo y guion, con los robots articulados y el HUD nuevo:
+
+| Preset | Drawing buffer | fps | Intervalo p50 / p95 / p99 (ms) | CPU de `renderGame` p50 / p95 (ms) | Draw calls | Triángulos |
+| --- | --- | ---: | --- | --- | ---: | ---: |
+| low | 523×294 | 59 | 16.7 / 17.3 / 17.6 | 0.8 / 1.5 | 17 | 47 956 |
+| medium | 979×551 | 60 | 16.7 / 17.2 / 17.6 | 0.7 / 1.7 | 23 | 47 962 |
+| high | 2494×1403 | 60 | 16.7 / 17.4 / 17.6 | 1.2 / 1.7 | 25 | 47 850 |
+
+Los robots siguen en un draw por tipo; la pose se sube como una textura RGBA32F de `11 × 4` texeles por robot.
+La CPU de `renderGame` en `high` sube de 0.9 a 1.2 ms p50 (solver de poses de hasta 32 robots).
+
 ## Móvil
 
 Sin medir. Todas las filas son `pending (human)`; no se inventan cifras.

@@ -5,7 +5,7 @@ contraparte medida de `SPEC.md`, que dice qué se quería. Si un valor cambia en
 documento se actualiza en el mismo commit; si discrepa de `SPEC.md`, manda el código y se registra
 abajo como decisión abierta.
 
-Versiones al cierre de esta auditoría: `SCORE_VERSION` 4, `OVERFLOW_SCORE_VERSION` 4, `LOG_VERSION` 4,
+Versiones actuales (pase visual y de combate): `SCORE_VERSION` 5, `OVERFLOW_SCORE_VERSION` 5, `LOG_VERSION` 5,
 `SETTINGS_VERSION` 3.
 
 ## Simulación
@@ -66,16 +66,41 @@ está activa.
 
 | Tipo | Vida | Velocidad | Detecta a | Alcance de ataque | Daño | Telegrafía | Cooldown |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Scout | 35 | 3.5 m/s | 26 m | 2.6 m | 12 | 0.36 s | 1.15 s |
+| Scout | 35 | 3.9 m/s | 26 m | 2.6 m | 12 | 0.36 s | 1.15 s |
 | Sentinel | 55 | 2.0 m/s | 32 m | 20 m (rango preferido 11) | 8 × 3 ráfaga | 0.62 s | 2.3 s |
-| Interceptor | 28 | 5.5 m/s | 26 m | 1.4 m (embestida a 12 m/s, órbita a 3.2 m) | 18 | 0.45 s | 1.6 s |
+| Interceptor | 28 | 5.5 m/s | 26 m | 1.4 m (embestida a 12 m/s, órbita a 3.2 m) | 24 | 0.45 s | 1.3 s |
 
 Fuente: `core/src/enemy.rs`. En Overflow la vida sube 4 % por oleada con tope ×2.
 
 **Patrulla.** Cada enemigo recorre un lazo de 4 m de radio alrededor de donde apareció, avanzando de
-waypoint (0.6 rad) al llegar a 0.8 m o a los 4 s. A los 20 s de patrulla sin detectar al jugador sale a
-buscarlo (scouts y sentinels persiguen; interceptores flanquean). Sin esto, una oleada podía quedar
+waypoint (0.6 rad) al llegar a 0.8 m o a los 4 s; un waypoint tapado por una pared se salta. A los 6 s de
+patrulla sin detectar al jugador sale a buscarlo (scouts y sentinels persiguen; interceptores flanquean). Sin esto, una oleada podía quedar
 abierta si un enemigo aparecía fuera de línea de visión (hallazgo A-13).
+
+**Combate (v5).**
+- El centinela dispara con una dispersión de `0.012 + 0.0025 × velocidad del jugador` (rad): quedarse quieto
+  es peligroso, moverse lo esquiva.
+- La embestida del interceptor apunta 0.22 s por delante del jugador.
+- Un interceptor que flanquea sin línea de visión durante 6 s pasa a perseguir.
+- Los scouts se acercan en zigzag a más de 4 m.
+- La separación entre robots resuelve colisión con el mapa: ninguno queda dentro de una pared.
+
+## Dificultad medida
+
+Bot de referencia (`core/src/scenarios.rs::competent_bot`): reacción de 0.25 s, giro máximo de 6 rad/s,
+strafe alterno cada 1.2 s, carabina. No juega el objetivo, así que nunca gana: mide cuánto resiste. 10 semillas
+por sector, 180 s. Reproducir: `cargo test --manifest-path core/Cargo.toml --release --lib difficulty_report -- --ignored --nocapture`.
+
+| Sector | Bot muerto antes (v4) | Bot muerto después (v5) | Vida media del bot (v4 → v5) | Jugador quieto muere a (v4 → v5) |
+| --- | ---: | ---: | --- | --- |
+| 01 | 9/10 | 9/10 | 144 → 131 s | 38.5 → 21.1 s |
+| 02 | 0/10 (16 de daño en 3 min) | 10/10 | 180 → 100 s | 37.5 → 28.2 s |
+| 03 | 10/10 | 6/10 | 128 → 164 s | 38.7 → 24.0 s |
+
+Lectura: el sector 02 era trivial por un error, no por diseño (robots incrustados en paredes que perseguían para
+siempre). El sector 03 bajó para el bot porque ahora el centinela premia moverse y el bot nunca para de moverse;
+un jugador que se queda quieto lo pasa peor. `difficulty_stays_in_the_agreed_band` fija la banda: el bot cae en
+al menos 3 de 6 semillas por sector y un jugador quieto no pasa de 32 s.
 
 ## Oleadas, terminales y modos
 
@@ -102,6 +127,7 @@ menos 2 por punto de daño. Fuente: `core/src/sim.rs`.
 | # | Tema | Estado |
 | --- | --- | --- |
 | D-1 | Umbral de headshot a `0.78 × h` | `SPEC.md` no define la intención. No se tocó |
-| D-2 | 20 s para que la patrulla salga a buscar y lazo de 4 m | Razonado, sin playtest |
+| D-2 | 6 s para que la patrulla salga a buscar y lazo de 4 m | Medido con el bot, sin playtest humano |
+| D-5 | El bot no juega el objetivo | La dificultad real de ganar una misión no está medida |
 | D-3 | Sprint táctil con el stick a >0.9 | El stick limita por eje: la diagonal completa también corre. Falta probar en dispositivo |
 | D-4 | `SPEC.md` §3.5 describe estados distintos por enemigo (Detect, Scan, Retreat) | El código usa una máquina común con `ST_*`; la equivalencia es aproximada |

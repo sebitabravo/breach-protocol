@@ -164,3 +164,30 @@ Cosas que el plan decía de una forma y se hicieron de otra, o no se hicieron:
 | `--subtle` «≥4.5:1 sobre surface-2 (medido)» | 4.86:1 sobre `surface-2`; 4.05:1 sobre `surface-3` | Se midió sobre `bg`, `surface-1` y `surface-2`, que son las superficies donde hay texto |
 | Auto-calidad «solo si el baseline muestra que se atasca» | Se cambió | El baseline lo mostró: `auto` quedó en `medium` para siempre |
 | Título de los commits | Varios pasan de 50 caracteres | Ver el informe final; no se reescribió la historia sin permiso |
+
+## Pase visual y de combate (rama `feat/visual-combat-pass`)
+
+A pedido del dueño: que el juego se parezca a las maquetas (`SEBITA_ Breach Protocol UI Board.png` y
+`Sebita_ Breach Protocol Design System.png`) y sea más difícil. Investigación de assets con fuentes en el plan:
+los packs CC0 encontrados (Quaternius Sci-Fi Essentials, Animated Robot, RobotExpressive) no publican sus clips,
+tienen estilo de caricatura y un `SkinnedMesh` por robot rompe el presupuesto de draw calls. Se decidió
+construir los robots en código con skinning rígido instanciado.
+
+| # | Cambio | Validación | Estado |
+| --- | --- | --- | --- |
+| V-01 | Robots humanoides articulados de 11 piezas (caminan, apuntan, golpean, embisten, caen), un draw por tipo, alturas iguales a los hitbox | `tests/unit/robot-rig.test.ts`, `render-enemies.test.ts`, presupuesto de e2e sin cambios, captura en partida | hecho |
+| V-02 | Hallazgo: el scout medía 0.95 m en pantalla y 1.7 m en la simulación; el headshot (sobre 0.78·h = 1.33 m) caía por encima de su cabeza visible | La cabeza del rig queda sobre la línea de headshot (`robot-rig.test.ts`) | corregido |
+| V-03 | Visor holográfico con punto rojo y franjas teal en la AR-04; arma ~26 % del ancho en 4:3–16:9 | `assets-review.spec.ts` (encuadre entero, bajo la mira, dentro del 95 %) | hecho |
+| V-04 | HUD de la maqueta: tarjeta de objetivo con rombo, íconos de reloj y enemigos, vida `+` con barra de 10 tramos, silueta del arma junto a la munición, íconos SVG en los botones táctiles | `mobile-layout.spec.ts` (sin solapes), `screens`, `premium` | hecho |
+| V-05 | Dificultad v5 con bot de referencia (ver `GAMEPLAY_SPEC.md`) | `difficulty_stays_in_the_agreed_band`, `separating_enemies_never_pushes_one_into_a_wall` | hecho |
+| V-06 | Hallazgo: la separación entre enemigos los incrustaba en paredes; los patrullajes de esquina ponían waypoints dentro de muros; los interceptores orbitaban sin fin detrás de una pared | Mismas pruebas | corregido |
+| V-07 | Atmósfera de la arena (niebla volumétrica, piso mojado) | — | **pendiente**: la luz cian/naranja actual ya sigue la maqueta; no se arriesgó el presupuesto de frame |
+
+Performance tras el pase (M3, ventana, 1600×900 DPR 2): low/medium/high a 59–60 fps, p95 ≤17.4 ms, mismas
+draw calls (17/23/25), ~48 k triángulos (antes ~41 k).
+
+Pruebas que cambiaron en este pase: `gameplay` · rumbo del daño real ahora toma el golpe del tick ≥1070 (el primero
+seguido de 54 ticks sin daño; con la IA v5 los golpes a un jugador quieto llegan de a pares); `assets-review` ·
+rango del ancho del arma en apaisado 0.20–0.28 (antes 0.20–0.25); `render-enemies` · contrato del rig nuevo.
+
+Pendiente humano: que el dueño mire si los robots "se ven bien"; playtest de la nueva dificultad; móviles reales.

@@ -257,7 +257,7 @@ test('real terminal completes tutorial into campaign hand-off; a wall hit emits 
 test('real enemy damage shows its bearing for at least 500 ms of simulation', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await startOverflow(page, false, 530239482); // Practice enemies do not deal damage.
-  const hit = await page.evaluate(({ inputLen, damage }) => {
+  const hit = await page.evaluate(({ inputLen, damage, minTick }) => {
     const app = window.__BREACH__!;
     const { engine } = app as unknown as { engine: Engine };
     // Drive real WASM ticks and GameApp frames independently. This prevents a
@@ -270,7 +270,7 @@ test('real enemy damage shows its bearing for at least 500 ms of simulation', as
       const previousHp = engine.state.hp;
       engine.tick(neutral);
       const { hp, px, pz, yaw, tick } = engine.state;
-      if (hp >= previousHp) continue;
+      if (hp >= previousHp || tick < minTick) continue;
       engine.state.readEvents(0, events);
       const event = events.findLast((e) => e.type === damage && e.a >= 1);
       if (event) {
@@ -279,7 +279,9 @@ test('real enemy damage shows its bearing for at least 500 ms of simulation', as
       }
     }
     return null;
-  }, { inputLen: INPUT_LEN, damage: EVT.playerDamaged });
+  // Con la IA v5 los golpes llegan de a pares (ticks 966/987, 1059/1080, 1152...): el de 1080 es el primero
+  // seguido de más de 54 ticks sin daño, que es lo que esta prueba necesita para medir cuánto dura la flecha.
+  }, { inputLen: INPUT_LEN, damage: EVT.playerDamaged, minTick: 1070 });
   expect(hit).not.toBeNull();
   const frame = (ticks: number) => page.evaluate(({ ticks, inputLen }) => {
     const app = window.__BREACH__!;
