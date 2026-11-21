@@ -34,7 +34,10 @@ fn mode_score_and_phase_constants_are_exported() {
 #[test]
 fn abi_reports_the_active_score_version_and_encodes_v3_logs() {
     bp_core::bp_init(5);
-    for (mode, version) in [(MODE_MISSION, SCORE_VERSION), (MODE_OVERFLOW, OVERFLOW_SCORE_VERSION)] {
+    for (mode, version) in [
+        (MODE_MISSION, SCORE_VERSION),
+        (MODE_OVERFLOW, OVERFLOW_SCORE_VERSION),
+    ] {
         assert_eq!(bp_core::bp_start(u32::from(mode), 0, 5, 0), 1);
         assert_eq!(bp_core::bp_score_version(), u32::from(version));
         assert!(bp_core::bp_log_encode() >= 16);
