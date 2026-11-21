@@ -53,29 +53,32 @@ completo sin conexión; el tablero es opcional.
 
 ## Cómo correrlo
 
-Requisitos: Node ≥ 20.19, Rust con el target `wasm32-unknown-unknown`
-(`rustup target add wasm32-unknown-unknown`).
+Requisitos: Bun 1.4.4 (la versión usada en CI) y Rust con el target
+`wasm32-unknown-unknown` (`rustup target add wasm32-unknown-unknown`).
 
 ```sh
-npm install
-npm run build:wasm   # compila bp-core y copia public/bp_core.wasm
-npm run dev          # servidor de desarrollo de Vite
+bun install --frozen-lockfile
+bun run build:wasm   # compila bp-core y copia public/bp_core.wasm
+bun run dev          # servidor de desarrollo de Vite
 ```
 
-Build de producción: `npm run build` (wasm + `tsc --noEmit` + `vite build`).
+Build de producción: `bun run build` (wasm + `tsc --noEmit` + `vite build`).
+
+Usamos `bunx` para ejecutar los binarios locales de las dependencias, y `bun run` para los scripts del proyecto.
+Si solo tenés Node como herramienta de JavaScript, podés usar los mismos scripts sin instalar Bun globalmente con `npx --yes --package=bun@1.4.4 -c 'bun install --frozen-lockfile && bun run build'`.
 
 ## Tests
 
 ```sh
-npm run test:rust    # tests del núcleo de simulación (cargo, incluye replay y mapas)
+bun run test:rust    # tests del núcleo de simulación (cargo, incluye replay y mapas)
 cargo test --workspace --locked   # crate de la API (server/)
-npm run test:unit    # compila el wasm y corre vitest (incluye determinismo nativo vs wasm)
-npm run test:e2e     # smoke test que arranca el juego de verdad (playwright)
-npm run test:all     # typecheck + rust + unit + e2e
+bun run test:unit    # compila el wasm y corre vitest (incluye determinismo nativo vs wasm)
+bun run test:e2e     # smoke test que arranca el juego de verdad (playwright)
+bun run test:all     # typecheck + rust + unit + e2e
 ```
 
 CI en `.github/workflows/ci.yml`: un job de Rust (cargo test + build wasm) y un
-job web (typecheck → unit → build → e2e) sobre Node 22.
+job web (typecheck → unit → build → e2e) con Bun 1.4.4 y `bun.lock`.
 
 ## Arquitectura en diez líneas
 

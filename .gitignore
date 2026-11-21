@@ -1,4 +1,4 @@
-# Node
+# JavaScript dependencies
 node_modules/
 
 # Build output
@@ -22,7 +22,7 @@ test-results/
 .env
 .env.*
 
-# Generated wasm artifact (npm run build:wasm)
+# Generated wasm artifact (bun run build:wasm)
 public/bp_core.wasm
 public/bp_core.build.json
 
