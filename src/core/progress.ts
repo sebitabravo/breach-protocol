@@ -7,6 +7,7 @@
  * lee, pero nunca se reescribe para no degradar lo que escribió un cliente nuevo.
  */
 import type { StorageLike } from './settings';
+import { safeStorage } from './storage';
 import { utcDateKey } from './daily';
 import { SECTOR_IDS, type SectorId } from './sectors';
 
@@ -189,14 +190,6 @@ export function markTutorialSeen(state: ProgressState): ProgressState {
 
 export function setPlayerName(state: ProgressState, name: string): ProgressState {
   return { ...state, playerName: name.slice(0, MAX_NAME_LENGTH) };
-}
-
-function safeStorage(): StorageLike | undefined {
-  try {
-    return globalThis.localStorage;
-  } catch {
-    return undefined;
-  }
 }
 
 /**

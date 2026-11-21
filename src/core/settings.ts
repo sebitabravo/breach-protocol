@@ -4,6 +4,8 @@
  * Any stored value is treated as hostile input: an unreadable blob, a partial
  * object, or a number outside its range must never break the boot.
  */
+import { safeStorage } from './storage';
+
 export const SETTINGS_KEY = 'bp.settings';
 export const SETTINGS_VERSION = 2;
 
@@ -105,7 +107,7 @@ export function migrate(raw: unknown): Settings {
   return sanitize(src);
 }
 
-export function loadSettings(storage: StorageLike | undefined = globalThis.localStorage): Settings {
+export function loadSettings(storage: StorageLike | undefined = safeStorage()): Settings {
   if (!storage) return { ...DEFAULT_SETTINGS };
   try {
     const blob = storage.getItem(SETTINGS_KEY);
@@ -118,7 +120,7 @@ export function loadSettings(storage: StorageLike | undefined = globalThis.local
 
 export function saveSettings(
   settings: Settings,
-  storage: StorageLike | undefined = globalThis.localStorage,
+  storage: StorageLike | undefined = safeStorage(),
 ): boolean {
   if (!storage) return false;
   try {

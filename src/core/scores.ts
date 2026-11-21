@@ -3,6 +3,7 @@
  * record kept apart per mode and input device so comparisons stay honest.
  */
 import type { StorageLike } from './settings';
+import { safeStorage } from './storage';
 import type { Mode } from './screens';
 
 export const SCORES_KEY = 'bp.scores.v1';
@@ -41,7 +42,7 @@ function isRun(value: unknown): value is RunResult {
   );
 }
 
-export function loadScores(storage: StorageLike | undefined = globalThis.localStorage): RunResult[] {
+export function loadScores(storage: StorageLike | undefined = safeStorage()): RunResult[] {
   if (!storage) return [];
   try {
     const blob = storage.getItem(SCORES_KEY);
@@ -61,7 +62,7 @@ function comparator(a: RunResult, b: RunResult): number {
 
 export function saveScore(
   run: RunResult,
-  storage: StorageLike | undefined = globalThis.localStorage,
+  storage: StorageLike | undefined = safeStorage(),
 ): SaveOutcome {
   const all = loadScores(storage);
   const bestBefore = all.length > 0 ? all[0].score : -1;
@@ -79,7 +80,7 @@ export function saveScore(
 
 export function bestScore(
   mode: RunResult['mode'] = 'run',
-  storage: StorageLike | undefined = globalThis.localStorage,
+  storage: StorageLike | undefined = safeStorage(),
 ): number | null {
   const all = loadScores(storage).filter((r) => r.mode === mode);
   if (all.length === 0) return null;

@@ -70,3 +70,19 @@ test('the calibration sheet can be scrolled to START at 320x640', async ({ page 
   await start.scrollIntoViewIfNeeded();
   await expect(start).toBeInViewport();
 });
+
+test('the game reaches the menu when the browser blocks localStorage', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('The operation is insecure.', 'SecurityError');
+      },
+    });
+  });
+  await page.goto('/');
+  await expect(page.locator('#app')).toHaveAttribute('data-screen', /calibrate|menu/, { timeout: 30_000 });
+  expect(errors).toEqual([]);
+});
