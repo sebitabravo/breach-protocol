@@ -34,8 +34,9 @@ Rust↔JS, no "todo en wasm".
 
 ### Qué costó
 
-- **~69 KiB de binario** (`public/bp_core.wasm` mide 69.7 KiB sin comprimir,
-  29.1 KiB con gzip -9, medido en el build actual). El mismo código en
+- **~85 KiB de binario** (`dist/bp_core.wasm` mide 85.4 KiB sin comprimir,
+  36.5 KiB con gzip -9, medido en el build de la rama `fix/game-audit-pass`;
+  el ADR original decía 69.7 KiB / 29.1 KiB; el núcleo creció desde entonces). El mismo código en
   TypeScript sería tree-shaken junto con el bundle existente.
 - **Duplicación del contrato binario.** Los offsets del snapshot y del input
   existen en `core/src/protocol.rs` y en `src/wasm/protocol.ts`; cualquier

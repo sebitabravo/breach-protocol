@@ -15,7 +15,7 @@ core/src/               Rust — núcleo de simulación (std y libm para matemá
   maps.rs               sectores 0-2: sólidos, terminales, puntos de aparición
   player.rs             controlador del jugador: movimiento, salto, colisión
   weapons.rs            PB-01, AR-04 y SG-08: hitscan, dispersión, recarga, caída de daño
-  enemy.rs              FSMs deterministas (Scout, Sentinel, Interceptor), decisión a 12 Hz
+  enemy.rs              FSMs deterministas (Scout, Sentinel, Interceptor); patrulla por llegada o a los 4 s
   waves.rs              composición de oleadas por sector, modo infinito y cola
   daily.rs              desafío diario: fecha UTC → mapa y mutador, solo enteros
   sim.rs                Game: modos (misión, overflow, diario, práctica), tick y snapshot
@@ -182,7 +182,9 @@ un solo frame:
   automáticas; `auto` arranca en `medium` y nunca baja de `low` ni sube de
   `high`.
 
-El renderer traduce cada preset a DPR máximo y toggles de detalle
+El renderer traduce cada preset a DPR máximo, a un presupuesto de píxeles del
+drawing buffer (`PLAY_PIXEL_BUDGET` en `src/render/presets.ts`: 154 k, 540 k y
+3.5 M para low, medium y high) y a toggles de detalle
 (`src/render/renderer.ts`).
 
 ## Cómo extender
@@ -195,8 +197,8 @@ malla y sonido al shell: `src/render/entities.ts` (viewmodel) y
 `src/audio/audio.ts`. El selector por teclado ya existe en
 `src/input/input.ts` (`Digit1` / `Digit2`).
 
-**Agregar un enemigo** — nueva FSM en `core/src/enemy.rs` (decide a 12 Hz,
-integra cada paso fijo), su `kind` en el protocolo (`ENEMY_KIND` en ambos
+**Agregar un enemigo** — nueva FSM en `core/src/enemy.rs` (decide y
+se integra en cada paso fijo; la patrulla avanza de waypoint al llegar o a los 4 s), su `kind` en el protocolo (`ENEMY_KIND` en ambos
 lados) y su entrada en la composición de oleadas (`core/src/waves.rs`). El
 shell ya renderiza cualquier enemigo genérico desde el snapshot
 (`src/render/entities.ts`); si necesita silueta propia, ahí va el caso.

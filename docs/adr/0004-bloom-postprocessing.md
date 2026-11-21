@@ -61,6 +61,24 @@ para pasar el umbral; las paredes y el piso quedan debajo.
 - Memoria: el composer usa dos targets `HalfFloat` con 4× MSAA, al tamaño del
   canvas por DPR, más la cadena de bloom a mitad de resolución.
 
+## Actualización (auditoría `fix/game-audit-pass`)
+
+Medido en un Apple M3 con Chromium con ventana (`bun run bench:frames`,
+1600×900 a DPR 2). Detalle en `docs/PERFORMANCE_REPORT.md`.
+
+- La cadena de bloom no es de 3 niveles en todos los presets: `medium` usa **1**
+  nivel (`trimBloomMips`) y `high` usa 3. `low` no tiene composer.
+- El DPR efectivo ya no es solo el del preset: `playPixelRatio` lo acota por un
+  presupuesto de píxeles del drawing buffer. Antes `high` no tenía tope: a
+  1600×900 y DPR 2 el buffer era de 3200×1800 (5.76 MP; ~264 MB estimados para el
+  composer) y bajaba a 44.7 fps con p95 de 34.5 ms. Con 3.5 MP (2494×1403, DPR
+  1.56; ~160 MB) sostiene 60 fps con p95 de 18.2 ms, sin diferencia visible en
+  una comparación de capturas a esa escala.
+- La memoria de arriba es una **estimación** (`ancho × alto × 12 B × muestras`),
+  no una lectura de la GPU.
+- En headless con DPR 1 el costo de fill sigue sin decir nada de una GPU real;
+  esas cifras se midieron con ventana.
+
 ## Por qué `low` no tiene bloom
 
 - Sin composer no hay target HDR. El bloom necesita valores > 1 para
