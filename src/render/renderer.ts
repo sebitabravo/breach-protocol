@@ -29,7 +29,7 @@ import { FeedbackFx } from './feedback-fx';
 import { PoseInterpolator, type Pose } from './interp';
 import { ObjectiveBeacon, objectiveOccluded } from './objective-beacon';
 import type { ObjectiveClip } from './objective-projection';
-import { PRESETS, type QualityName, type QualityPreset } from './presets';
+import { PRESETS, playPixelRatio, type QualityName, type QualityPreset } from './presets';
 import { PostFx } from './postfx';
 import { lookFor, PALETTE, type ThemeLook } from './themes';
 import { CAMERA_FOV, VIEW_FOV, VIEW_NEAR, Viewmodel } from './viewmodel';
@@ -45,7 +45,6 @@ export interface Hooks {
   onContextRestored?: () => void;
 }
 
-const PLAY_PIXEL_BUDGET = { low: 154_000, medium: 540_000, high: Infinity } as const;
 const ORBIT_INTERVAL = 1 / 8;
 
 export class Renderer {
@@ -256,8 +255,7 @@ export class Renderer {
     }
     this.orbitDirty = true;
     // Cap the canvas itself too: the output pass still writes every canvas pixel.
-    const pixelCap = Math.sqrt(PLAY_PIXEL_BUDGET[this.presetValue.name] / (this.cssWidth * this.cssHeight));
-    this.dprValue = Math.min(this.presetValue.dpr, this.dprCap, window.devicePixelRatio || 1, pixelCap);
+    this.dprValue = playPixelRatio(this.presetValue, this.cssWidth, this.cssHeight, this.dprCap, window.devicePixelRatio || 1);
     const r = this.renderer;
     if (r) {
       r.setPixelRatio(this.dprValue);

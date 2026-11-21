@@ -281,6 +281,9 @@ export function hashSnapshot(snapshot: Float32Array): bigint {
 }
 
 export class Engine {
+  private inputView: Float32Array | null = null;
+  private inputViewOf: ArrayBufferLike | null = null;
+
   private constructor(
     private readonly exports: WasmExports,
     private readonly inputPtr: number,
@@ -351,8 +354,13 @@ export class Engine {
 
   /** Escribe un frame de entrada y avanza un paso fijo (1/60 s) del núcleo. */
   tick(input: Float32Array): number {
-    const buffer = new Float32Array(this.exports.memory.buffer, this.inputPtr, INPUT_LEN);
-    buffer.set(input.subarray(0, INPUT_LEN));
+    // La vista se recrea solo cuando la memoria wasm crece y cambia de ArrayBuffer.
+    const memory = this.exports.memory.buffer;
+    if (this.inputViewOf !== memory || !this.inputView) {
+      this.inputView = new Float32Array(memory, this.inputPtr, INPUT_LEN);
+      this.inputViewOf = memory;
+    }
+    this.inputView.set(input.subarray(0, INPUT_LEN));
     const tick = this.exports.bp_tick_fixed(this.inputPtr);
     this.refresh();
     return tick;

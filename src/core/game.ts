@@ -704,7 +704,9 @@ export class GameApp {
         this.lastSeq = this.events[this.events.length - 1].seq;
       }
       const tracked = this.trackedTerminal(state);
+      const renderStart = performance.now();
       this.renderer.renderGame(state, step.alpha, rawDt, this.events, tracked);
+      const renderCpuMs = performance.now() - renderStart;
       this.consumeEvents(this.events, state.tick);
       this.hud?.update(state, this.input.usingTouch);
       this.updateChannelRing(state);
@@ -714,7 +716,7 @@ export class GameApp {
         this.objectiveMarker?.update(this.renderer.objectiveClip, tracked, metres, this.input.usingTouch,
           state.interacting === tracked, this.settings.hudScale);
       } else this.objectiveMarker?.hide();
-      this.maybeAdaptQuality(frameMs, now);
+      this.maybeAdaptQuality(frameMs, now, renderCpuMs);
       this.updateEngineering(now, state);
       this.observeTutorialFrame(state);
       if (state.phase === PHASE.win) this.finish(true);
@@ -725,8 +727,8 @@ export class GameApp {
     }
   };
 
-  private maybeAdaptQuality(frameMs: number, now: number): void {
-    const change = this.quality.sample(frameMs, now);
+  private maybeAdaptQuality(frameMs: number, now: number, renderCpuMs: number): void {
+    const change = this.quality.sample(frameMs, now, renderCpuMs);
     if (change.changed && this.renderer) {
       this.renderer.setQuality(change.preset, this.dprCap());
       this.renderer.resize();

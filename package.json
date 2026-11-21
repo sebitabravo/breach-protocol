@@ -19,6 +19,7 @@
     "test:rust": "cargo test --manifest-path core/Cargo.toml",
     "test:unit": "bun run build:wasm && bunx vitest run",
     "test:e2e": "bunx playwright test",
+    "bench:frames": "bun scripts/measure-frames.mjs",
     "test:all": "bun run typecheck && bun run test:rust && bun run test:unit && bun run test:e2e",
     "check": "bun run typecheck && bun run test"
   },

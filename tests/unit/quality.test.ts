@@ -17,6 +17,52 @@ function feedWindow(qc: QualityController, frameMs: number, now: number) {
   return last;
 }
 
+/** Ventana de `size` frames de `frameMs` con `cpuMs` de CPU de render cada uno. */
+function feedCostWindow(qc: QualityController, frameMs: number, cpuMs: number | undefined, now: number) {
+  let last = qc.sample(frameMs, now, cpuMs);
+  for (let i = 1; i < 4; i += 1) last = qc.sample(frameMs, now, cpuMs);
+  return last;
+}
+
+describe('QualityController with measured CPU cost', () => {
+  const vsync = 16.7;
+
+  it('climbs on a vsync-bound display when the CPU cost leaves headroom', () => {
+    const qc = auto({ toRaise: 3 });
+    feedCostWindow(qc, vsync, 1, 1000);
+    feedCostWindow(qc, vsync, 1, 2000);
+    expect(feedCostWindow(qc, vsync, 1, 3000)).toMatchObject({ changed: true, preset: 'high', reason: 'up' });
+  });
+
+  it('stays put when the frame interval is vsync-bound and no CPU cost is reported (legacy behaviour)', () => {
+    const qc = auto({ toRaise: 3 });
+    for (let w = 0; w < 6; w += 1) feedCostWindow(qc, vsync, undefined, 1000 * (w + 1));
+    expect(qc.preset).toBe('medium');
+  });
+
+  it('does not climb when the CPU already spends a large part of the frame', () => {
+    const qc = auto({ toRaise: 3 });
+    for (let w = 0; w < 6; w += 1) feedCostWindow(qc, vsync, 9, 1000 * (w + 1));
+    expect(qc.preset).toBe('medium');
+  });
+
+  it('does not climb while frames are missing vsync', () => {
+    const qc = auto({ toRaise: 3 });
+    for (let w = 0; w < 6; w += 1) feedCostWindow(qc, 21, 1, 1000 * (w + 1));
+    expect(qc.preset).toBe('medium');
+  });
+
+  it('does not bounce back to a preset it just dropped from until the ceiling expires', () => {
+    const qc = new QualityController('auto', { windowSize: 4, windowsToDrop: 1, windowsToRaise: 1, cooldownMs: 0, ceilingMs: 60_000 });
+    feedCostWindow(qc, 12, 1, 1000); // medium -> high (frames well under 12 ms)
+    expect(qc.preset).toBe('high');
+    feedCostWindow(qc, 40, 1, 2000); // high -> medium: the GPU cannot hold high
+    expect(qc.preset).toBe('medium');
+    expect(feedCostWindow(qc, vsync, 1, 3000).changed).toBe(false);
+    expect(feedCostWindow(qc, vsync, 1, 62_500)).toMatchObject({ changed: true, preset: 'high' });
+  });
+});
+
 describe('QualityController', () => {
   it('manual preset wins and is never overridden by samples', () => {
     const qc = auto();

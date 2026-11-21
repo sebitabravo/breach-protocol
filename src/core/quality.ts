@@ -26,12 +26,22 @@ export interface QualityOptions {
   windowsToDrop?: number;
   windowsToRaise?: number;
   cooldownMs?: number;
+  /** p95 del intervalo de frame bajo el cual se considera que el display está al límite de su vsync. */
+  vsyncOkMs?: number;
+  /** p95 del tiempo de CPU del render bajo el cual queda margen para subir de preset. */
+  cpuHeadroomMs?: number;
+  /** Tras bajar de un preset por no sostener el presupuesto, no se vuelve a él durante este tiempo. */
+  ceilingMs?: number;
 }
 
 export class QualityController {
   private mode: QualitySetting;
   private current: ResolvedQuality;
   private samples: number[] = [];
+  private cpuSamples: number[] = [];
+  /** La última ventana buena lo fue solo por margen de CPU (frames al límite del vsync). */
+  private goodViaCpuOnly = false;
+  private readonly blockedUntil: Record<ResolvedQuality, number> = { low: 0, medium: 0, high: 0 };
   private badWindows = 0;
   private goodWindows = 0;
   private lastChangeAt = 0;
@@ -42,6 +52,9 @@ export class QualityController {
   private readonly windowsToDrop: number;
   private readonly windowsToRaise: number;
   private readonly cooldownMs: number;
+  private readonly vsyncOkMs: number;
+  private readonly cpuHeadroomMs: number;
+  private readonly ceilingMs: number;
 
   constructor(initial: QualitySetting = 'auto', options: QualityOptions = {}) {
     this.mode = initial;
@@ -52,6 +65,9 @@ export class QualityController {
     this.windowsToDrop = options.windowsToDrop ?? 2;
     this.windowsToRaise = options.windowsToRaise ?? 5;
     this.cooldownMs = options.cooldownMs ?? 4000;
+    this.vsyncOkMs = options.vsyncOkMs ?? 18.5;
+    this.cpuHeadroomMs = options.cpuHeadroomMs ?? 4;
+    this.ceilingMs = options.ceilingMs ?? 120_000;
   }
 
   get setting(): QualitySetting {
@@ -66,7 +82,9 @@ export class QualityController {
     this.mode = setting;
     this.badWindows = 0;
     this.goodWindows = 0;
+    this.goodViaCpuOnly = false;
     this.samples.length = 0;
+    this.cpuSamples.length = 0;
     if (setting !== 'auto') {
       this.current = setting;
       return { changed: true, preset: this.current, reason: 'manual' };
@@ -74,19 +92,25 @@ export class QualityController {
     return { changed: false, preset: this.current, reason: 'none' };
   }
 
-  /** Feeds one frame time in milliseconds. */
-  sample(frameMs: number, now: number): QualityChange {
+  /**
+   * Feeds one frame time in milliseconds. `cpuMs` (tiempo de CPU del render) permite subir de preset
+   * en pantallas atadas a vsync, donde el intervalo de frame nunca baja de ~16.7 ms aunque sobre margen.
+   */
+  sample(frameMs: number, now: number, cpuMs?: number): QualityChange {
     if (!Number.isFinite(frameMs) || frameMs <= 0 || frameMs > 250) {
       return { changed: false, preset: this.current, reason: 'none' };
     }
     this.samples.push(frameMs);
+    if (cpuMs !== undefined && Number.isFinite(cpuMs)) this.cpuSamples.push(cpuMs);
     if (this.samples.length < this.windowSize) {
       return { changed: false, preset: this.current, reason: 'none' };
     }
 
     const sorted = [...this.samples].sort((a, b) => a - b);
     const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+    const cpuP95 = this.p95(this.cpuSamples);
     this.samples.length = 0;
+    this.cpuSamples.length = 0;
 
     if (this.mode !== 'auto') {
       return { changed: false, preset: this.current, reason: 'none' };
@@ -103,23 +127,36 @@ export class QualityController {
     } else if (p95 < this.upThresholdMs) {
       this.goodWindows += 1;
       this.badWindows = 0;
+      this.goodViaCpuOnly = false;
+    } else if (p95 <= this.vsyncOkMs && cpuP95 !== null && cpuP95 <= this.cpuHeadroomMs) {
+      this.goodViaCpuOnly = true;
+      this.goodWindows += 1;
+      this.badWindows = 0;
     } else {
       this.badWindows = Math.max(0, this.badWindows - 1);
       this.goodWindows = 0;
     }
 
     if (this.badWindows >= this.windowsToDrop && index > 0) {
+      this.blockedUntil[this.current] = now + this.ceilingMs;
       this.current = ORDER[index - 1];
       this.badWindows = 0;
       this.lastChangeAt = now;
       return { changed: true, preset: this.current, reason: 'down' };
     }
-    if (this.goodWindows >= this.windowsToRaise && index < ORDER.length - 1) {
+    if (this.goodWindows >= this.windowsToRaise && index < ORDER.length - 1 &&
+      !(this.goodViaCpuOnly && now < this.blockedUntil[ORDER[index + 1]])) {
       this.current = ORDER[index + 1];
       this.goodWindows = 0;
       this.lastChangeAt = now;
       return { changed: true, preset: this.current, reason: 'up' };
     }
     return { changed: false, preset: this.current, reason: 'none' };
+  }
+
+  private p95(values: number[]): number | null {
+    if (values.length === 0) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
   }
 }
