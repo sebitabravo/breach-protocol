@@ -22,7 +22,7 @@ Cada una está justificada con más detalle en `GAME_AUDIT.md`; acá va el porqu
 | T-1 | `safeStorage()` único para todo acceso a `localStorage` | El getter puede lanzar fuera de cualquier `try` | Envolver cada llamada: se vuelve a olvidar |
 | T-2 | Todos los cambios de simulación en un solo commit y una sola subida de versión | Cualquiera de ellos cambia los hashes dorados; separarlos obligaba a repinear cuatro veces | Un commit por cambio de simulación |
 | T-3 | El resto de la cadencia se arrastra con tope de un tick | Evita que un toque suelto «guarde» disparos | Acumulación sin tope |
-| T-4 | Las patrullas salen a buscar tras 20 s | Es la forma barata de garantizar que una oleada cierre; la sonda lo prueba en los tres mapas | Un temporizador de oleada: castiga al jugador por algo que hizo el enemigo |
+| T-4 | Las patrullas salen a buscar tras 6 s (20 s en la v4) | Es la forma barata de garantizar que una oleada cierre; la sonda lo prueba en los tres mapas | Un temporizador de oleada: castiga al jugador por algo que hizo el enemigo |
 | T-5 | `KeyboardState.keyDown` ignora lo que llega fuera de partida, además de reiniciar el input al entrar a `playing` | Un reinicio solo no alcanza: una tecla pulsada después del reinicio y antes de empezar quedaba armada | Solo `input.reset()` |
 | T-6 | Cluster táctil por variables de tamaño | La regla de un botón pisaba a la de otro por orden de aparición | Subir la especificidad de cada regla |
 | T-7 | Sprint táctil por deflexión del stick, solo en cliente | No cambia la simulación: `I.run` ya existía | Un botón nuevo de sprint (otro objetivo de toque en un cluster ya lleno) |
@@ -32,6 +32,8 @@ Cada una está justificada con más detalle en `GAME_AUDIT.md`; acá va el porqu
 | T-11 | Los proyectos móviles de Playwright emulan sobre Chromium | El runner de WebKit pedido no está instalado en este equipo | Instalar WebKit sin preguntar; Safari real queda pendiente |
 | T-12 | Volumen en tres canales: maestro, efectos e interfaz | No existe música; los canales multiplican sobre el maestro y los ajustes viejos migran con 1.0 | Un solo deslizador |
 | T-13 | El HUD compacto oculta el objetivo y el feed mientras el tutorial está activo | El tutorial ya dice qué hacer y compite por el mismo espacio | Reubicar todo: no hay espacio en 667×375 |
+| T-15 | Robots con skinning rígido instanciado: 11 piezas por tipo, una matriz por pieza e instancia en una textura RGBA32F, un draw por tipo | Animación real (caminar, apuntar, caer) sin romper el presupuesto de 60 draws; determinista y sin licencias | `SkinnedMesh` desde un GLB CC0: no se instancia en three.js (un draw por robot y material) y los packs revisados no publican sus clips |
+| T-16 | Dificultad ajustada con un bot de referencia y una prueba de banda | Cada cambio de IA se mide en 10 semillas por sector; la prueba impide que la dificultad se caiga sin que nadie lo note | Ajustar a ojo; el zigzag de los scouts parecía más difícil y medido resultó más fácil |
 | T-14 | Documentos nuevos en español | Es el idioma de los ADR y de `performance-budget.md`; los comentarios de código también | Inglés, como `benchmark-results.md` |
 
 ## Deuda técnica conocida

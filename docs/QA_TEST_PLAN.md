@@ -24,7 +24,7 @@ intencionales o de un test nuevo mal planteado, y se resolvieron así:
 | --- | --- | --- |
 | `objective-marker` (2) | Esperaba el texto viejo del paso 3 | El texto ahora nombra el botón Ⓔ; se actualizó la expectativa |
 | `screens` · omitir tutorial | Retroceso ahora pide dos pulsaciones | Se actualizó el test |
-| `gameplay` · rumbo del daño | La primera herida llegaba antes de los 30 s; ahora los enemigos patrullan 20 s antes de salir a buscar | La ventana de búsqueda subió de 1800 a 4000 ticks. La intención del test (verificar el rumbo del primer daño real) no cambió |
+| `gameplay` · rumbo del daño | La primera herida llegaba antes de los 30 s; con la v4 los enemigos patrullaban 20 s; con la v5 los golpes llegan de a pares y la prueba toma el primer golpe aislado desde el tick 1070 | La ventana de búsqueda subió de 1800 a 4000 ticks. La intención del test (verificar el rumbo del primer daño real) no cambió |
 | `premium` · 320×640 | Los enlaces del pie del menú se partían en dos líneas con el mínimo de 44 px (regresión real de la auditoría) | Corregido en `touch.css` |
 | `resilience` · Continuar con contexto perdido | El aviso de contexto perdido cubre el botón; el click de Playwright esperaba para siempre | El test invoca el botón con `dispatchEvent` |
 

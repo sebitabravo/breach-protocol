@@ -67,7 +67,7 @@ está activa.
 | Tipo | Vida | Velocidad | Detecta a | Alcance de ataque | Daño | Telegrafía | Cooldown |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Scout | 35 | 3.9 m/s | 26 m | 2.6 m | 12 | 0.36 s | 1.15 s |
-| Sentinel | 55 | 2.0 m/s | 32 m | 20 m (rango preferido 11) | 8 × 3 ráfaga | 0.62 s | 2.3 s |
+| Sentinel | 55 | 2.0 m/s | 32 m | 20 m (rango preferido 11) | 10 × 3 ráfaga | 0.62 s | 2.3 s |
 | Interceptor | 28 | 5.5 m/s | 26 m | 1.4 m (embestida a 12 m/s, órbita a 3.2 m) | 24 | 0.45 s | 1.3 s |
 
 Fuente: `core/src/enemy.rs`. En Overflow la vida sube 4 % por oleada con tope ×2.
@@ -78,11 +78,10 @@ patrulla sin detectar al jugador sale a buscarlo (scouts y sentinels persiguen; 
 abierta si un enemigo aparecía fuera de línea de visión (hallazgo A-13).
 
 **Combate (v5).**
-- El centinela dispara con una dispersión de `0.012 + 0.0025 × velocidad del jugador` (rad): quedarse quieto
+- El centinela dispara con una dispersión de `0.012 + 0.0015 × velocidad del jugador` (rad): quedarse quieto
   es peligroso, moverse lo esquiva.
 - La embestida del interceptor apunta 0.22 s por delante del jugador.
 - Un interceptor que flanquea sin línea de visión durante 6 s pasa a perseguir.
-- Los scouts se acercan en zigzag a más de 4 m.
 - La separación entre robots resuelve colisión con el mapa: ninguno queda dentro de una pared.
 
 ## Dificultad medida
@@ -91,16 +90,19 @@ Bot de referencia (`core/src/scenarios.rs::competent_bot`): reacción de 0.25 s,
 strafe alterno cada 1.2 s, carabina. No juega el objetivo, así que nunca gana: mide cuánto resiste. 10 semillas
 por sector, 180 s. Reproducir: `cargo test --manifest-path core/Cargo.toml --release --lib difficulty_report -- --ignored --nocapture`.
 
-| Sector | Bot muerto antes (v4) | Bot muerto después (v5) | Vida media del bot (v4 → v5) | Jugador quieto muere a (v4 → v5) |
-| --- | ---: | ---: | --- | --- |
-| 01 | 9/10 | 9/10 | 144 → 131 s | 38.5 → 21.1 s |
-| 02 | 0/10 (16 de daño en 3 min) | 10/10 | 180 → 100 s | 37.5 → 28.2 s |
-| 03 | 10/10 | 6/10 | 128 → 164 s | 38.7 → 24.0 s |
+| Sector | Bot muerto (v4 → v5) | Vida media del bot (v4 → v5) | Jugador quieto muere a (v4 → v5) |
+| --- | --- | --- | --- |
+| 01 | 9/10 → 10/10 | 144 → 120 s | 38.5 → 20.9 s |
+| 02 | 0/10 (16 de daño en 3 min) → 10/10 | 180 → 96 s | 37.5 → 28.1 s |
+| 03 | 10/10 → 10/10 | 128 → 125 s | 38.7 → 23.0 s |
 
-Lectura: el sector 02 era trivial por un error, no por diseño (robots incrustados en paredes que perseguían para
-siempre). El sector 03 bajó para el bot porque ahora el centinela premia moverse y el bot nunca para de moverse;
-un jugador que se queda quieto lo pasa peor. `difficulty_stays_in_the_agreed_band` fija la banda: el bot cae en
-al menos 3 de 6 semillas por sector y un jugador quieto no pasa de 32 s.
+Lectura: el sector 02 era trivial por un error (robots incrustados en paredes que perseguían para siempre), no
+por diseño. Un primer ajuste con scouts en zigzag dejó el sector 03 **más fácil** (6/10, 164 s): el zigzag los
+trababa en la geometría. Se probó la hipótesis quitándolo y se descartó. `difficulty_stays_in_the_agreed_band`
+fija la banda: el bot cae en al menos 3 de 6 semillas por sector y un jugador quieto no pasa de 32 s.
+
+**No medido:** Overflow y el diario (incluido el mutador GLASS de 50 de vida) reciben los mismos cambios de IA,
+spawns y composición del sector 03, pero el bot solo corre en misión.
 
 ## Oleadas, terminales y modos
 

@@ -41,7 +41,7 @@ const CHARGE_REACH: f32 = 1.2;
 const DASH_LEAD: f32 = 0.22;
 /// Dispersión del centinela: base contra un blanco quieto, más un extra por m/s del jugador.
 const SENTINEL_JITTER: f32 = 0.012;
-const SENTINEL_JITTER_PER_SPEED: f32 = 0.0025;
+const SENTINEL_JITTER_PER_SPEED: f32 = 0.0015;
 /// Coseno del ángulo frente al jugador. Por debajo (60°) el enemigo está en el costado o la espalda.
 const FLANK_ARC_COS: f32 = 0.5;
 /// Paso angular de la órbita por tick de decisión (rad, a 12 Hz equivale a ~29° por paso).
@@ -100,7 +100,7 @@ pub const SENTINEL: KindDef = KindDef {
     discover: 32.0,
     attack_range: 20.0,
     preferred_range: 11.0,
-    damage: 8.0,
+    damage: 10.0,
     telegraph: 0.62,
     cooldown: 2.3,
     burst: 3,
@@ -425,14 +425,6 @@ impl Enemy {
                         // Strafe to stay awkward to hit without charging in.
                         self.pos + v3(-toward.z, 0.0, toward.x) * 4.0 * self.avoid_dir
                     }
-                } else if self.kind == KIND_SCOUT && self.dist > 4.0 {
-                    // Zigzag al acercarse: más difícil de acertar a media distancia.
-                    let toward = (ctx.player_feet - self.pos)
-                        .flat()
-                        .norm_or(forward_from_yaw(self.yaw));
-                    let side = v3(-toward.z, 0.0, toward.x);
-                    let sway = sin(self.anim * 2.6) * (self.dist * 0.25).min(2.0);
-                    ctx.player_feet + side * sway
                 } else {
                     ctx.player_feet
                 }

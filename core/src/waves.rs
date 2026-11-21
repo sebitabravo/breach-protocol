@@ -73,9 +73,9 @@ pub fn mission_composition(sector: u8, wave: u32) -> Composition {
             interceptors: if w >= 2 { 1 + w / 2 } else { 0 },
         },
         _ => Composition {
-            scouts: 3 + w,
+            scouts: 4 + w,
             sentinels: if w >= 2 { w.div_ceil(2) } else { 0 },
-            interceptors: if w >= 2 { 1 + u32::from(w >= 4) } else { 0 },
+            interceptors: if w >= 2 { 2 + u32::from(w >= 4) } else { 0 },
         },
     }
 }
@@ -486,9 +486,9 @@ mod tests {
             }
         }
         let planned = Composition {
-            scouts: 43,
+            scouts: 44,
             sentinels: 12,
-            interceptors: 11,
+            interceptors: 12,
         };
         assert_eq!(actual, planned);
         assert_eq!(actual, endless_composition(2, 40));

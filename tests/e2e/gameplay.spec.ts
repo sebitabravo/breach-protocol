@@ -265,7 +265,6 @@ test('real enemy damage shows its bearing for at least 500 ms of simulation', as
     cancelAnimationFrame(Reflect.get(app, 'rafId'));
     const neutral = new Float32Array(inputLen);
     const events: Parameters<Engine['state']['readEvents']>[1] = [];
-    // Los enemigos patrullan 20 s antes de salir a buscar al jugador (A-13): el primer daño llega más tarde.
     for (let i = 0; i < 4000; i += 1) {
       const previousHp = engine.state.hp;
       engine.tick(neutral);
@@ -279,8 +278,8 @@ test('real enemy damage shows its bearing for at least 500 ms of simulation', as
       }
     }
     return null;
-  // Con la IA v5 los golpes llegan de a pares (ticks 966/987, 1059/1080, 1152...): el de 1080 es el primero
-  // seguido de más de 54 ticks sin daño, que es lo que esta prueba necesita para medir cuánto dura la flecha.
+  // Con la IA v5 los golpes a un jugador quieto llegan de a pares: desde el tick 1070 hay un golpe seguido
+  // de más de 54 ticks sin daño, que es lo que esta prueba necesita para medir cuánto dura la flecha.
   }, { inputLen: INPUT_LEN, damage: EVT.playerDamaged, minTick: 1070 });
   expect(hit).not.toBeNull();
   const frame = (ticks: number) => page.evaluate(({ ticks, inputLen }) => {

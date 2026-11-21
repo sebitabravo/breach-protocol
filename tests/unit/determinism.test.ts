@@ -5,15 +5,15 @@ import { I, INPUT_LEN, MODE } from '../../src/wasm/protocol';
 
 /** Mismo valor que `GOLDEN_HASH` en core/src/replay.rs: lo fija el test nativo. */
 const GOLDEN_TICKS = 4000;
-const GOLDEN_HASH = 18417066637296478998n;
+const GOLDEN_HASH = 15161409740503454376n;
 /** Escenarios 0..5 de `replay::scenario_hash` (core/src/replay.rs), con los mismos valores. */
 const SCENARIO_HASHES = [
   GOLDEN_HASH,
   10346573694070700408n,
-  7520685970632888569n,
-  12829775233942397538n,
+  4861853104946118912n,
+  12685737005507069065n,
   9780650152857181307n,
-  3580793289470374724n,
+  9469430779535049154n,
 ];
 
 let engine: Engine;

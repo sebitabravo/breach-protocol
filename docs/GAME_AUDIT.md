@@ -79,7 +79,7 @@ Corrida antes de tocar código, sobre `main@6da652a`, en un Apple M3 con Bun 1.4
 
 - Los giros del mouse son 1:1; el retroceso ya no "rebota".
 - Las tres armas disparan a su cadencia de tabla (la carabina pasa de 600 a ~660 rpm).
-- Las patrullas recorren un lazo alrededor de donde aparecen. A los 20 s sin detectarte salen a buscarte.
+- Las patrullas recorren un lazo alrededor de donde aparecen. A los 6 s sin detectarte salen a buscarte (20 s en la v4).
 - `Retroceso` en el tutorial pide una segunda pulsación en 2 s.
 - `Reiniciar` y `Salir al menú` desde la pausa piden confirmar con una segunda pulsación en 3 s.
 - Jugar desde el menú por primera vez ofrece la calibración una vez.
@@ -115,7 +115,7 @@ Pines que cambiaron a propósito (la regla de pruebas, paso 4, quedó autorizada
 
 - **Headshot a `0.78·h`** (`core/src/sim.rs`, `fire_ray`). `SPEC.md` no define la intención de diseño. No se tocó.
   Está registrado en `GAMEPLAY_SPEC.md` como decisión abierta.
-- **Umbral de 20 s para que las patrullas salgan a buscar** y **radio de 4 m del lazo**: valores razonados, sin
+- **Umbral de 6 s para que las patrullas salgan a buscar** (20 s en la v4) y **radio de 4 m del lazo**: valores razonados, sin
   playtest. Ajustar con jugadores reales.
 - **Sprint táctil con el stick a >0.9**: el stick limita cada eje por separado, así que empujar fuerte hacia una
   diagonal también lo activa. Validar en un dispositivo real.
@@ -179,7 +179,7 @@ construir los robots en código con skinning rígido instanciado.
 | V-02 | Hallazgo: el scout medía 0.95 m en pantalla y 1.7 m en la simulación; el headshot (sobre 0.78·h = 1.33 m) caía por encima de su cabeza visible | La cabeza del rig queda sobre la línea de headshot (`robot-rig.test.ts`) | corregido |
 | V-03 | Visor holográfico con punto rojo y franjas teal en la AR-04; arma ~26 % del ancho en 4:3–16:9 | `assets-review.spec.ts` (encuadre entero, bajo la mira, dentro del 95 %) | hecho |
 | V-04 | HUD de la maqueta: tarjeta de objetivo con rombo, íconos de reloj y enemigos, vida `+` con barra de 10 tramos, silueta del arma junto a la munición, íconos SVG en los botones táctiles | `mobile-layout.spec.ts` (sin solapes), `screens`, `premium` | hecho |
-| V-05 | Dificultad v5 con bot de referencia (ver `GAMEPLAY_SPEC.md`) | `difficulty_stays_in_the_agreed_band`, `separating_enemies_never_pushes_one_into_a_wall` | hecho |
+| V-05 | Dificultad v5 con bot de referencia: el bot muere 10/10 en los tres sectores y antes (vida media 120/96/125 s contra 144/180/128 s en la v4); jugador quieto 21–28 s contra 38 s (ver `GAMEPLAY_SPEC.md`) | `difficulty_stays_in_the_agreed_band`, `separating_enemies_never_pushes_one_into_a_wall` | hecho |
 | V-06 | Hallazgo: la separación entre enemigos los incrustaba en paredes; los patrullajes de esquina ponían waypoints dentro de muros; los interceptores orbitaban sin fin detrás de una pared | Mismas pruebas | corregido |
 | V-07 | Atmósfera de la arena (niebla volumétrica, piso mojado) | — | **pendiente**: la luz cian/naranja actual ya sigue la maqueta; no se arriesgó el presupuesto de frame |
 

@@ -74,7 +74,7 @@ medición aislada de WASM.
 
 | Métrica | Objetivo | Medido |
 | --- | --- | --- |
-| Draw calls, medium | ≤ 30 con hasta 4 robots, halo y mira | 18 + 2 × robots visibles: 20 / 22 / 24 con 1 / 2 / 3 robots, 26 con 4 (844×390). El halo (+1) y la mira (+1) mientras haya telegrafía son derivados del código; no aparecieron en las muestras |
+| Draw calls, medium | ≤ 30 con hasta 4 robots, halo y mira | (Medición anterior a los robots instanciados; hoy es un draw por tipo, ver `PERFORMANCE_REPORT.md`.) 18 + 2 × robots visibles: 20 / 22 / 24 con 1 / 2 / 3 robots, 26 con 4 (844×390). El halo (+1) y la mira (+1) mientras haya telegrafía son derivados del código; no aparecieron en las muestras |
 | Draw calls, high | igual que medium | 20 / 22 con 1 / 2 robots |
 | Draw calls, low | sin bloom | 11–15 con 2–4 robots vivos |
 | Triángulos en escena, medium | del orden de miles | 5.0k control · 7.4k cryo · 11.2k archive (1 robot) |
@@ -130,7 +130,8 @@ simulación; no hay métricas falsas.
 ## Qué vigilar cuando el código crezca
 
 - Draw calls: el presupuesto se sostiene por batches fundidos
-  (`src/render/arena.ts`, `src/render/geometry.ts`) y por dos draws por robot.
+  (`src/render/arena.ts`, `src/render/geometry.ts`) y por un draw por tipo de robot
+  (skinning rígido instanciado, `src/render/robot-rig.ts`).
   Agregar geometría como mallas individuales, o un pase de postprocesado más,
   rompe el objetivo primero (ver `docs/adr/0004-bloom-postprocessing.md`).
 - El chunk de Three.js: si crece, revisar imports de `three/examples` antes de
