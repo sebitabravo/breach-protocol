@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { cargo, floorPaint, tint, wallDecal } from './architecture';
+import { RAIL_BAY, RAIL_MID, RAIL_SIZE, RAIL_TOP } from './dressing';
 import { FINISH, FINISH_SURFACE as S } from './finishes';
 import { FACE, MeshBuilder } from './geometry';
 import { mulberry32 } from './random';
@@ -14,6 +15,38 @@ const RUBBER = FINISH.rubber.color;
 const PAINT = FINISH.paint.color;
 const HAZARD = [0.008, 0.015, 0.992, 0.485] as const;
 const BAY_INK = [0.008, 0.898, 0.992, 0.998] as const;
+
+/** S16 — the gantry fence derives from the player, never from the platform next
+ * to it (same derivation as the catwalk in dressing.ts). GANTRY_WALK_Y is the
+ * authored work-platform top (deck plank centre 4.38, sy 0.20): the rails rise
+ * RAIL_TOP (0.6 × PLAYER_HEIGHT — a person cannot fall over them) with a mid
+ * rail at the conventional half and posts standing on the walk plane at the
+ * derived bay. Render-only batches: the fence never enters the collision map,
+ * so the raise cannot change traversal. */
+export const GANTRY_WALK_Y = 4.48;
+
+/** Pure local-space fence (the b(x, y, z, …) frame of serviceBay) so the unit
+ * test can pin the derivation and serviceBay renders it 1:1 into the lit batch. */
+export interface RailMember { x: number; y: number; z: number; sx: number; sy: number; sz: number }
+export function gantryRailMembers(): RailMember[] {
+  const postX0 = -4.02, postX1 = 2.83, front = 1.74;
+  const span = postX1 - postX0;
+  const bays = Math.max(1, Math.round(span / RAIL_BAY));
+  const bay = span / bays;
+  const members: RailMember[] = [];
+  for (let i = 0; i <= bays; i += 1) {
+    members.push({ x: postX0 + i * bay, y: GANTRY_WALK_Y + RAIL_TOP / 2, z: front, sx: RAIL_SIZE, sy: RAIL_TOP, sz: RAIL_SIZE });
+  }
+  // Guard runs sit the authored 22 mm hair under the post crowns so no faces go
+  // coplanar; the return rail keeps its authored position on the right edge.
+  const run = (y: number): void => {
+    members.push({ x: -0.60, y, z: front, sx: 6.92, sy: RAIL_SIZE, sz: RAIL_SIZE });
+    members.push({ x: 2.83, y, z: 1.18, sx: 0.063, sy: RAIL_SIZE, sz: 1.15 });
+  };
+  run(GANTRY_WALK_Y + RAIL_TOP - RAIL_SIZE / 2 - 0.022);
+  run(GANTRY_WALK_Y + RAIL_MID - RAIL_SIZE / 2);
+  return members;
+}
 
 /** One sealed pressure lock, surveyed against the north wall. Static render batches only. */
 export function serviceBay(lit: MeshBuilder, emit: MeshBuilder, decals: MeshBuilder, wear: MeshBuilder): void {
@@ -73,11 +106,7 @@ export function serviceBay(lit: MeshBuilder, emit: MeshBuilder, decals: MeshBuil
   b(-0.60, 4.38, 1.15, 6.95, 0.20, 1.28, 0x3b4e57);
   b(-0.60, 4.40, 1.83, 6.95, 0.15, 0.09, AMBER);
   for (let i = 0; i < 19; i += 1) b(-3.87 + i * 0.36, 4.49, 1.25, 0.043, 0.03, 1.06, STEEL, S.steel);
-  for (const x of [-4.02, -2.94, -1.59, -0.16, 1.34, 2.83]) b(x, 4.86, 1.74, 0.060, 0.85, 0.067, AMBER);
-  for (const y of [4.81, 5.23]) {
-    b(-0.60, y, 1.74, 6.92, 0.066, 0.074, AMBER);
-    b(2.83, y, 1.18, 0.063, 0.067, 1.15, AMBER);
-  }
+  for (const m of gantryRailMembers()) b(m.x, m.y, m.z, m.sx, m.sy, m.sz, AMBER);
   for (let i = 0; i < 23; i += 1) {
     b(-3.95 + rng() * 6.65, 5.264, 1.741, 0.035 + rng() * 0.16, 0.005, 0.034, STEEL, S.steel, FACE.posY);
   }

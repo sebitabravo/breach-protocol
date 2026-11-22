@@ -42,6 +42,49 @@
   background: var(--border-soft);
 }
 
+/* T5e: overheads de debugging. Fila de toggles bajo la grilla y celdas de
+   adicionales con la misma identidad visual del panel. */
+.eng__overlays-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--surface-1);
+}
+
+.eng__toggle {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--subtle);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 3px 7px;
+  cursor: pointer;
+}
+
+.eng__toggle::before {
+  content: '[ ] ';
+  color: var(--subtle);
+}
+
+.eng__toggle[aria-pressed='true'] {
+  color: var(--primary);
+  border-color: var(--primary-600);
+}
+
+.eng__toggle[aria-pressed='true']::before {
+  content: '[x] ';
+  color: var(--primary);
+}
+
+.eng__metric--data b {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
 .eng__metric {
   display: grid;
   gap: 1px;

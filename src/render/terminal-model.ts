@@ -13,9 +13,35 @@ const BEACON = new THREE.Vector3(-0.53, 2.59, -0.07);
 const FULL_UV = [0, 0, 1, 0, 1, 1, 0, 1];
 
 export const CONSOLE_ROLE = { screen: 1, stencil: 2, bar: 3, rotor: 4 } as const;
-export const CONSOLE_TOP = 2.70;
-export const SCREEN_SAMPLE = new THREE.Vector3(0, HEAD.y + 0.02, HEAD.z + 0.16);
-export const CONSOLE_COLLAR = { width: 1.28, depth: 1.20, z: -0.035 } as const;
+
+// S16 — world scale derives from the player, never from the prop next door. The
+// authored housing was drawn at CONSOLE_TOP_LOCAL (2.70 m — taller than the player,
+// which is the reported defect) and is brought down as ONE instance-matrix scale so
+// the machine peaks at TERMINAL_TOP: just above the standing eye, still under the
+// player's 1.80 m crown, with the composed silhouette, the shared instanced batch,
+// the material set and the canvas screen layout intact (no extra draws or textures).
+/** Player metrics mirrored from the sim core (core/src/player.rs); the render-side
+ * camera's EYE_HEIGHT in src/render/camera.ts must stay in sync. */
+export const PLAYER_HEIGHT = 1.8;
+export const PLAYER_EYE_HEIGHT = 1.62;
+/** Machine top plane: cowling and beacon stack peak here, below the player's crown. */
+export const TERMINAL_TOP = PLAYER_EYE_HEIGHT + 0.16;
+/** Authored local space top of the housing (the height it was originally drawn at). */
+export const CONSOLE_TOP_LOCAL = 2.70;
+export const TERMINAL_SCALE = TERMINAL_TOP / CONSOLE_TOP_LOCAL;
+export const TERMINAL_SCALE_VEC = new THREE.Vector3(TERMINAL_SCALE, TERMINAL_SCALE, TERMINAL_SCALE);
+/** World-space machine top — the beacon datum read by src/render/objective-beacon.ts. */
+export const CONSOLE_TOP = CONSOLE_TOP_LOCAL * TERMINAL_SCALE;
+// Local-space anchors sample through the scaled instance matrix, so world-space
+// consumers keep point behaviour identical at any size.
+export const SCREEN_LOCAL = new THREE.Vector3(0, HEAD.y + 0.02, HEAD.z + 0.16);
+/** World-space screen-plane metrics for occlusion sampling and the readable-height contract. */
+export const SCREEN_SPREAD = 0.43 * TERMINAL_SCALE;
+export const SCREEN_BOUNDS_RADIUS = 0.64 * TERMINAL_SCALE;
+export const SCREEN_CENTRE_Y = (HEAD.y + 0.02) * TERMINAL_SCALE;
+/** Glass height in world metres (the quad is authored 0.620 tall at a -0.19 rad tilt). */
+export const SCREEN_HEIGHT = 0.620 * TERMINAL_SCALE;
+export const CONSOLE_COLLAR = { width: 1.28 * TERMINAL_SCALE, depth: 1.20 * TERMINAL_SCALE, z: -0.035 * TERMINAL_SCALE } as const;
 
 export function consoleYaw(x: number, z: number): number {
   // Face the approach lane, not the perimeter. Side nodes angle towards spawn.

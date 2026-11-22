@@ -109,112 +109,218 @@ interface Box {
   color: number;
   /** Emisivo (ojos, núcleo): lo consume el material con el atributo `aBlink`. */
   glow?: boolean;
-  /** Radio de chaflán (m): las placas grandes reciben un bisel para que el reflejo dibuje los cantos. */
+  /** Radio de chaflán (m). Solo en las placas grandes: coste 108 tris, un box plano 12. */
   round?: number;
+  /** Segmentos del chaflán (2 sólo si la placa es protagonista). */
+  roundSeg?: number;
 }
 
-/** Piezas comunes a los tres tipos: piernas con rodillera y pie, brazos con codo y mano. */
-function limbs(rig: RigSpec, heavy: number): Box[] {
+/** Caja del rig visible para tests (`robot-silhouette.test.ts`) y depuración. */
+export type RobotBox = Box;
+
+/** Cilindro concreto (articulación expuesta) alineado con un eje: 24 tris a 6 segmentos. */
+interface Cylinder {
+  part: number;
+  x: number;
+  y: number;
+  z: number;
+  /** Radio. */
+  r: number;
+  /** Longitud del eje. */
+  len: number;
+  /** Eje del cilindro en el espacio de la pieza. */
+  axis: 'x' | 'y' | 'z';
+  color: number;
+  segments?: number;
+}
+
+interface RigParts {
+  boxes: Box[];
+  cylinders: Cylinder[];
+}
+
+// ------------------------------------------------------------------ limbs
+
+/**
+ * Piernas y brazos de máquina, comunes a los tres tipos.
+ * - rodilla y tobillo como cilindros expuestos (lectura articulada, no muñeca de goma),
+ * - pala frontal en muslo y caña con corte visible entre placas,
+ * - pie ancho con puntera hacia adelante (pisada pesada, no zapatilla humana),
+ * - hombro y codo como cilindros expuestos bajo la hombrera.
+ */
+function limbs(rig: RigSpec, heavy: number): RigParts {
   const boxes: Box[] = [];
+  const cylinders: Cylinder[] = [];
   const t = rig.thighLen;
   const s = rig.shinLen;
-  const legW = 0.13 + 0.05 * heavy;
+  const legW = 0.13 + 0.06 * heavy;
+  const axleR = 0.042 + 0.012 * heavy;
   for (const [thigh, shin] of [[PART.thighL, PART.shinL], [PART.thighR, PART.shinR]] as const) {
+    // Muslo: bloque blindado con pala frontal y actuador trasero (corte visible).
     boxes.push(
-      { part: thigh, x: 0, y: -t * 0.5, z: 0, sx: legW, sy: t * 0.9, sz: legW + 0.02, color: ROBOT_COLORS.armor, round: 0.025 },
-      { part: thigh, x: 0, y: -t * 0.45, z: 0.06, sx: legW * 0.8, sy: t * 0.5, sz: 0.04, color: ROBOT_COLORS.plate, round: 0.025 },
-      { part: shin, x: 0, y: 0, z: 0.02, sx: legW * 0.9, sy: 0.1, sz: legW * 0.9, color: ROBOT_COLORS.joint }, // rodilla
-      { part: shin, x: 0, y: 0.02, z: legW * 0.5 + 0.02, sx: legW * 0.7, sy: 0.12, sz: 0.04, color: ROBOT_COLORS.steel },
-      { part: shin, x: 0, y: -s * 0.5, z: 0, sx: legW * 0.85, sy: s * 0.85, sz: legW, color: ROBOT_COLORS.armor, round: 0.025 },
-      { part: shin, x: 0, y: -s + 0.03, z: 0.06, sx: legW + 0.03, sy: 0.07, sz: legW + 0.16, color: ROBOT_COLORS.joint }, // pie
+      { part: thigh, x: 0, y: -t * 0.52, z: 0, sx: legW + 0.02, sy: t * 0.88, sz: legW + 0.02, color: ROBOT_COLORS.armor, round: 0.02 },
+      { part: thigh, x: 0, y: -t * 0.48, z: legW * 0.5 + 0.01, sx: legW * 0.55, sy: t * 0.52, sz: 0.04, color: ROBOT_COLORS.plate },
+      { part: thigh, x: 0, y: -t * 0.55, z: -(legW * 0.5 + 0.02), sx: legW * 0.6, sy: t * 0.4, sz: 0.06, color: ROBOT_COLORS.joint },
+    );
+    // Eje de cadera expuesto sobre el muslo.
+    cylinders.push({ part: thigh, x: 0, y: -0.01, z: 0, r: axleR, len: legW + 0.04, axis: 'x', color: ROBOT_COLORS.steel });
+    // Rodilla: bloque + eje expuesto; caña con pala propia (corte entre rodilla y muslo).
+    boxes.push(
+      { part: shin, x: 0, y: -0.01, z: 0, sx: legW * 1.05, sy: 0.11, sz: legW * 0.95, color: ROBOT_COLORS.joint },
+      { part: shin, x: 0, y: -s * 0.48, z: 0, sx: legW * 0.85, sy: s * 0.8, sz: legW, color: ROBOT_COLORS.armor, round: 0.02 },
+      { part: shin, x: 0, y: -s * 0.42, z: legW * 0.5 + 0.01, sx: legW * 0.55, sy: s * 0.55, sz: 0.04, color: ROBOT_COLORS.plate },
+    );
+    cylinders.push({ part: shin, x: 0, y: -0.01, z: 0, r: axleR, len: legW * 1.3, axis: 'x', color: ROBOT_COLORS.steel });
+    // Tobillo + pie ancho con puntera hacia adelante.
+    cylinders.push({ part: shin, x: 0, y: -s + 0.07, z: 0, r: 0.028 + 0.008 * heavy, len: legW * 0.85, axis: 'x', color: ROBOT_COLORS.joint });
+    boxes.push(
+      { part: shin, x: 0, y: -s + 0.03, z: legW * 0.4, sx: legW + 0.04, sy: 0.075, sz: legW + 0.16, color: ROBOT_COLORS.joint },
+      { part: shin, x: 0, y: -s + 0.04, z: legW * 0.4 + (legW + 0.16) * 0.5 + 0.02, sx: legW * 0.7, sy: 0.05, sz: 0.06, color: ROBOT_COLORS.steel },
     );
   }
+  // Brazos: hombro y codo como ejes expuestos; el morro del hombro lo pone cada clase.
   const u = rig.upperArmLen;
   const f = rig.foreArmLen;
-  const armW = 0.09 + 0.04 * heavy;
+  const armW = 0.09 + 0.045 * heavy;
   for (const [upper, fore] of [[PART.upperArmL, PART.foreArmL], [PART.upperArmR, PART.foreArmR]] as const) {
     boxes.push(
-      { part: upper, x: 0, y: -0.02, z: 0, sx: armW + 0.06, sy: 0.1, sz: armW + 0.06, color: ROBOT_COLORS.plate, round: 0.025 }, // hombro
-      { part: upper, x: 0, y: -u * 0.5, z: 0, sx: armW, sy: u * 0.85, sz: armW, color: ROBOT_COLORS.armor, round: 0.025 },
-      { part: fore, x: 0, y: 0, z: 0, sx: armW * 0.9, sy: 0.07, sz: armW * 0.9, color: ROBOT_COLORS.joint }, // codo
-      { part: fore, x: 0, y: -f * 0.5, z: 0, sx: armW * 0.95, sy: f * 0.8, sz: armW * 1.05, color: ROBOT_COLORS.armor, round: 0.025 },
-      { part: fore, x: 0, y: -f + 0.02, z: 0.01, sx: armW * 1.1, sy: 0.08, sz: armW * 1.2, color: ROBOT_COLORS.joint }, // mano
+      { part: upper, x: 0, y: -u * 0.55, z: 0, sx: armW, sy: u * 0.85, sz: armW, color: ROBOT_COLORS.armor, round: 0.018 },
+      { part: fore, x: 0, y: -f * 0.55, z: 0, sx: armW * 0.95, sy: f * 0.85, sz: armW * 1.05, color: ROBOT_COLORS.armor, round: 0.018 },
+      { part: fore, x: 0, y: -f * 0.55, z: armW * 0.55, sx: armW * 0.5, sy: f * 0.6, sz: 0.035, color: ROBOT_COLORS.plate },
+      { part: fore, x: 0, y: -f + 0.02, z: 0.01, sx: armW * 1.1, sy: 0.09, sz: armW * 1.2, color: ROBOT_COLORS.joint }, // muñeca/soporte
+    );
+    cylinders.push(
+      { part: upper, x: 0, y: -0.03, z: 0, r: 0.05 + 0.018 * heavy, len: armW + 0.05, axis: 'x', color: ROBOT_COLORS.steel },
+      { part: fore, x: 0, y: -0.02, z: 0, r: 0.038 + 0.012 * heavy, len: armW * 1.1, axis: 'x', color: ROBOT_COLORS.steel },
     );
   }
-  return boxes;
+  return { boxes, cylinders };
 }
 
-function scoutBoxes(rig: RigSpec): Box[] {
+/**
+ * Cabeza de sensor: casco ciego con visor angular de franja emisiva a todo lo ancho.
+ * Sin boca, sin dos ojos separados: nada que se lea como cara humana.
+ */
+function sensorHead(rig: RigParts, opts: { w: number; h: number; d: number; visorW?: number; y?: number }): void {
+  const w = opts.w;
+  const h = opts.h;
+  const d = opts.d;
+  const y = opts.y ?? 0.14;
+  const vw = opts.visorW ?? w * 0.78;
+  rig.boxes.push(
+    { part: PART.head, x: 0, y: y - h * 0.55, z: 0, sx: w * 0.82, sy: h * 0.42, sz: d * 0.86, color: ROBOT_COLORS.joint }, // cuello/mecánica
+    { part: PART.head, x: 0, y, z: 0, sx: w, sy: h, sz: d, color: ROBOT_COLORS.armor, round: 0.018 }, // casco
+    { part: PART.head, x: 0, y, z: d * 0.5 + 0.008, sx: vw, sy: h * 0.42, sz: 0.02, color: ROBOT_COLORS.dark }, // zócalo del visor
+    { part: PART.head, x: 0, y, z: d * 0.5 + 0.02, sx: vw * 0.82, sy: h * 0.2, sz: 0.012, color: ROBOT_COLORS.eye, glow: true }, // franja de ojo
+    { part: PART.head, x: 0, y: y - h * 0.52, z: d * 0.5 + 0.006, sx: w * 0.62, sy: h * 0.16, sz: 0.03, color: ROBOT_COLORS.plate }, // mandíbula/sensor ventral
+  );
+}
+
+function scoutRig(rig: RigSpec): RigParts {
   const T = rig.torsoLen;
-  return [
-    ...limbs(rig, 0),
-    { part: PART.pelvis, x: 0, y: 0, z: 0, sx: 0.32, sy: 0.14, sz: 0.2, color: ROBOT_COLORS.joint },
-    { part: PART.torso, x: 0, y: 0.12, z: 0, sx: 0.2, sy: 0.2, sz: 0.16, color: ROBOT_COLORS.joint }, // columna
-    { part: PART.torso, x: 0, y: T * 0.62, z: 0.01, sx: 0.4, sy: T * 0.5, sz: 0.26, color: ROBOT_COLORS.armor, round: 0.025 },
-    { part: PART.torso, x: 0, y: T * 0.66, z: 0.14, sx: 0.3, sy: T * 0.36, sz: 0.04, color: ROBOT_COLORS.plate, round: 0.025 },
-    { part: PART.torso, x: 0, y: T * 0.62, z: 0.165, sx: 0.07, sy: 0.07, sz: 0.02, color: ROBOT_COLORS.eye, glow: true }, // núcleo
-    { part: PART.torso, x: 0, y: T * 0.6, z: -0.17, sx: 0.26, sy: T * 0.4, sz: 0.1, color: ROBOT_COLORS.joint }, // mochila
-    { part: PART.head, x: 0, y: 0.04, z: 0, sx: 0.08, sy: 0.08, sz: 0.08, color: ROBOT_COLORS.joint }, // cuello
-    { part: PART.head, x: 0, y: 0.15, z: 0.02, sx: 0.2, sy: 0.17, sz: 0.24, color: ROBOT_COLORS.armor, round: 0.025 },
-    { part: PART.head, x: 0, y: 0.16, z: 0.145, sx: 0.17, sy: 0.05, sz: 0.02, color: ROBOT_COLORS.dark },
-    { part: PART.head, x: 0, y: 0.16, z: 0.155, sx: 0.14, sy: 0.025, sz: 0.01, color: ROBOT_COLORS.eye, glow: true },
-    { part: PART.head, x: 0.07, y: 0.28, z: -0.04, sx: 0.015, sy: 0.1, sz: 0.015, color: ROBOT_COLORS.steel }, // antena
-  ];
+  const parts = limbs(rig, 0);
+  parts.boxes.push(
+    { part: PART.pelvis, x: 0, y: 0, z: 0, sx: 0.24, sy: 0.13, sz: 0.18, color: ROBOT_COLORS.joint },
+    { part: PART.pelvis, x: 0, y: -0.02, z: 0.11, sx: 0.16, sy: 0.12, sz: 0.05, color: ROBOT_COLORS.plate },
+    { part: PART.torso, x: 0, y: 0.1, z: 0, sx: 0.14, sy: 0.16, sz: 0.12, color: ROBOT_COLORS.joint }, // columna
+    { part: PART.torso, x: 0, y: T * 0.48, z: 0, sx: 0.2, sy: T * 0.22, sz: 0.2, color: ROBOT_COLORS.joint }, // cintura articulada (corte)
+    // Pecho: casco grande + placa frontal separada (lectura de planchas distintas).
+    { part: PART.torso, x: 0, y: T * 0.68, z: 0, sx: 0.34, sy: T * 0.5, sz: 0.24, color: ROBOT_COLORS.armor, round: 0.02 },
+    { part: PART.torso, x: 0, y: T * 0.72, z: 0.14, sx: 0.26, sy: T * 0.34, sz: 0.035, color: ROBOT_COLORS.plate },
+    { part: PART.torso, x: 0, y: T * 0.66, z: 0.165, sx: 0.075, sy: 0.06, sz: 0.02, color: ROBOT_COLORS.eye, glow: true }, // núcleo
+    // Mochila angular + núcleo dorsal.
+    { part: PART.torso, x: 0, y: T * 0.6, z: -0.16, sx: 0.24, sy: T * 0.4, sz: 0.09, color: ROBOT_COLORS.joint },
+    { part: PART.torso, x: 0, y: T * 0.6, z: -0.215, sx: 0.08, sy: 0.05, sz: 0.015, color: ROBOT_COLORS.eye, glow: true },
+    // Silueta dominante: hombrera izquierda masiva, derecha mínima (asimetría) + antena.
+    { part: PART.torso, x: -0.28, y: T - 0.02, z: 0, sx: 0.2, sy: 0.12, sz: 0.24, color: ROBOT_COLORS.plate, round: 0.02 },
+    { part: PART.torso, x: 0.26, y: T - 0.02, z: 0, sx: 0.08, sy: 0.08, sz: 0.1, color: ROBOT_COLORS.joint },
+    { part: PART.head, x: 0.075, y: 0.29, z: -0.02, sx: 0.014, sy: 0.14, sz: 0.014, color: ROBOT_COLORS.steel }, // antena
+    { part: PART.head, x: 0.075, y: 0.37, z: -0.02, sx: 0.04, sy: 0.02, sz: 0.04, color: ROBOT_COLORS.steel }, // tope de antena
+  );
+  sensorHead(parts, { w: 0.2, h: 0.16, d: 0.24, y: 0.16 });
+  return parts;
 }
 
-function sentinelBoxes(rig: RigSpec): Box[] {
+function sentinelRig(rig: RigSpec): RigParts {
   const T = rig.torsoLen;
   const f = rig.foreArmLen;
-  return [
-    ...limbs(rig, 1),
-    { part: PART.pelvis, x: 0, y: 0, z: 0, sx: 0.42, sy: 0.18, sz: 0.28, color: ROBOT_COLORS.joint },
-    { part: PART.pelvis, x: 0, y: -0.04, z: 0.15, sx: 0.24, sy: 0.16, sz: 0.04, color: ROBOT_COLORS.plate, round: 0.025 },
-    { part: PART.torso, x: 0, y: 0.12, z: 0, sx: 0.26, sy: 0.2, sz: 0.2, color: ROBOT_COLORS.joint },
-    { part: PART.torso, x: 0, y: T * 0.6, z: 0, sx: 0.58, sy: T * 0.62, sz: 0.36, color: ROBOT_COLORS.armor, round: 0.025 },
-    { part: PART.torso, x: 0, y: T * 0.66, z: 0.19, sx: 0.44, sy: T * 0.4, sz: 0.04, color: ROBOT_COLORS.plate, round: 0.025 },
-    { part: PART.torso, x: 0, y: T * 0.64, z: 0.215, sx: 0.1, sy: 0.1, sz: 0.02, color: ROBOT_COLORS.eye, glow: true },
-    { part: PART.torso, x: -0.36, y: T - 0.04, z: 0, sx: 0.2, sy: 0.14, sz: 0.34, color: ROBOT_COLORS.plate, round: 0.025 }, // hombreras
-    { part: PART.torso, x: 0.36, y: T - 0.04, z: 0, sx: 0.2, sy: 0.14, sz: 0.34, color: ROBOT_COLORS.plate, round: 0.025 },
-    { part: PART.torso, x: 0, y: T * 0.55, z: -0.24, sx: 0.36, sy: T * 0.5, sz: 0.14, color: ROBOT_COLORS.joint }, // reactor
-    { part: PART.torso, x: 0, y: T * 0.55, z: -0.315, sx: 0.12, sy: T * 0.3, sz: 0.01, color: ROBOT_COLORS.eye, glow: true },
-    { part: PART.head, x: 0, y: 0.04, z: 0, sx: 0.1, sy: 0.08, sz: 0.1, color: ROBOT_COLORS.joint },
-    { part: PART.head, x: 0, y: 0.15, z: 0.03, sx: 0.24, sy: 0.18, sz: 0.26, color: ROBOT_COLORS.armor, round: 0.025 },
-    { part: PART.head, x: 0, y: 0.27, z: 0, sx: 0.06, sy: 0.08, sz: 0.24, color: ROBOT_COLORS.plate, round: 0.025 }, // cresta
-    { part: PART.head, x: 0, y: 0.16, z: 0.165, sx: 0.2, sy: 0.06, sz: 0.02, color: ROBOT_COLORS.dark },
-    { part: PART.head, x: -0.05, y: 0.16, z: 0.175, sx: 0.05, sy: 0.03, sz: 0.01, color: ROBOT_COLORS.eye, glow: true },
-    { part: PART.head, x: 0.05, y: 0.16, z: 0.175, sx: 0.05, sy: 0.03, sz: 0.01, color: ROBOT_COLORS.eye, glow: true },
-    // Rifle del brazo derecho: a lo largo del antebrazo; con el brazo al frente apunta a +Z.
+  const parts = limbs(rig, 1);
+  parts.boxes.push(
+    { part: PART.pelvis, x: 0, y: 0, z: 0, sx: 0.36, sy: 0.18, sz: 0.26, color: ROBOT_COLORS.joint },
+    { part: PART.pelvis, x: -0.14, y: -0.03, z: 0, sx: 0.1, sy: 0.16, sz: 0.2, color: ROBOT_COLORS.plate }, // faldones
+    { part: PART.pelvis, x: 0.14, y: -0.03, z: 0, sx: 0.1, sy: 0.16, sz: 0.2, color: ROBOT_COLORS.plate },
+    { part: PART.torso, x: 0, y: 0.12, z: 0, sx: 0.24, sy: 0.2, sz: 0.2, color: ROBOT_COLORS.joint },
+    // Torso masivo en dos planchas con corte de cintura.
+    { part: PART.torso, x: 0, y: T * 0.66, z: 0, sx: 0.5, sy: T * 0.62, sz: 0.34, color: ROBOT_COLORS.armor, round: 0.025 },
+    { part: PART.torso, x: 0, y: T * 0.7, z: 0.19, sx: 0.36, sy: T * 0.4, sz: 0.035, color: ROBOT_COLORS.plate },
+    { part: PART.torso, x: 0, y: T * 0.4, z: 0.1, sx: 0.28, sy: T * 0.2, sz: 0.16, color: ROBOT_COLORS.plate }, // faja ventral
+    { part: PART.torso, x: 0, y: T * 0.68, z: 0.215, sx: 0.11, sy: 0.09, sz: 0.02, color: ROBOT_COLORS.eye, glow: true }, // núcleo
+    // Hombreras anchas: la masa dominante de la clase.
+    { part: PART.torso, x: -0.38, y: T - 0.04, z: 0, sx: 0.22, sy: 0.16, sz: 0.34, color: ROBOT_COLORS.plate, round: 0.025 },
+    { part: PART.torso, x: 0.38, y: T - 0.04, z: 0, sx: 0.22, sy: 0.16, sz: 0.34, color: ROBOT_COLORS.plate, round: 0.025 },
+    { part: PART.torso, x: -0.38, y: T - 0.13, z: 0.05, sx: 0.14, sy: 0.05, sz: 0.24, color: ROBOT_COLORS.joint }, // corte inferior
+    { part: PART.torso, x: 0.38, y: T - 0.13, z: 0.05, sx: 0.14, sy: 0.05, sz: 0.24, color: ROBOT_COLORS.joint },
+    // Reactor dorsal a la vista entre los hombros.
+    { part: PART.torso, x: 0, y: T * 0.55, z: -0.22, sx: 0.34, sy: T * 0.5, sz: 0.12, color: ROBOT_COLORS.joint },
+    { part: PART.torso, x: 0, y: T * 0.55, z: -0.29, sx: 0.13, sy: T * 0.28, sz: 0.015, color: ROBOT_COLORS.eye, glow: true },
+    // Culata y miras del rifle (el cañón queda igual para SENTINEL_MUZZLE).
     { part: PART.foreArmR, x: 0, y: -f * 0.55, z: 0.1, sx: 0.12, sy: f * 0.9, sz: 0.1, color: ROBOT_COLORS.joint },
-    { part: PART.foreArmR, x: 0, y: -f - 0.18, z: 0.1, sx: 0.05, sy: 0.36, sz: 0.05, color: ROBOT_COLORS.steel }, // cañón
+    { part: PART.foreArmR, x: 0, y: -f - 0.18, z: 0.1, sx: 0.05, sy: 0.36, sz: 0.05, color: ROBOT_COLORS.steel },
     { part: PART.foreArmR, x: 0, y: -f * 0.4, z: 0.16, sx: 0.04, sy: 0.12, sz: 0.02, color: ROBOT_COLORS.eye, glow: true },
-  ];
+  );
+  sensorHead(parts, { w: 0.24, h: 0.18, d: 0.26, visorW: 0.2, y: 0.15 });
+  // Cresta dorsal de la cabeza (lectura ancha y pesada).
+  parts.boxes.push(
+    { part: PART.head, x: 0, y: 0.245, z: -0.02, sx: 0.05, sy: 0.09, sz: 0.24, color: ROBOT_COLORS.plate },
+  );
+  return parts;
 }
 
-function interceptorBoxes(rig: RigSpec): Box[] {
+function interceptorRig(rig: RigSpec): RigParts {
   const T = rig.torsoLen;
   const f = rig.foreArmLen;
-  return [
-    ...limbs(rig, 0),
-    { part: PART.pelvis, x: 0, y: 0, z: 0, sx: 0.3, sy: 0.12, sz: 0.2, color: ROBOT_COLORS.joint },
-    { part: PART.torso, x: 0, y: 0.12, z: 0, sx: 0.16, sy: 0.22, sz: 0.14, color: ROBOT_COLORS.joint },
-    { part: PART.torso, x: 0, y: T * 0.62, z: 0.03, sx: 0.36, sy: T * 0.52, sz: 0.26, color: ROBOT_COLORS.armor, round: 0.025 },
-    { part: PART.torso, x: 0, y: T * 0.7, z: 0.17, sx: 0.26, sy: T * 0.3, sz: 0.04, color: ROBOT_COLORS.plate, round: 0.025 },
-    { part: PART.torso, x: 0, y: T * 0.66, z: -0.12, sx: 0.05, sy: T * 0.7, sz: 0.14, color: ROBOT_COLORS.plate, round: 0.025 }, // aleta
-    { part: PART.torso, x: 0, y: T * 0.58, z: 0.195, sx: 0.12, sy: 0.04, sz: 0.01, color: ROBOT_COLORS.eye, glow: true },
-    { part: PART.head, x: 0, y: 0.04, z: 0, sx: 0.07, sy: 0.08, sz: 0.07, color: ROBOT_COLORS.joint },
-    { part: PART.head, x: 0, y: 0.13, z: 0.05, sx: 0.18, sy: 0.14, sz: 0.28, color: ROBOT_COLORS.armor, round: 0.025 }, // cabeza en cuña
-    { part: PART.head, x: 0, y: 0.135, z: 0.195, sx: 0.15, sy: 0.03, sz: 0.01, color: ROBOT_COLORS.eye, glow: true },
-    // Cuchillas: largas, salen de la mano hacia abajo; en la embestida el brazo atrás las deja apuntando adelante.
+  const parts = limbs(rig, 0);
+  parts.boxes.push(
+    { part: PART.pelvis, x: 0, y: 0, z: 0, sx: 0.22, sy: 0.12, sz: 0.2, color: ROBOT_COLORS.joint },
+    { part: PART.torso, x: 0, y: 0.1, z: 0, sx: 0.12, sy: 0.18, sz: 0.12, color: ROBOT_COLORS.joint },
+    // Torso estrecho y profundo (cuna): lectura alta y filosa.
+    { part: PART.torso, x: 0, y: T * 0.62, z: 0.02, sx: 0.3, sy: T * 0.52, sz: 0.28, color: ROBOT_COLORS.armor, round: 0.02 },
+    { part: PART.torso, x: 0, y: T * 0.68, z: 0.17, sx: 0.2, sy: T * 0.3, sz: 0.04, color: ROBOT_COLORS.plate },
+    { part: PART.torso, x: 0, y: T * 0.6, z: 0.195, sx: 0.09, sy: 0.045, sz: 0.02, color: ROBOT_COLORS.eye, glow: true }, // núcleo
+    { part: PART.torso, x: -0.19, y: T - 0.0, z: 0.02, sx: 0.1, sy: 0.09, sz: 0.2, color: ROBOT_COLORS.plate }, // hombreras mínimas
+    { part: PART.torso, x: 0.19, y: T - 0.0, z: 0.02, sx: 0.1, sy: 0.09, sz: 0.2, color: ROBOT_COLORS.plate },
+    // Aletas dorsales gemelas: el rasgo reconocible a cualquier distancia.
+    { part: PART.torso, x: -0.08, y: T * 0.72, z: -0.13, sx: 0.03, sy: T * 0.66, sz: 0.14, color: ROBOT_COLORS.plate },
+    { part: PART.torso, x: 0.08, y: T * 0.72, z: -0.13, sx: 0.03, sy: T * 0.66, sz: 0.14, color: ROBOT_COLORS.plate },
+    { part: PART.torso, x: 0, y: T * 0.62, z: -0.11, sx: 0.14, sy: 0.05, sz: 0.02, color: ROBOT_COLORS.eye, glow: true }, // núcleo dorsal
+    // Cuchillas largas desde la muñeca.
     { part: PART.foreArmL, x: 0, y: -f - 0.3, z: 0.03, sx: 0.025, sy: 0.6, sz: 0.07, color: ROBOT_COLORS.steel },
     { part: PART.foreArmR, x: 0, y: -f - 0.3, z: 0.03, sx: 0.025, sy: 0.6, sz: 0.07, color: ROBOT_COLORS.steel },
-  ];
+  );
+  sensorHead(parts, { w: 0.17, h: 0.14, d: 0.3, visorW: 0.15, y: 0.14 });
+  return parts;
 }
 
-function boxesFor(kind: number): Box[] {
+const RIG_CACHE: Record<number, RigParts> = {};
+
+function rigPartsFor(kind: number): RigParts {
   const rig = rigFor(kind);
-  if (kind === ENEMY_KIND.sentinel) return sentinelBoxes(rig);
-  if (kind === ENEMY_KIND.interceptor) return interceptorBoxes(rig);
-  return scoutBoxes(rig);
+  if (!RIG_CACHE[kind]) {
+    if (kind === ENEMY_KIND.sentinel) RIG_CACHE[kind] = sentinelRig(rig);
+    else if (kind === ENEMY_KIND.interceptor) RIG_CACHE[kind] = interceptorRig(rig);
+    else RIG_CACHE[kind] = scoutRig(rig);
+  }
+  return RIG_CACHE[kind];
+}
+
+/** Cajas del rig visibles para tests (`robot-silhouette.test.ts`) y depuración. */
+export function robotBoxesFor(kind: number): readonly RobotBox[] {
+  return rigPartsFor(kind).boxes;
+}
+
+/** Ejes de articulación expuestos (cilindros) del rig. */
+export function robotCylindersFor(kind: number): readonly Cylinder[] {
+  return rigPartsFor(kind).cylinders;
 }
 
 /** Geometría de un tipo: posiciones en el espacio local de cada pieza, con `aPart` y `aBlink` por vértice. */
@@ -222,13 +328,30 @@ export function buildRobotGeometry(kind: number): THREE.BufferGeometry {
   const builder = new MeshBuilder();
   const parts: number[] = [];
   const color = new THREE.Color();
-  for (const box of boxesFor(kind)) {
+  const rgbOf = (hex: number): [number, number, number] => {
+    color.setHex(hex);
+    return [color.r, color.g, color.b];
+  };
+  // Cajas y ejes de articulación comparten el ambiente del builder: cero allocations por frame (solo boot).
+  const cylinder = new THREE.CylinderGeometry(1, 1, 1, 6);
+  for (const cyl of robotCylindersFor(kind)) {
     const before = builder.vertexCount;
-    color.setHex(box.color);
-    const rgb: [number, number, number] = [color.r, color.g, color.b];
+    const g = cylinder.clone();
+    g.scale(cyl.r, 1, cyl.r);
+    g.scale(1, cyl.len / 2, 1);
+    if (cyl.axis === 'x') g.rotateZ(Math.PI / 2);
+    else if (cyl.axis === 'z') g.rotateX(Math.PI / 2);
+    g.translate(cyl.x, cyl.y, cyl.z);
+    builder.addGeometry(g, rgbOf(cyl.color), 0);
+    g.dispose();
+    for (let i = before; i < builder.vertexCount; i += 1) parts.push(cyl.part);
+  }
+  for (const box of robotBoxesFor(kind)) {
+    const before = builder.vertexCount;
+    const rgb = rgbOf(box.color);
     const round = Math.min(box.round ?? 0, box.sx * 0.45, box.sy * 0.45, box.sz * 0.45);
     if (round > 0.004 && !box.glow) {
-      const rounded = new RoundedBoxGeometry(box.sx, box.sy, box.sz, 1, round);
+      const rounded = new RoundedBoxGeometry(box.sx, box.sy, box.sz, box.roundSeg ?? 1, round);
       rounded.translate(box.x, box.y, box.z);
       builder.addGeometry(rounded, rgb, 0);
       rounded.dispose();
@@ -237,6 +360,7 @@ export function buildRobotGeometry(kind: number): THREE.BufferGeometry {
     }
     for (let i = before; i < builder.vertexCount; i += 1) parts.push(box.part);
   }
+  cylinder.dispose();
   const geometry = builder.build();
   geometry.setAttribute('aPart', new THREE.Float32BufferAttribute(parts, 1));
   return geometry;

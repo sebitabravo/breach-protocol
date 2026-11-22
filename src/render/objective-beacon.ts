@@ -1,9 +1,36 @@
 import * as THREE from 'three';
 import { SOLID_KIND, type MapData, type Solid } from '../world/map';
 import { MeshBuilder } from './geometry';
-import { CONSOLE_COLLAR, CONSOLE_TOP, consoleYaw } from './terminal-model';
+import { CONSOLE_COLLAR, CONSOLE_TOP, consoleYaw, TERMINAL_SCALE } from './terminal-model';
 
 const MINT = 0x75ffae;
+
+/** T6b/S16 — the mint ground ring is the console's collar outline, not an
+ * independent prop: every dimension rides the terminal's player-scale factor
+ * (TERMINAL_SCALE), exactly as the console housing does. The ring used to be
+ * laid out at authored size from the collider-exported plinth top while the
+ * collar itself was rescaled to the player, so its plane floated above the
+ * smaller collar and cut the desk shell (measured: 20 desk/cowling faces
+ * sliced). The authored relationship — the outlined collar band, at
+ * RING_CROWN_LOCAL − RING_DROP_LOCAL metres over the node floor — is restored
+ * here, scaled with the machine. */
+export const RING_BAR_LOCAL = 0.065;
+export const RING_MARGIN_LOCAL = 0.018;
+export const RING_CROWN_LOCAL = 1.2;
+export const RING_DROP_LOCAL = 0.09;
+/** Rim-local scale and world-plane height of the ground ring for a terminal
+ * standing on a node floor at `nodeY` (the collider plinth peak is nodeY +
+ * RING_CROWN_LOCAL on every surveyed map). */
+export function groundRimFrame(nodeY: number): { scale: { x: number; y: number; z: number }; y: number } {
+  return {
+    scale: {
+      x: CONSOLE_COLLAR.width + RING_MARGIN_LOCAL * TERMINAL_SCALE,
+      y: TERMINAL_SCALE,
+      z: CONSOLE_COLLAR.depth + RING_MARGIN_LOCAL * TERMINAL_SCALE,
+    },
+    y: nodeY + (RING_CROWN_LOCAL - RING_DROP_LOCAL) * TERMINAL_SCALE,
+  };
+}
 
 export class ObjectiveBeacon {
   readonly position = new THREE.Vector3();
@@ -44,9 +71,10 @@ export class ObjectiveBeacon {
     this.rim.visible = base !== undefined;
     if (base) {
       const yaw = consoleYaw(node.x, node.z);
+      const frame = groundRimFrame(node.y);
       this.rim.rotation.y = yaw;
-      this.rim.position.set(node.x + CONSOLE_COLLAR.z * Math.sin(yaw), top - 0.09, node.z + CONSOLE_COLLAR.z * Math.cos(yaw));
-      this.rim.scale.set(CONSOLE_COLLAR.width + 0.018, 1, CONSOLE_COLLAR.depth + 0.018);
+      this.rim.position.set(node.x + CONSOLE_COLLAR.z * Math.sin(yaw), frame.y, node.z + CONSOLE_COLLAR.z * Math.cos(yaw));
+      this.rim.scale.set(frame.scale.x, frame.scale.y, frame.scale.z);
       this.rim.material.color.setHex(MINT).multiplyScalar(1.85);
     }
   }

@@ -22,7 +22,7 @@ import { renderBoardLoading, renderBoardPanel, renderBoardRows, boardLabel, type
 import { renderTutorial, renderTutorialHandoff } from '../ui/tutorial-view';
 import { QualityController } from './quality';
 import { FIXED_DT, FixedStepLoop } from './loop';
-import { loadSettings, resetSettings, saveSettings, type Quality, type Settings } from './settings';
+import { loadSettings, resetSettings, saveSettings, gfxOverridesOf, type Locale, type Quality, type Settings } from './settings';
 import { bestScore, saveScore, type RunResult } from './scores';
 import { buildRunResult, buildStartOptions } from './match';
 import { effectsOf } from './events';
@@ -111,6 +111,136 @@ function ineligibleReason(mode: Mode, won: boolean, shotgunEnabled: boolean): st
   return 'Esta partida no entra a ningún tablero.';
 }
 
+/**
+ * Resiliencia de arranque (T5c, estudio REA): gate de capacidades y recuperación
+ * de un boot que no termina. Sin user-agent: cada requisito se verifica por
+ * capability; la lista sale de lo que el bundle construido llama de verdad en
+ * el camino de arranque (ver el comentario de cada API).
+ */
+export type BootCapability = 'wasm' | 'webgl2' | 'runtime';
+export type BootProbes = Record<BootCapability, boolean>;
+
+/** Primer umbral, generoso: un dispositivo lento pero funcional termina debajo
+ *  (payload hasta boot ≈ 267 KiB gzip; el arranque medido entero es de segundos:
+ *  docs/performance-budget.md). Solo superficie un aviso, nunca corta nada. */
+export const BOOT_SLOW_MS = 24_000;
+/** Segundo umbral: recién aquí se ofrece Reintentar. Nunca para una carga que
+ *  sigue avanzando: triplica el margen del peor network que funcione. */
+export const BOOT_STALLED_MS = 60_000;
+
+/** APIs modernas que los chunks construidos invocan en el arranque:
+ *  - AbortController: GameApp (controlador del shell) y three (carga de recursos).
+ *  - AbortSignal.timeout: wasm/bridge.ts (fetch del núcleo con corte temporal).
+ *  - ResizeObserver: ui/objective-marker.ts, instanciado dentro de boot().
+ *  - replaceChildren: ui/campaign-view.ts y ui/board-view.ts, via refreshMenu() en boot().
+ *  La sintaxis es2022 (vite.config.ts build.target; campos privados #x en el
+ *  output) no es detectable en runtime: la cubre el piso declarado abajo. */
+export const BOOT_REQUIRED_RUNTIME_APIS = [
+  'AbortController',
+  'AbortSignal.timeout',
+  'ResizeObserver',
+  'replaceChildren',
+] as const;
+
+/** Piso de compatibilidad declarado: el API más exigente del arranque es
+ *  AbortSignal.timeout (Chrome 103, Firefox 100, Safari 16); todo lo demás
+ *  (ResizeObserver, replaceChildren, sintaxis es2022 con campos privados) es
+ *  más viejo. Solo es texto declarado: la decisión real es la capability. */
+export const BOOT_MINIMUM_BROWSERS = [
+  { name: 'Chrome', version: 103 },
+  { name: 'Firefox', version: 100 },
+  { name: 'Safari', version: 16 },
+] as const;
+
+/** Verifica por presencia, no por UA. Cada check es detectable sin navegador
+ *  completo: `typeof` y un prototype. */
+export function probeBootRuntime(): boolean {
+  try {
+    return (
+      typeof AbortController === 'function' &&
+      typeof AbortSignal === 'function' &&
+      typeof AbortSignal.timeout === 'function' &&
+      typeof ResizeObserver === 'function' &&
+      typeof Element.prototype.replaceChildren === 'function'
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function missingCapabilities(probes: BootProbes): BootCapability[] {
+  const missing: BootCapability[] = [];
+  for (const capability of ['wasm', 'webgl2', 'runtime'] as const) {
+    if (!probes[capability]) missing.push(capability);
+  }
+  return missing;
+}
+
+export type BootSlowState = 'in-time' | 'slow' | 'stalled';
+
+/** Estado puro del gate de estancamiento: `slow` superficie el aviso;
+ *  recién `stalled` (segundo umbral) ofrece la acción de recuperación. */
+export function bootSlowState(
+  elapsedMs: number,
+  slowMs = BOOT_SLOW_MS,
+  stalledMs = BOOT_STALLED_MS,
+): BootSlowState {
+  if (elapsedMs >= stalledMs) return 'stalled';
+  if (elapsedMs >= slowMs) return 'slow';
+  return 'in-time';
+}
+
+/** Forzar los estados a demanda para verificación, espejo del `?viewmodel` del
+ *  renderer: `?boot=slow` y `?boot=unsupported`. Cualquier otro valor es `auto`. */
+export function forcedBootState(search: string): 'auto' | 'slow' | 'unsupported' {
+  const value = new URLSearchParams(search).get('boot');
+  return value === 'slow' || value === 'unsupported' ? value : 'auto';
+}
+
+/** Rótulos de la resiliencia de arranque. La página base va en español (lang="es")
+ *  y el único mecanismo de idioma del proyecto es `settings.locale` (es/en),
+ *  igual que los rótulos gráficos de SettingsForm: se resuelven desde el idioma
+ *  cargado, sin una segunda vía de traducción en el marcado. */
+export interface BootCopy {
+  slow: string;
+  unsupportedTitle: string;
+  unsupportedBody: string;
+  floor: string;
+  retry: string;
+  items: Record<BootCapability, string>;
+}
+
+const BOOT_COPY: Record<Locale, BootCopy> = {
+  es: {
+    slow: 'el arranque está tardando más de lo usual…',
+    unsupportedTitle: 'Este navegador no puede iniciar el protocolo',
+    unsupportedBody: 'Faltan capacidades obligatorias para ejecutar el juego. Probá una versión actualizada de:',
+    floor: 'versiones mínimas',
+    retry: 'Reintentar',
+    items: {
+      wasm: 'WebAssembly (núcleo de simulación)',
+      webgl2: 'WebGL2 (render del juego)',
+      runtime: `APIs del arranque: ${BOOT_REQUIRED_RUNTIME_APIS.join(', ')}`,
+    },
+  },
+  en: {
+    slow: 'Boot is taking longer than usual…',
+    unsupportedTitle: 'This browser cannot start the protocol',
+    unsupportedBody: 'Required capabilities to run the game are missing. Try an updated version of:',
+    floor: 'minimum versions',
+    retry: 'Retry',
+    items: {
+      wasm: 'WebAssembly (simulation core)',
+      webgl2: 'WebGL2 (game renderer)',
+      runtime: `Boot APIs: ${BOOT_REQUIRED_RUNTIME_APIS.join(', ')}`,
+    },
+  },
+};
+
+export function bootCopy(locale: Locale): BootCopy {
+  return BOOT_COPY[locale];
+}
+
 export class GameApp {
   private readonly canvas = byId<HTMLCanvasElement>('gl');
   private readonly app = byId('app');
@@ -176,11 +306,60 @@ export class GameApp {
 
   async boot(takeIntent: () => HTMLElement | undefined): Promise<void> {
     const view = new BootView();
+    const forced = forcedBootState(window.location.search);
+    const copy = bootCopy(this.settings.locale);
+    // La acción de recuperación vive en la pantalla de boot y recarga la página:
+    // se ata acá porque bindGlobalUI solo corre si el arranque completa.
+    byId('boot-retry').addEventListener('click', () => window.location.reload(), { signal: this.abort.signal });
+
+    // Aviso y recuperación de un boot que no termina (T5c): un intervalo lee el
+    // gate puro; superficie el aviso en el primer umbral y Reintentar en el segundo.
+    const bootStartedAt = performance.now();
+    const surfaceBootSlow = (kind: 'slow' | 'stalled'): void => {
+      const note = byId('boot-slow');
+      note.textContent = copy.slow;
+      note.hidden = false;
+      if (kind === 'stalled') byId('boot-retry').hidden = false;
+    };
+    if (forced === 'slow') surfaceBootSlow('slow');
+    const watchId = window.setInterval(() => {
+      const kind = bootSlowState(performance.now() - bootStartedAt);
+      if (kind !== 'in-time') surfaceBootSlow(kind);
+    }, 500);
+    const stopBootWatch = (): void => {
+      window.clearInterval(watchId);
+      byId('boot-slow').hidden = true;
+      byId('boot-retry').hidden = true;
+    };
 
     try {
       const audioOk = 'AudioContext' in window || 'webkitAudioContext' in window;
       view.setCheck('audio', audioOk ? 'ok' : 'fail');
       view.setProgress(12);
+
+      // Gate de capacidades antes de descargar nada pesado: una máquina que no
+      // puede correr el juego no paga el núcleo ni Three.js.
+      // `?boot=unsupported` fuerza el set completo para verificar la pantalla.
+      const probes: BootProbes = {
+        wasm:
+          typeof WebAssembly === 'object' &&
+          typeof WebAssembly.instantiate === 'function' &&
+          typeof WebAssembly.Memory === 'function',
+        webgl2: webgl2Supported(),
+        runtime: probeBootRuntime(),
+      };
+      const missing = forced === 'unsupported'
+        ? missingCapabilities({ wasm: false, webgl2: false, runtime: false })
+        : missingCapabilities(probes);
+      if (missing.length > 0) {
+        for (const capability of missing) {
+          if (capability !== 'runtime') view.setCheck(capability, 'fail');
+        }
+        stopBootWatch();
+        this.renderBootUnsupported(missing, copy);
+        this.dispatch({ type: 'boot-failed' });
+        return;
+      }
 
       const startedAt = performance.now();
       const [engine, { Renderer }] = await Promise.all([
@@ -224,6 +403,9 @@ export class GameApp {
       this.syncSettingsUI();
       this.refreshMenu();
       this.wireDisplayEvents();
+      // Un boot completo nunca debe dejar el aviso o el Reintento del gate visibles,
+      // ni dejar su intervalo vivo.
+      stopBootWatch();
       view.setProgress(100);
       view.setMeta(`núcleo listo · ${this.wasmKib.toFixed(1)} KiB · ${this.loadMs.toFixed(0)} ms`);
 
@@ -239,9 +421,46 @@ export class GameApp {
       this.lastNow = performance.now();
       this.rafId = requestAnimationFrame(this.frame);
     } catch (error) {
+      stopBootWatch();
+      this.resetFallbackToError();
       view.setFailure(error);
       this.dispatch({ type: 'boot-failed' });
     }
+  }
+
+  /** Pantalla dedicada de navegador sin soporte: nombra lo que falta, el piso de
+   *  versiones y la única acción útil (ir a un navegador actualizado; Reintentar
+   *  no puede crear una capability). */
+  private renderBootUnsupported(missing: readonly BootCapability[], copy: BootCopy): void {
+    const section = byId('screen-fallback');
+    section.dataset.boot = 'unsupported';
+    byId('fallback-title').textContent = copy.unsupportedTitle;
+    byId('fallback-detail').textContent = copy.unsupportedBody;
+    const list = byId('fallback-missing');
+    list.replaceChildren(...missing.map((id) => {
+      const item = document.createElement('li');
+      item.className = 'check';
+      item.setAttribute('data-state', 'fail');
+      const dot = document.createElement('span');
+      dot.className = 'check__dot';
+      item.append(dot, copy.items[id]);
+      return item;
+    }));
+    list.hidden = false;
+    byId('fallback-floor').textContent =
+      `${copy.floor}: ${BOOT_MINIMUM_BROWSERS.map((browser) => `${browser.name} ${browser.version}+`).join(' · ')}`;
+    byId('fallback-floor').hidden = false;
+    byId('fallback-retry').hidden = true;
+  }
+
+  /** El camino de error genérico conserva su forma original: la variante sin
+   *  soporte y sus elementos extra solo existen mientras la pantalla lo dice. */
+  private resetFallbackToError(): void {
+    const section = byId('screen-fallback');
+    section.dataset.boot = 'error';
+    byId('fallback-missing').hidden = true;
+    byId('fallback-floor').hidden = true;
+    byId('fallback-retry').hidden = false;
   }
 
   private handleContextLost(): void {
@@ -1079,6 +1298,7 @@ export class GameApp {
 
     if (this.renderer) {
       this.quality.setManual(this.settings.quality as Quality);
+      this.renderer.setGfx(gfxOverridesOf(this.settings));
       this.renderer.setQuality(this.quality.preset, this.dprCap());
       this.renderer.resize();
     }
