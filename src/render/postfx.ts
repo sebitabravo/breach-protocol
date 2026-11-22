@@ -1,8 +1,9 @@
 /**
  * Postprocesado: RenderPass -> UnrealBloomPass -> OutputPass (OutputPass último
  * para que la conversión a sRGB y el tone mapping ocurran una sola vez). Solo
- * medium y high usan composer; low renderiza directo al canvas. Decisión y
- * costo en docs/adr/0004-bloom-postprocessing.md.
+ * medium y high usan composer; low renderiza directo al canvas. El override
+ * del jugador (T5a) retira únicamente el pase de bloom: el composer y su MSAA
+ * siguen siendo del preset. Decisión y costo en docs/adr/0004-bloom-postprocessing.md.
  */
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -10,16 +11,27 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import type { QualityName } from './presets';
+import type { GfxOverride } from '../core/settings';
 
 export interface PostPlan {
-  /** Composer + bloom. False renders the scene straight to the canvas. */
+  /** Composer con o sin pase de bloom. False en low = render directo al canvas. */
   bloom: boolean;
-  /** MSAA samples on the composer target (the canvas itself is never antialiased). */
+  /** MSAA del target del composer (el canvas nunca tiene antialiasing). Del preset: los overrides no lo tocan. */
   msaaSamples: number;
 }
 
-export function postPlan(name: QualityName): PostPlan {
-  return name === 'low' ? { bloom: false, msaaSamples: 0 } : { bloom: true, msaaSamples: 4 };
+/**
+ * Derivación de postprocesado por preset. `bloom` acepta el override del
+ * jugador (auto = derivación del preset: medium y high con bloom, low sin
+ * composer). El MSAA es del preset y se mantiene aunque se apague el bloom:
+ * medium/high conservan el composer (RenderPass → OutputPass con 4× MSAA) y
+ * solo se retira el pase de bloom; `on` en low crea composer con 0 muestras.
+ */
+export function postPlan(name: QualityName, bloom: GfxOverride = 'auto'): PostPlan {
+  return {
+    bloom: bloom === 'auto' ? name !== 'low' : bloom === 'on',
+    msaaSamples: name === 'low' ? 0 : 4,
+  };
 }
 
 /** HDR soft knee picks up cyan tubes and the less luminous orange strips. */
@@ -45,6 +57,7 @@ export class PostFx {
   private composer: EffectComposer | null = null;
   private quality: QualityName = 'medium';
   private plan: PostPlan = postPlan('medium');
+  private bloomOverride: GfxOverride = 'auto';
   private width = 1;
   private height = 1;
   private pixelRatio = 1;
@@ -55,15 +68,22 @@ export class PostFx {
     private readonly camera: THREE.Camera,
   ) {}
 
-  /** Applies a quality plan and the current drawing-buffer geometry. */
-  configure(name: QualityName, pixelRatio: number, width: number, height: number): void {
-    if (this.quality !== name) this.disposeComposer();
+  /** Applies a quality plan, the bloom override and the current drawing-buffer geometry. */
+  configure(name: QualityName, pixelRatio: number, width: number, height: number, bloom: GfxOverride = 'auto'): void {
+    const plan = postPlan(name, bloom);
+    // Rebuild cuando cambia preset o el estado de bloom: el target y sus
+    // pases no se pueden reconfigurar en caliente.
+    if (this.quality !== name || this.plan.bloom !== plan.bloom) this.disposeComposer();
     this.quality = name;
-    this.plan = postPlan(name);
+    this.bloomOverride = bloom;
+    this.plan = plan;
     this.pixelRatio = pixelRatio;
     this.width = Math.max(1, width);
     this.height = Math.max(1, height);
-    if (!this.plan.bloom) {
+    // Composer solo cuando el preset lo trae (medium/high) o el bloom forced
+    // on lo pide en low: el MSAA del preset nunca se pierde con el bloom off,
+    // solo se retira el pase de bloom. Low en auto sigue directo al canvas.
+    if (!this.plan.bloom && this.plan.msaaSamples === 0) {
       this.disposeComposer();
       return;
     }
@@ -88,7 +108,7 @@ export class PostFx {
   /** Drops GPU targets so the next configure allocates fresh ones (context restore). */
   rebuild(): void {
     this.disposeComposer();
-    this.configure(this.quality, this.pixelRatio, this.width, this.height);
+    this.configure(this.quality, this.pixelRatio, this.width, this.height, this.bloomOverride);
   }
 
   dispose(): void {
@@ -106,9 +126,11 @@ export class PostFx {
     });
     const composer = new EffectComposer(this.renderer, target);
     composer.addPass(new RenderPass(this.scene, this.camera));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(this.width, this.height), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
-    trimBloomMips(bloom, this.quality);
-    composer.addPass(bloom);
+    if (this.plan.bloom) {
+      const bloom = new UnrealBloomPass(new THREE.Vector2(this.width, this.height), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
+      trimBloomMips(bloom, this.quality);
+      composer.addPass(bloom);
+    }
     composer.addPass(new OutputPass());
     this.composer = composer;
   }

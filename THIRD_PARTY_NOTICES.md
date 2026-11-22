@@ -135,8 +135,39 @@ un acento cálido. Los dos GLB siguen referenciando ese atlas y no se modificaro
 Los decals, la geometría de la arena y los enemigos son propios. Se usan fuentes
 del sistema y audio sintetizado; no se distribuyen fuentes embebidas.
 
+## Codec de texturas KTX2/Basis
+
+El pipeline opcional de texturas comprimidas (`scripts/build-textures.mjs`, solo bajo
+demanda) depende de dos piezas de terceros con licencia compatible:
+
+| Componente | Uso | Licencia declarada |
+|---|---|---|
+| [KTX-Software (`toktx`)](https://github.com/KhronosGroup/KTX-Software) 4.4.2 | Encoder offline de las nueve texturas PBR a KTX2 (ETC1S para albedo/ARM, UASTC para normales). No entra en el build ni el runtime: solo genera los artefactos `.ktx2` comprometidos en `public/assets/textures/ktx2/`. | Apache-2.0 |
+| [Basis Universal transcoder](https://github.com/BinomialLLC/basis_universal) (vendido dentro de `three` 0.181.0) | `public/basis/basis_transcoder.js` + `.wasm`, servidos en runtime para transcodificar KTX2 al formato comprimido del GPU (`KTX2Loader.setTranscoderPath`); `detectSupport(renderer)` decide si se usa KTX2 o el WebP de siempre. Copiado byte-exacto de `node_modules/three/examples/jsm/libs/basis/`, sin descargas externas. | Apache-2.0 |
+
+La versión del encoder está registrada en `public/assets/textures/ktx2/manifest.json`.
+`three` ya aparece arriba como dependencia MIT de runtime; el transcodificador es un
+artefacto de Basis Universal empaquetado dentro de la distribución del paquete.
+
 ## Tokens de diseño
 
 La paleta azul-negra y sus acentos menta y de peligro provienen de los mockups
 del dueño del proyecto, no de sebita.dev ni de otro sitio. Ver
 [`docs/adr/0002-visual-direction.md`](docs/adr/0002-visual-direction.md).
+
+## Herramientas del agente
+
+Inventario de herramientas de agente fijadas por versión y no incluidas en el
+build ni en los locks.
+
+| Componente | Uso | Licencia declarada |
+|---|---|---|
+| `rea-agents` | Servidor MCP local de REA (ingeniería inversa estática de JavaScript/Electron y observación de navegador/red vía CDP), lanzado por `.pi/mcp.json` con `npx -y rea-agents@6.10.1 mcp` | MIT |
+
+Sin dependencia en `package.json`: del tarball npm publicado de
+[`rea-agents` 6.10.1](https://github.com/morluto/rea) se copió byte-exacto el
+skill `reverse-engineer-anything` (`SKILL.md` y sus 8 `references/*.md`) a
+`.agents/skills/reverse-engineer-anything/`; el resto del paquete no se
+vende. La versión está fijada en `.pi/mcp.json` (nunca `@latest`); avisos y
+texto de la licencia MIT: los de su distribución npm. Detalles y
+instrucciones de actualización en [`docs/rea-tooling.md`](docs/rea-tooling.md).

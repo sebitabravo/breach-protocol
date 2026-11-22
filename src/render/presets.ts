@@ -2,6 +2,7 @@
  * Presets de calidad del renderer. El controlador de calidad (core/quality.ts)
  * decide cuál aplicar; acá solo se traducen a DPR, sombras y presupuesto de FX.
  */
+import type { GfxOverride } from '../core/settings';
 export type QualityName = 'low' | 'medium' | 'high';
 
 export interface QualityPreset {
@@ -25,14 +26,63 @@ export const PRESETS: Record<QualityName, QualityPreset> = {
  */
 export const PLAY_PIXEL_BUDGET: Record<QualityName, number> = { low: 154_000, medium: 540_000, high: 3_500_000 };
 
-/** DPR efectivo: el menor entre el del preset, el tope del dispositivo, el real y el que cabe en el presupuesto. */
+/**
+ * Tope duro de seguridad del factor adaptativo (T5b). El controlador de escala
+ * (core/quality.ts) trabaja entre su propio piso (0.5) y 1; este límite existe
+ * para que NINGÚN valor hostil inyectado por fuera pueda subir el costo por
+ * encima del presupuesto del preset ni recortar por debajo de un 25%
+ * (recorte de emergencia, ilegible de todos modos).
+ */
+export const MIN_RENDER_SCALE = 0.25;
+
+/**
+ * DPR efectivo: el menor entre el del preset, el tope del dispositivo, el real y el que cabe en el
+ * presupuesto — multiplicado por el factor adaptativo de resolución (`scale`, recorte continuo bajo
+ * carga, T5b). El factor es SIEMPRE ≤ 1 y se multiplica al final: el presupuesto y el preset siguen
+ * siendo el techo duro, la escala solo puede reducir el costo por debajo de ellos, nunca subirlo.
+ */
 export function playPixelRatio(
   preset: QualityPreset,
   cssWidth: number,
   cssHeight: number,
   dprCap: number,
   deviceDpr: number,
+  scale = 1,
 ): number {
   const area = Math.max(1, cssWidth * cssHeight);
-  return Math.min(preset.dpr, dprCap, deviceDpr, Math.sqrt(PLAY_PIXEL_BUDGET[preset.name] / area));
+  const s = Number.isFinite(scale) ? Math.min(1, Math.max(MIN_RENDER_SCALE, scale)) : 1;
+  return Math.min(preset.dpr, dprCap, deviceDpr, Math.sqrt(PLAY_PIXEL_BUDGET[preset.name] / area)) * s;
+}
+
+/** Plan de efectos visibles, ya resuelto contra el preset. */
+export interface GfxPlan {
+  bloom: boolean;
+  shadows: boolean;
+  environment: boolean;
+  lights: boolean;
+  mist: boolean;
+}
+
+/**
+ * Resuelve los cinco overrides `auto|on|off` del jugador contra la derivación
+ * propia de cada preset (T5a). `auto` = comportamiento previo al cambio.
+ *
+ * Lo único que cada preset decide hoy: bloom (medio y alto, ADR 0004) y
+ * sombras. El entorno PMREM, las luces prácticas y la malla de atmósfera
+ * están activos en todos los presets, así que su `auto` es simplemente activo.
+ * El presupuesto de píxeles, el tope de DPR, el MSAA y el tamaño del shadow map
+ * siguen siendo del preset y NO pasan por acá.
+ */
+export function resolveGfxPlan(
+  preset: QualityPreset,
+  gfx: Record<'gfxBloom' | 'gfxShadows' | 'gfxEnvironment' | 'gfxLights' | 'gfxMist', GfxOverride>,
+): GfxPlan {
+  const pick = (state: GfxOverride, auto: boolean): boolean => (state === 'auto' ? auto : state === 'on');
+  return {
+    bloom: pick(gfx.gfxBloom, preset.name !== 'low'),
+    shadows: pick(gfx.gfxShadows, preset.shadows),
+    environment: pick(gfx.gfxEnvironment, true),
+    lights: pick(gfx.gfxLights, true),
+    mist: pick(gfx.gfxMist, true),
+  };
 }
