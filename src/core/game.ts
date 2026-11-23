@@ -12,7 +12,6 @@ import { InputManager, type InputHooks } from '../input/input';
 import type { AudioManager } from '../audio/audio';
 import { Hud, type MatchView } from '../ui/hud';
 import { ObjectiveMarker } from '../ui/objective-marker';
-import { Engineering } from '../ui/engineering';
 import { BootView, webgl2Supported } from '../ui/boot-view';
 import { renderResult } from '../ui/results';
 import { SettingsForm, type SettingsView } from '../ui/settings-form';
@@ -21,11 +20,24 @@ import { recommendedSector, renderBriefing, renderMenu, renderSectorCards } from
 import { renderBoardLoading, renderBoardPanel, renderBoardRows, boardLabel, type BoardPanel } from '../ui/board-view';
 import { renderTutorial, renderTutorialHandoff } from '../ui/tutorial-view';
 import { QualityController } from './quality';
+import { EngineeringMonitor, type EngineeringSources } from './engineering-monitor';
+import { applySettings as applySettingsToRuntime, applyMotionPreference as applyMotionPreferenceToRuntime, type SettingsApplyContext } from './settings-apply';
+import { ChannelRing } from './channel-ring';
+import { presentEvents } from './event-feedback';
+import {
+  BOOT_MINIMUM_BROWSERS,
+  bootSlowState,
+  devEngineeringRequested,
+  forcedBootState,
+  missingCapabilities,
+  probeBootRuntime,
+  type BootCapability,
+  type BootProbes,
+} from './boot';
 import { FIXED_DT, FixedStepLoop } from './loop';
-import { loadSettings, resetSettings, saveSettings, gfxOverridesOf, type Locale, type Quality, type Settings } from './settings';
+import { loadSettings, resetSettings, saveSettings, type Settings } from './settings';
 import { bestScore, saveScore, type RunResult } from './scores';
 import { buildRunResult, buildStartOptions } from './match';
-import { effectsOf } from './events';
 import { dailySeed, utcDateKey } from './daily';
 import {
   ProgressStore,
@@ -53,8 +65,8 @@ import {
 } from './tutorial';
 import { boardFor, fetchBoard, sanitizeName, submitRun, type BoardKey, type RunMode } from '../net/leaderboard';
 import { MUTATORS, type MapData, type Mutator } from '../world/map';
-import { t, initI18n, onLocaleChange, formatNumber, formatTime } from '../i18n/runtime';
-import { CATALOG, type CatalogKey } from '../i18n/catalog';
+import { t, initI18n, onLocaleChange, formatNumber } from '../i18n/runtime';
+import { type CatalogKey } from '../i18n/catalog';
 import {
   INITIAL_FLOW,
   escapeAction,
@@ -69,6 +81,23 @@ import {
 } from './screens';
 
 const ENGINE_URL = `${import.meta.env.BASE_URL}bp_core.wasm`;
+
+// Re-exports (P5): el gate y la resiliencia de boot viven en ./boot; la ruta
+// pública `core/game` sigue siendo válida para sus consumidores (tests de boot,
+// bandera de desarrollo).
+export {
+  BOOT_SLOW_MS,
+  BOOT_STALLED_MS,
+  BOOT_REQUIRED_RUNTIME_APIS,
+  BOOT_MINIMUM_BROWSERS,
+  probeBootRuntime,
+  missingCapabilities,
+  bootSlowState,
+  forcedBootState,
+  devEngineeringRequested,
+  bootCopy,
+} from './boot';
+export type { BootCapability, BootProbes, BootSlowState, BootCopy } from './boot';
 const LEADERBOARD_LIMIT = 20;
 const DEFAULT_BOARD = 'mission:s01';
 
@@ -112,133 +141,10 @@ function ineligibleReason(mode: Mode, won: boolean, shotgunEnabled: boolean): st
   return t('board.ineligibleOther');
 }
 
-/**
- * Resiliencia de arranque (T5c, estudio REA): gate de capacidades y recuperación
- * de un boot que no termina. Sin user-agent: cada requisito se verifica por
- * capability; la lista sale de lo que el bundle construido llama de verdad en
- * el camino de arranque (ver el comentario de cada API).
- */
-export type BootCapability = 'wasm' | 'webgl2' | 'runtime';
-export type BootProbes = Record<BootCapability, boolean>;
-
-/** Primer umbral, generoso: un dispositivo lento pero funcional termina debajo
- *  (payload hasta boot ≈ 267 KiB gzip; el arranque medido entero es de segundos:
- *  docs/performance-budget.md). Solo superficie un aviso, nunca corta nada. */
-export const BOOT_SLOW_MS = 24_000;
-/** Segundo umbral: recién aquí se ofrece Reintentar. Nunca para una carga que
- *  sigue avanzando: triplica el margen del peor network que funcione. */
-export const BOOT_STALLED_MS = 60_000;
-
-/** APIs modernas que los chunks construidos invocan en el arranque:
- *  - AbortController: GameApp (controlador del shell) y three (carga de recursos).
- *  - AbortSignal.timeout: wasm/bridge.ts (fetch del núcleo con corte temporal).
- *  - ResizeObserver: ui/objective-marker.ts, instanciado dentro de boot().
- *  - replaceChildren: ui/campaign-view.ts y ui/board-view.ts, via refreshMenu() en boot().
- *  La sintaxis es2022 (vite.config.ts build.target; campos privados #x en el
- *  output) no es detectable en runtime: la cubre el piso declarado abajo. */
-export const BOOT_REQUIRED_RUNTIME_APIS = [
-  'AbortController',
-  'AbortSignal.timeout',
-  'ResizeObserver',
-  'replaceChildren',
-] as const;
-
-/** Piso de compatibilidad declarado: el API más exigente del arranque es
- *  AbortSignal.timeout (Chrome 103, Firefox 100, Safari 16); todo lo demás
- *  (ResizeObserver, replaceChildren, sintaxis es2022 con campos privados) es
- *  más viejo. Solo es texto declarado: la decisión real es la capability. */
-export const BOOT_MINIMUM_BROWSERS = [
-  { name: 'Chrome', version: 103 },
-  { name: 'Firefox', version: 100 },
-  { name: 'Safari', version: 16 },
-] as const;
-
-/** Verifica por presencia, no por UA. Cada check es detectable sin navegador
- *  completo: `typeof` y un prototype. */
-export function probeBootRuntime(): boolean {
-  try {
-    return (
-      typeof AbortController === 'function' &&
-      typeof AbortSignal === 'function' &&
-      typeof AbortSignal.timeout === 'function' &&
-      typeof ResizeObserver === 'function' &&
-      typeof Element.prototype.replaceChildren === 'function'
-    );
-  } catch {
-    return false;
-  }
-}
-
-export function missingCapabilities(probes: BootProbes): BootCapability[] {
-  const missing: BootCapability[] = [];
-  for (const capability of ['wasm', 'webgl2', 'runtime'] as const) {
-    if (!probes[capability]) missing.push(capability);
-  }
-  return missing;
-}
-
-export type BootSlowState = 'in-time' | 'slow' | 'stalled';
-
-/** Estado puro del gate de estancamiento: `slow` superficie el aviso;
- *  recién `stalled` (segundo umbral) ofrece la acción de recuperación. */
-export function bootSlowState(
-  elapsedMs: number,
-  slowMs = BOOT_SLOW_MS,
-  stalledMs = BOOT_STALLED_MS,
-): BootSlowState {
-  if (elapsedMs >= stalledMs) return 'stalled';
-  if (elapsedMs >= slowMs) return 'slow';
-  return 'in-time';
-}
-
-/** Forzar los estados a demanda para verificación, espejo del `?viewmodel` del
- *  renderer: `?boot=slow` y `?boot=unsupported`. Cualquier otro valor es `auto`. */
-export function forcedBootState(search: string): 'auto' | 'slow' | 'unsupported' {
-  const value = new URLSearchParams(search).get('boot');
-  return value === 'slow' || value === 'unsupported' ? value : 'auto';
-}
-
-/** Engineering Mode es de desarrollo: entra por bandera de query (`?dev=1`, mismo
- *  mecanismo que `?boot=` y `?viewmodel=`) o por el toggle F3 en partida. Nunca
- *  por el menú de jugador. */
-export function devEngineeringRequested(search: string): boolean {
-  return new URLSearchParams(search).get('dev') === '1';
-}
-
-/** Rótulos de la resiliencia de arranque. La página base va en español (lang="es")
- *  y el único mecanismo de idioma del proyecto es `settings.locale` (es/en).
- *  El copy vive en el catálogo único de i18n; esta ficha es una proyección del
- *  catálogo para el camino de boot (sin segundo origen de verdad). */
-export interface BootCopy {
-  slow: string;
-  unsupportedTitle: string;
-  unsupportedBody: string;
-  floor: string;
-  retry: string;
-  items: Record<BootCapability, string>;
-}
-
-export function bootCopy(locale: Locale): BootCopy {
-  const pick = (key: CatalogKey): string => CATALOG[locale][key];
-  return {
-    slow: pick('boot.slow'),
-    unsupportedTitle: pick('boot.unsupportedTitle'),
-    unsupportedBody: pick('boot.unsupportedBody'),
-    floor: pick('boot.floor'),
-    retry: pick('boot.retry'),
-    items: {
-      wasm: pick('boot.itemsWasm'),
-      webgl2: pick('boot.itemsWebgl2'),
-      runtime: pick('boot.itemsRuntimeFmt').replace('{apis}', BOOT_REQUIRED_RUNTIME_APIS.join(', ')),
-    },
-  };
-}
-
 export class GameApp {
   private readonly canvas = byId<HTMLCanvasElement>('gl');
   private readonly app = byId('app');
-  private readonly crosshair = byId('crosshair');
-  private channelPercent = 0;
+  private readonly channelRing = new ChannelRing(byId('crosshair'));
   /** Un solo controlador: `dispose()` corta todos los listeners del shell de una vez. */
   private readonly abort = new AbortController();
   private readonly settingsForm = new SettingsForm(this.app, {
@@ -257,7 +163,7 @@ export class GameApp {
   private readonly motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
   private map: MapData | null = null;
   private mutator: Mutator = 'none';
-  private eng: Engineering | null = null;
+  private eng: EngineeringMonitor | null = null;
 
   private settings: Settings = loadSettings();
   private progress = ProgressStore.open({ legacyTutorialSeen: this.settings.tutorialSeen });
@@ -285,13 +191,11 @@ export class GameApp {
   private lastRendered: { run: RunResult; isRecord: boolean; truncated: boolean } | null = null;
   private offLocaleChange: (() => void) | null = null;
   private events: WorldEvent[] = [];
-  private frameSamples: number[] = [];
   private lastNow = 0;
   private rafId = 0;
   private finished = false;
   private wasmKib = 0;
   private loadMs = 0;
-  private lastEngineeringAt = 0;
   private bootAt = performance.now();
 
   constructor(private readonly audio: AudioManager) {}
@@ -392,7 +296,7 @@ export class GameApp {
       this.hud = new Hud();
       this.hud.setMap(this.map);
       this.objectiveMarker = new ObjectiveMarker();
-      this.eng = new Engineering();
+      this.eng = new EngineeringMonitor();
 
       this.applySettings();
       this.settingsForm.attach(this.abort.signal);
@@ -414,7 +318,7 @@ export class GameApp {
 
       // Engineering Mode solo desarrollo: bandera de query o F3 en partida.
       if (devEngineeringRequested(window.location.search) && this.eng.toggle(true)) {
-        this.updateEngineering(performance.now(), this.engine.state, true);
+        this.eng.update(performance.now(), this.engine.state, this.engineeringSources(), true);
         this.syncSettingsUI();
       }
 
@@ -893,15 +797,7 @@ export class GameApp {
     return this.tutorial.step === TUTORIAL_TERMINAL_STEP ? this.tutorialTerminal : -1;
   }
 
-  /** Mirror the existing node bar at the reticle while the switch is in reach. */
-  private updateChannelRing(state: Snapshot): void {
-    const node = state.interacting >= 0 ? state.node(state.interacting) : null;
-    const percent = node && !node.active ? Math.round(node.progress * 100) : 0;
-    if (percent === this.channelPercent) return;
-    this.channelPercent = percent;
-    this.crosshair.classList.toggle('is-channeling', percent > 0);
-    this.crosshair.style.setProperty('--channel', `${percent}%`);
-  }
+  /** Mirror the existing node bar at the reticle while the switch is in reach: vive en core/channel-ring. */
 
   // ------------------------------------------------------------------ loop
 
@@ -910,8 +806,6 @@ export class GameApp {
     const rawDt = this.lastNow === 0 ? 1 / 60 : (now - this.lastNow) / 1000;
     this.lastNow = now;
     const frameMs = rawDt * 1000;
-    this.frameSamples.push(frameMs);
-    if (this.frameSamples.length > 120) this.frameSamples.shift();
     this.eng?.pushFrame(frameMs);
 
     if (!this.renderer) return;
@@ -941,7 +835,7 @@ export class GameApp {
       const renderCpuMs = performance.now() - renderStart;
       this.consumeEvents(this.events, state.tick);
       this.hud?.update(state, this.input.usingTouch);
-      this.updateChannelRing(state);
+      this.channelRing.update(state);
       const node = this.map?.nodes[tracked];
       if (node) {
         const metres = Math.hypot(node.x - state.px, node.y - state.py, node.z - state.pz);
@@ -949,13 +843,13 @@ export class GameApp {
           state.interacting === tracked, this.settings.hudScale);
       } else this.objectiveMarker?.hide();
       this.maybeAdaptQuality(frameMs, now, renderCpuMs);
-      this.updateEngineering(now, state);
+      this.eng?.update(now, state, this.engineeringSources());
       this.observeTutorialFrame(state);
       if (state.phase === PHASE.win) this.finish(true);
       if (state.phase === PHASE.lose) this.finish(false);
     } else {
       this.renderer.renderOrbit(rawDt);
-      this.updateEngineering(now, this.engine?.state ?? null);
+      this.eng?.update(now, this.engine?.state ?? null, this.engineeringSources());
     }
   };
 
@@ -968,44 +862,12 @@ export class GameApp {
   }
 
   private consumeEvents(events: readonly WorldEvent[], tick: number): void {
-    for (const event of events) {
-      const effects = effectsOf(event);
-      for (const sound of effects.sounds) this.audio.play(sound);
-      for (const line of effects.feed) this.hud?.pushFeed(line.text, line.kind);
-
-      if (event.type === EVT.enemyHit) this.hud?.flashHit(false);
-      if (event.type === EVT.enemyDied) this.hud?.flashHit(true);
-      if (event.type === EVT.playerDamaged && event.a > 0) this.hud?.showDamageFrom(event.b, event.d, tick);
-    }
+    presentEvents(events, tick, this.audio, this.hud);
   }
 
-  private updateEngineering(now: number, state: Snapshot | null, immediate = false): void {
-    if (!this.eng?.visible || (!immediate && now - this.lastEngineeringAt < 240)) return;
-    this.lastEngineeringAt = now;
-    const sorted = [...this.frameSamples].sort((a, b) => a - b);
-    const pick = (q: number): number =>
-      sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
-    const mean = sorted.reduce((a, b) => a + b, 0) / Math.max(1, sorted.length);
-    const memory =
-      'memory' in performance
-        ? `${(((performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0) / 1048576).toFixed(0)} MB`
-        : t('eng.memoryUnavailable');
-    this.eng.update({
-      fps: mean > 0 ? 1000 / mean : 0,
-      p50: pick(0.5),
-      p95: pick(0.95),
-      calls: this.renderer?.calls ?? 0,
-      triangles: this.renderer?.triangles ?? 0,
-      ticks: state?.tick ?? 0,
-      dropped: Math.round(state?.at(H.droppedTicks) ?? 0),
-      quality: this.renderer?.preset.name ?? '—',
-      dpr: this.renderer?.dpr ?? 1,
-      enemies: state?.enemiesAlive ?? 0,
-      memory,
-      wasmKib: this.wasmKib,
-      loadMs: this.loadMs,
-      note: t('eng.noteFmt', { time: formatTime(new Date(this.bootAt)), lost: state?.lostEvents ?? 0 }),
-    });
+  /** Fuentes de solo lectura que el monitor de engineering necesita por refresco. */
+  private engineeringSources(): EngineeringSources {
+    return { renderer: this.renderer, wasmKib: this.wasmKib, loadMs: this.loadMs, bootAt: this.bootAt };
   }
 
   // ------------------------------------------------------------- UI wiring
@@ -1056,7 +918,7 @@ export class GameApp {
     if (!this.eng) return;
     const visible = this.eng.toggle();
     // Opening the panel must not depend on the next render or simulation tick.
-    if (visible) this.updateEngineering(performance.now(), this.engine?.state ?? null, true);
+    if (visible) this.eng.update(performance.now(), this.engine?.state ?? null, this.engineeringSources(), true);
     this.settings = { ...this.settings, telemetry: visible };
     saveSettings(this.settings);
     this.syncSettingsUI();
@@ -1295,31 +1157,27 @@ export class GameApp {
   }
 
   private applySettings(): void {
-    this.settings = { ...this.settings };
-    document.documentElement.style.setProperty('--hud-scale', String(this.settings.hudScale));
-    document.documentElement.dataset.theme = 'dark';
-    this.app.dataset.hand = this.settings.handedness;
-    if (this.input?.usingTouch) this.app.classList.add('is-touch');
-    this.objectiveMarker?.invalidate();
-    this.applyMotionPreference();
-    this.audio.setEnabled(this.settings.audioEnabled);
-    this.audio.setVolume(this.settings.volume);
-    this.audio.setChannelVolumes(this.settings.sfxVolume, this.settings.uiVolume);
-    this.input?.updateSettings(this.settings);
-
-    if (this.renderer) {
-      this.quality.setManual(this.settings.quality as Quality);
-      this.renderer.setGfx(gfxOverridesOf(this.settings));
-      this.renderer.setQuality(this.quality.preset, this.dprCap());
-      this.renderer.resize();
-    }
-    saveSettings(this.settings);
+    applySettingsToRuntime(this.settingsContext(), this.settings);
   }
 
   private applyMotionPreference(): void {
-    this.hooks.reducedMotion = this.settings.reduceMotion || this.motionPreference.matches;
-    this.app.dataset.motion = this.hooks.reducedMotion ? 'reduce' : 'full';
-    this.hud?.setReduceFlashes(this.settings.reduceFlashes || this.hooks.reducedMotion);
+    applyMotionPreferenceToRuntime(this.settingsContext(), this.settings);
+  }
+
+  /** Superficies que la aplicación de ajustes necesita; se arman por llamada. */
+  private settingsContext(): SettingsApplyContext {
+    return {
+      app: this.app,
+      motionPreference: this.motionPreference,
+      hooks: this.hooks,
+      audio: this.audio,
+      input: this.input,
+      quality: this.quality,
+      renderer: this.renderer,
+      hud: this.hud,
+      objectiveMarker: this.objectiveMarker,
+      dprCap: this.dprCap(),
+    };
   }
 
   private syncSettingsUI(): void {

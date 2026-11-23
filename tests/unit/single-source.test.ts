@@ -74,16 +74,17 @@ describe('D4 · player dimensions — owner: src/core/constants.ts', () => {
     expect(PLAYER_HEIGHT).toBe(metrics.height);
   });
 
-  it('renderer.ts mantiene su copia privada sincronizada con el dueño (fuera de alcance)', async () => {
+  it('debug-overlays.ts mantiene su copia privada sincronizada con el dueño', async () => {
     const { PLAYER } = (await import('../../src/core/constants')) as { PLAYER: Record<string, number> };
-    const source = read('../../src/render/renderer.ts');
+    // P5: la dupla se movió con el overlay a debug-overlays.ts (mismo patrón que
+    // terminal-model.ts). La guardia sigue fallando si el overlay de debug
+    // empieza a mentir sobre el jugador.
+    const source = read('../../src/render/debug-overlays.ts');
     const local = (name: string): number => {
       const match = new RegExp(`const ${name} = ([0-9.]+);`).exec(source);
-      if (!match) throw new Error(`const ${name} not found in src/render/renderer.ts`);
+      if (!match) throw new Error(`const ${name} not found in src/render/debug-overlays.ts`);
       return Number(match[1]);
     };
-    // La dupla persiste porque renderer.ts no se puede editar en esta etapa; la
-    // guardia falla si el overlay de debug empieza a mentir sobre el jugador.
     expect(local('PLAYER_RADIUS')).toBe(PLAYER.radius);
     expect(local('PLAYER_HEIGHT')).toBe(PLAYER.height);
   });
