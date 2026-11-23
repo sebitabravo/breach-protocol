@@ -10,6 +10,7 @@
  */
 import { SOLID_KIND, type MapData, type Solid } from '../world/map';
 import { FACE } from './geometry';
+import { PLAYER_HEIGHT } from './terminal-model';
 import type { ThemeLook } from './themes';
 import { perimeterFaces, type WallFace } from './walls';
 
@@ -166,6 +167,18 @@ export function serverPanels(rack: Solid, look: ThemeLook, seed: number): DressB
   return out;
 }
 
+/** S16 — alturas de barandilla derivadas del jugador, nunca de la cubierta
+ * vecina (la misma disciplina que la escala de terminales). Passerillo: 0.6 ×
+ * PLAYER_HEIGHT sobre el plano de piso: una persona no puede caer por encima
+ * (supera el ~1.05 m de una barandilla real) sin llegar a la altura del ojo;
+ * travesaño medio en la mitad convencional; montantes cada 1.2 ×
+ * PLAYER_HEIGHT para que el ritmo se lea a distancia de arena. La decoración
+ * nunca colisiona, así que la subida no puede cambiar la travesía. */
+export const RAIL_TOP = 0.6 * PLAYER_HEIGHT;
+export const RAIL_MID = RAIL_TOP / 2;
+export const RAIL_BAY = 1.2 * PLAYER_HEIGHT;
+export const RAIL_SIZE = 0.06;
+
 /** Barandilla y soportes en el borde del pasillo elevado (la cubierta más alta del sector). */
 export function catwalkRail(deck: Solid, look: ThemeLook): DressBox[] {
   const out: DressBox[] = [];
@@ -176,14 +189,19 @@ export function catwalkRail(deck: Solid, look: ThemeLook): DressBox[] {
   const x0 = deck.min[0];
   const x1 = deck.max[0];
   const len = x1 - x0;
-  const top = deck.max[1];
-  out.push(box('lit', (x0 + x1) / 2, top + 0.6, z, len, 0.06, 0.06, RAIL, 1));
-  out.push(box('glow', (x0 + x1) / 2, top + 0.66, z, len, 0.02, 0.04, look.accent, look.accentIntensity));
-  for (let x = x0; x <= x1 + 1e-6; x += 1.5) {
-    out.push(box('lit', x, top + 0.3, z, 0.06, 0.6, 0.06, RAIL, 1));
+  const walk = deck.max[1];
+  // Passerillo que corona los montantes 3 cm (relación autoriada, mantenida a la
+  // altura derivada para que ninguna cara quede coplanar).
+  out.push(box('lit', (x0 + x1) / 2, walk + RAIL_TOP - RAIL_SIZE / 2, z, len, RAIL_SIZE, RAIL_SIZE, RAIL, 1));
+  out.push(box('glow', (x0 + x1) / 2, walk + RAIL_TOP + 0.03, z, len, 0.02, 0.04, look.accent, look.accentIntensity));
+  out.push(box('lit', (x0 + x1) / 2, walk + RAIL_MID - RAIL_SIZE / 2, z, len, RAIL_SIZE, RAIL_SIZE, RAIL, 1));
+  const bays = Math.max(1, Math.round(len / RAIL_BAY));
+  const bay = len / bays;
+  for (let i = 0; i <= bays; i += 1) {
+    out.push(box('lit', x0 + i * bay, walk + (RAIL_TOP - 0.03) / 2, z, RAIL_SIZE, RAIL_TOP - 0.03, RAIL_SIZE, RAIL, 1));
   }
-  for (let x = x0 + 1.5; x < x1; x += 3) {
-    out.push(box('lit', x, deck.min[1] / 2, z - inward * 0.1, 0.1, deck.min[1], 0.1, PIPE, 1));
+  for (let i = 1; i < bays; i += 1) {
+    out.push(box('lit', x0 + i * bay, deck.min[1] / 2, z - inward * 0.1, 0.1, deck.min[1], 0.1, PIPE, 1));
   }
   return out;
 }

@@ -60,6 +60,10 @@
           </div>
           <div class="boot__bar"><i id="boot-progress"></i></div>
           <p class="boot__meta" id="boot-meta" role="status">inicializando…</p>
+          <p class="boot__slow" id="boot-slow" role="status" hidden></p>
+          <div class="hero__actions">
+            <button class="btn btn--ghost" id="boot-retry" data-action="retry" hidden>Reintentar</button>
+          </div>
         </div>
       </section>
 
@@ -329,12 +333,17 @@
       </section>
 
       <!-- ============================ FALLBACK ======================== -->
-      <section id="screen-fallback" class="screen screen--fallback" aria-label="Error">
+      <!-- `data-boot` distingue la variante genérica de la dedicada a un navegador sin
+           soporte: la segunda nombra lo que falta y el piso de versiones, y esconde
+           Reintentar porque recargar no puede crear una capability que no existe. -->
+      <section id="screen-fallback" class="screen screen--fallback" aria-label="Error" data-boot="error">
         <div class="boot">
-          <h2 class="fallback__title">No pudimos iniciar el protocolo</h2>
+          <h2 class="fallback__title" id="fallback-title">No pudimos iniciar el protocolo</h2>
           <p id="fallback-detail" class="boot__tagline">Este navegador no expuso WebGL2.</p>
+          <ul class="boot__checks" id="fallback-missing" hidden></ul>
+          <p class="boot__floor mono-dim" id="fallback-floor" hidden></p>
           <div class="hero__actions">
-            <button class="btn btn--primary" data-action="retry">Reintentar</button>
+            <button class="btn btn--primary" id="fallback-retry" data-action="retry">Reintentar</button>
             <a class="btn btn--ghost" href="https://sebita.dev" target="_blank" rel="noreferrer noopener">Ir a sebita.dev</a>
           </div>
         </div>
@@ -528,6 +537,47 @@
                     <option value="low">Baja</option>
                     <option value="medium">Media</option>
                     <option value="high">Alta</option>
+                  </select>
+                </label>
+                <p class="mono-dim" id="gfx-group-label">Detalle por efecto (auto sigue a la calidad elegida)</p>
+                <label class="field" for="set-gfx-bloom">
+                  <span class="field__label" id="gfx-label-bloom">Bloom</span>
+                  <select id="set-gfx-bloom" class="select">
+                    <option value="auto">Auto</option>
+                    <option value="on">Activado</option>
+                    <option value="off">Desactivado</option>
+                  </select>
+                </label>
+                <label class="field" for="set-gfx-shadows">
+                  <span class="field__label" id="gfx-label-shadows">Sombras</span>
+                  <select id="set-gfx-shadows" class="select">
+                    <option value="auto">Auto</option>
+                    <option value="on">Activado</option>
+                    <option value="off">Desactivado</option>
+                  </select>
+                </label>
+                <label class="field" for="set-gfx-environment">
+                  <span class="field__label" id="gfx-label-environment">Entorno (reflejos HDRI)</span>
+                  <select id="set-gfx-environment" class="select">
+                    <option value="auto">Auto</option>
+                    <option value="on">Activado</option>
+                    <option value="off">Desactivado</option>
+                  </select>
+                </label>
+                <label class="field" for="set-gfx-lights">
+                  <span class="field__label" id="gfx-label-lights">Luces prácticas</span>
+                  <select id="set-gfx-lights" class="select">
+                    <option value="auto">Auto</option>
+                    <option value="on">Activado</option>
+                    <option value="off">Desactivado</option>
+                  </select>
+                </label>
+                <label class="field" for="set-gfx-mist">
+                  <span class="field__label" id="gfx-label-mist">Neblina</span>
+                  <select id="set-gfx-mist" class="select">
+                    <option value="auto">Auto</option>
+                    <option value="on">Activado</option>
+                    <option value="off">Desactivado</option>
                   </select>
                 </label>
                 <label class="field field--row" for="set-motion"><span class="field__label">Reducir movimiento</span><input id="set-motion" class="switch" role="switch" type="checkbox" /></label>

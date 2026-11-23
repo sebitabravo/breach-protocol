@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FACE } from '../../src/render/geometry';
-import { dressingFor, catwalkRail, serverPanels, towerRings, ventsAlong, pipesAlong } from '../../src/render/dressing';
+import { RAIL_TOP, dressingFor, catwalkRail, serverPanels, towerRings, ventsAlong, pipesAlong } from '../../src/render/dressing';
 import { lookFor } from '../../src/render/themes';
 import { perimeterFaces } from '../../src/render/walls';
 import type { MapData, ThemeName } from '../../src/world/map';
@@ -86,7 +86,9 @@ describe('archive server racks and catwalk', () => {
   it('builds the catwalk rail on the edge facing the sector centre', () => {
     const boxes = catwalkRail(deck, lookFor('archive'));
     const rail = boxes[0];
-    expect(rail.y).toBeCloseTo(deck.max[1] + 0.6, 6);
+    // The rail's top edge reaches the player-derived guard height (was: the
+    // authored deck.max[1] + 0.6 constant; the semantic is now the derived one).
+    expect(rail.y + rail.sy / 2).toBeCloseTo(deck.max[1] + RAIL_TOP, 2);
     expect(rail.z).toBeGreaterThan(deck.max[2]);
     expect(rail.z).toBeLessThan(0);
     expect(boxes.some((b) => b.role === 'glow')).toBe(true);
@@ -111,7 +113,10 @@ describe('dressingFor determinism', () => {
 
   it('includes the catwalk rail in the archive dressing', () => {
     const deck = { min: [-17.8, 2.5, -17.8] as [number, number, number], max: [17.8, 2.8, -14.8] as [number, number, number], kind: 7 };
-    const railY = deck.max[1] + 0.6;
-    expect(dressingFor(room('archive', [deck]), lookFor('archive'), 6).some((b) => b.y === railY)).toBe(true);
+    // The guard bar exists at the derived height through the composed dressing
+    // (was: an exact authored box at deck.max[1] + 0.6; now the derived contract).
+    const walk = deck.max[1];
+    expect(dressingFor(room('archive', [deck]), lookFor('archive'), 6)
+      .some((b) => Math.abs(b.y + b.sy / 2 - (walk + RAIL_TOP)) < 1e-6)).toBe(true);
   });
 });

@@ -77,6 +77,37 @@
   color: var(--subtle);
 }
 
+/* Aviso del primer umbral y Reintentar del segundo (boot que no termina). */
+.boot__slow {
+  margin-top: var(--dist);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--warning);
+}
+
+.boot .hero__actions {
+  margin-top: var(--dist-2);
+}
+
+.boot__floor {
+  margin-bottom: var(--dist-3);
+}
+
+/* Variante sin soporte: la lista de capacidades faltantes usa el lenguaje de
+   checks de boot, pero roja: no es progreso pendiente, es ausencia. */
+#screen-fallback[data-boot="unsupported"] .check__dot {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dist-2);
+}
+
 .fallback__title {
   font-family: var(--sans);
   font-weight: 700;

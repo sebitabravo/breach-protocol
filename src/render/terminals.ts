@@ -4,7 +4,8 @@ import type { MapData } from '../world/map';
 import type { MeshBuilder } from './geometry';
 import { objectiveOccluded } from './objective-beacon';
 import { SURFACE } from './surfaces';
-import { buildConsoleHousing, buildConsoleInstruments, CONSOLE_ROLE, consoleYaw, ROTOR_PIVOT, SCREEN_SAMPLE } from './terminal-model';
+import { buildConsoleHousing, buildConsoleInstruments, CONSOLE_ROLE, consoleYaw, ROTOR_PIVOT,
+  SCREEN_BOUNDS_RADIUS, SCREEN_LOCAL, SCREEN_SPREAD, TERMINAL_SCALE_VEC } from './terminal-model';
 import { DISPLAY_HEIGHT, DISPLAY_ROW, DISPLAY_WIDTH, paintStencil, paintTerminalScreen, STENCIL_HEIGHT, TERMINAL_MODE } from './terminal-screen';
 
 /** Objeto reutilizado entre frames: evita reservar uno por terminal por frame. */
@@ -42,7 +43,7 @@ export class TerminalConsoles {
     const matrix = new THREE.Matrix4();
     const [metal, concrete] = buildConsoleHousing();
     this.displays = map.nodes.map(({ x, y, z }, index) => {
-      matrix.makeRotationY(consoleYaw(x, z)).setPosition(x, y, z);
+      matrix.makeRotationY(consoleYaw(x, z)).scale(TERMINAL_SCALE_VEC).setPosition(x, y, z);
       this.batch.setMatrixAt(index, matrix);
       // Stamp the same PBR template into the existing metal/concrete draws and static shadow pass.
       for (const [source, surface] of [[metal, SURFACE.metal], [concrete, SURFACE.concrete]] as const) {
@@ -51,10 +52,10 @@ export class TerminalConsoles {
         placed.dispose();
       }
       if (this.context) paintStencil(this.context, index);
-      const sample = SCREEN_SAMPLE.clone().applyMatrix4(matrix);
-      const side = new THREE.Vector3(1, 0, 0).transformDirection(matrix).multiplyScalar(0.43);
+      const sample = SCREEN_LOCAL.clone().applyMatrix4(matrix);
+      const side = new THREE.Vector3(1, 0, 0).transformDirection(matrix).multiplyScalar(SCREEN_SPREAD);
       return { sample, normal: new THREE.Vector3(0, 0.19, 0.982).transformDirection(matrix),
-        left: sample.clone().sub(side), right: sample.clone().add(side), bounds: new THREE.Sphere(sample, 0.64),
+        left: sample.clone().sub(side), right: sample.clone().add(side), bounds: new THREE.Sphere(sample, SCREEN_BOUNDS_RADIUS),
         painted: -1, active: false, activation: -Infinity, angle: index * 0.97 };
     });
     metal.dispose();
