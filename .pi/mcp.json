@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "rea": {
+      "command": "npx",
+      "args": ["-y", "rea-agents@6.10.1", "mcp"],
+      "description": "REA gives local reverse-engineering and browser/network observation tools.",
+      "timeout": 300
+    }
+  }
+}
