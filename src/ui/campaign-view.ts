@@ -26,16 +26,14 @@ export function recommendedSector(state: ProgressState): SectorId {
   return SECTOR_IDS.find((id) => isSectorUnlocked(state, id) && !isSectorCleared(state, id)) ?? 2;
 }
 
-export function renderMenu(state: ProgressState, todayKey: string): void {
+/** Pinta el menú a partir del progreso. Daily y Overflow están ocultos para el
+ *  jugador (P4): sus rutas de código quedan intactas, pero el menú no las nombra. */
+export function renderMenu(state: ProgressState): void {
   const sector = sectorInfo(recommendedSector(state));
   const code = sector.code.toLowerCase().replace('_', ' ');
   byId('menu-sector-code').textContent = `${code} · ${sector.title.toLowerCase()}`;
   byId('menu-play-meta').textContent = code;
-  byId('menu-practice-meta').textContent = state.tutorialSeen ? 'práctica libre' : 'tutorial en 3 pasos';
   byId('menu-cleared').textContent = `${SECTOR_IDS.filter((id) => isSectorCleared(state, id)).length}/3`;
-  byId('menu-streak').textContent = `${state.daily.streak} ${state.daily.streak === 1 ? 'día' : 'días'}`;
-  byId('menu-overflow').textContent = points(state.overflow.bestScore);
-  byId('menu-daily-meta').textContent = `hoy ${todayKey}`;
 }
 
 export function renderSectorCards(state: ProgressState): void {

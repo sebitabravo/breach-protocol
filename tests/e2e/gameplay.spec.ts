@@ -3,13 +3,13 @@ import { FIXED_DT } from '../../src/core/loop';
 import { EVT, I, INPUT_LEN } from '../../src/wasm/protocol';
 import type { Engine } from '../../src/wasm/bridge';
 import type { Renderer } from '../../src/render/renderer';
-import { SHOT_DIR, mockApi, openCalibration, screenIs, seedStorage, visibleBox } from './support';
+import { SHOT_DIR, mockApi, openHowToPlay, screenIs, seedStorage, visibleBox } from './support';
 
 async function startTutorial(page: Page): Promise<void> {
   await seedStorage(page, { tutorialSeen: false });
   await page.goto('/');
-  await openCalibration(page);
-  await page.locator('#screen-calibrate [data-action="play"]').tap();
+  await openHowToPlay(page);
+  await page.locator('#screen-about [data-action="tutorial-replay"]').tap();
   await screenIs(page, 'playing');
   await expect(page.locator('#tutorial')).toBeVisible();
 }
@@ -70,7 +70,9 @@ for (const method of ['Backspace', 'button'] as const) {
     await screenIs(page, 'menu');
     await page.reload();
     await screenIs(page, 'menu');
-    await page.locator('#screen-menu [data-action="practice"]').tap();
+    await page.locator('#screen-menu [data-goto="about"]').tap();
+    await screenIs(page, 'about');
+    await page.locator('#screen-about [data-action="practice"]').tap();
     await screenIs(page, 'playing');
     await expect(page.locator('#tutorial')).toBeHidden();
   });
@@ -329,7 +331,8 @@ async function startOverflow(page: Page, shotgun: boolean, seed?: number): Promi
       engine.start = (options) => start({ ...options, seed });
     }, seed);
   }
-  await page.locator('#screen-menu [data-action="overflow"]').tap();
+  // P4: Overflow queda oculto del menú (código intacto); el e2e lo alcanza por el handle.
+  await page.evaluate(() => window.__BREACH__!.startMatch('overflow', 0));
   await screenIs(page, 'playing');
 }
 

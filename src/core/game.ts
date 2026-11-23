@@ -59,7 +59,6 @@ import {
   pauseSubtitle,
   pointerLockErrorAction,
   pointerLockLostAction,
-  routesToCalibration,
   transition,
   type FlowEvent,
   type FlowState,
@@ -197,6 +196,13 @@ export function forcedBootState(search: string): 'auto' | 'slow' | 'unsupported'
   return value === 'slow' || value === 'unsupported' ? value : 'auto';
 }
 
+/** Engineering Mode es de desarrollo: entra por bandera de query (`?dev=1`, mismo
+ *  mecanismo que `?boot=` y `?viewmodel=`) o por el toggle F3 en partida. Nunca
+ *  por el menú de jugador. */
+export function devEngineeringRequested(search: string): boolean {
+  return new URLSearchParams(search).get('dev') === '1';
+}
+
 /** Rótulos de la resiliencia de arranque. La página base va en español (lang="es")
  *  y el único mecanismo de idioma del proyecto es `settings.locale` (es/en),
  *  igual que los rótulos gráficos de SettingsForm: se resuelven desde el idioma
@@ -285,7 +291,6 @@ export class GameApp {
   private tutorialOrigin = { x: 0, z: 0 };
   private pending: PendingRun | null = null;
   private submitting = false;
-  private calibrationOffered = false;
   private readonly skipConfirm = new SkipConfirm();
   private readonly destructiveConfirm = new Map<string, SkipConfirm>();
   private boardToken = 0;
@@ -411,12 +416,15 @@ export class GameApp {
 
       this.bindGlobalUI();
       const intent = takeIntent();
-      // A cold Jugar preserves the first-visit route into the simulator. Other
-      // choices come from the menu and keep their usual navigation or game mode.
-      const toCalibration = routesToCalibration(
-        this.progress.state.tutorialSeen, intent?.dataset.action, intent !== undefined);
-      this.dispatch({ type: 'boot-complete', tutorialSeen: !toCalibration });
+      // P4: ningún boot completo pasa por calibración; el menú es la pantalla de aterrizaje.
+      this.dispatch({ type: 'boot-complete' });
       if (intent) this.activateControl(intent);
+
+      // Engineering Mode solo desarrollo: bandera de query o F3 en partida.
+      if (devEngineeringRequested(window.location.search) && this.eng.toggle(true)) {
+        this.updateEngineering(performance.now(), this.engine.state, true);
+        this.syncSettingsUI();
+      }
 
       this.lastNow = performance.now();
       this.rafId = requestAnimationFrame(this.frame);
@@ -488,7 +496,6 @@ export class GameApp {
     if (screen === 'tutorial-handoff') renderTutorialHandoff(flow.outcome, flow.elapsedSeconds);
     this.app.dataset.screen = screen;
     this.objectiveMarker?.invalidate();
-    if (screen === 'calibrate') this.calibrationOffered = true;
     if (screen === 'playing') {
       this.input?.reset();
       this.canvas.focus({ preventScroll: true });
@@ -647,6 +654,15 @@ export class GameApp {
   }
 
   private goToMenu(): void {
+    // Volver desde la calibración de una pausa en curso regresa a la pausa: no hay
+    // partida que abandonar. El menú es el destino solo sin partida viva detrás.
+    if (this.flow.screen === 'calibrate' && this.flow.pauseOrigin === 'game') {
+      if (this.dispatch({ type: 'open', screen: 'pause' })) {
+        byId('pause-sub').textContent = pauseSubtitle(this.flow.mode, this.flow.mapId);
+        this.syncPauseLabels();
+      }
+      return;
+    }
     if (!this.dispatch({ type: 'open', screen: 'menu' })) return;
     this.audio.suspend();
     this.refreshMenu();
@@ -777,7 +793,7 @@ export class GameApp {
   private refreshMenu(): void {
     const best = bestScore('run');
     byId('menu-record').textContent = best === null ? 'récord: —' : `récord: ${best.toLocaleString('es-CL')}`;
-    renderMenu(this.progress.state, utcDateKey(new Date()));
+    renderMenu(this.progress.state);
   }
 
   // ----------------------------------------------------------- leaderboard
@@ -1150,11 +1166,9 @@ export class GameApp {
         await this.startMatch('practice', 0);
         break;
       case 'play':
-        // El menú sin pasar por calibración (precarga en reposo) conserva la ruta de primera visita.
-        if (this.flow.screen === 'menu' && !this.progress.state.tutorialSeen && !this.calibrationOffered) {
-          this.dispatch({ type: 'open', screen: 'calibrate' });
-        } else if (this.flow.screen === 'menu') await this.startMatch('run', recommendedSector(this.progress.state));
-        else await this.startMatch('practice', 0, { tutorial: true });
+        // P4: Jugar entra directo a la arena del sector recomendado; el sector es
+        // una línea no bloqueante del menú y la cadena de campaña queda para resultados.
+        await this.startMatch('run', recommendedSector(this.progress.state));
         break;
       case 'tutorial-replay':
         await this.startMatch('practice', 0, { tutorial: true });

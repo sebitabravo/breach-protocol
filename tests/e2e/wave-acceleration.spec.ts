@@ -20,9 +20,8 @@ test('a mission terminal advances the wave and announces it on touch Chromium', 
     const start = engine.start.bind(engine);
     engine.start = (options) => start({ ...options, seed: 0x5eed0005 });
   });
-  await page.locator('#screen-menu [data-action="mission"]').tap();
-  await page.locator('[data-sector-card="0"] [data-action="brief"]').tap();
-  await page.locator('[data-action="start-mission"]').tap();
+  // P4: Jugar entra directo a la arena (sector recomendado, aquí el 01).
+  await page.locator('#screen-menu [data-action="play"]').tap();
   await screenIs(page, 'playing');
   const frame = (channel: boolean) => page.evaluate(({ channel, I, INPUT_LEN }) => {
     const app = window.__BREACH__!;

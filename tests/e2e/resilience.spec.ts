@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openCalibration, playFromLanding } from './support';
+import { playFromLanding, screenIs } from './support';
 
 async function startRun(page: Page): Promise<void> {
   await page.goto('/');
@@ -34,14 +34,8 @@ test('a pointerlockerror does not pause the match', async ({ page }) => {
 test('escape from settings opened on the menu returns to the menu', async ({ page }) => {
   await page.goto('/');
   const app = page.locator('#app');
-  await expect(app).toHaveAttribute('data-screen', /calibrate|menu/, { timeout: 30_000 });
-  if ((await app.getAttribute('data-screen')) === 'calibrate') {
-    await page.locator('#screen-calibrate [data-action="play"]').click();
-    await expect(app).toHaveAttribute('data-screen', 'playing');
-    await page.keyboard.press('Escape');
-    await page.locator('#screen-pause [data-action="menu"]').dblclick();
-  }
-  await expect(app).toHaveAttribute('data-screen', 'menu');
+  // P4: sin gate de calibración; el boot completo aterriza en el menú.
+  await expect(app).toHaveAttribute('data-screen', 'menu', { timeout: 30_000 });
   await page.locator('#screen-menu [data-action="settings"]').click();
   await expect(app).toHaveAttribute('data-screen', 'pause');
   await page.keyboard.press('Escape');
@@ -52,8 +46,14 @@ test('the calibration sheet can be scrolled to START at 320x640', async ({ page 
   await page.setViewportSize({ width: 320, height: 640 });
   await page.goto('/');
   const app = page.locator('#app');
-  await openCalibration(page);
-  const start = page.locator('#screen-calibrate [data-action="play"]');
+  // P4: la calibración vive en Ajustes/pausa; se abre desde ahí.
+  await screenIs(page, 'menu');
+  await page.locator('#screen-menu [data-action="settings"]').click();
+  await screenIs(page, 'pause');
+  await page.locator('#screen-pause [data-tab="access"]').click();
+  await page.locator('#screen-pause [data-goto="calibrate"]').click();
+  await screenIs(page, 'calibrate');
+  const start = page.locator('#screen-calibrate [data-goto="menu"]');
   const scrollable = await page.evaluate(() => {
     let node = document.querySelector('#screen-calibrate [data-action="play"]')!.parentElement;
     while (node && node !== document.documentElement) {

@@ -99,7 +99,10 @@ async function withinViewport(page: Page, screen: string, selectors: string) {
 test('Sector 01 uses real collider hits and bounded renderer counters', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   const errors = await setup(page);
-  await page.locator('#screen-menu [data-action="practice"]').tap();
+  // P4: la práctica vive en "Cómo jugar" desde el menú.
+  await page.locator('#screen-menu [data-goto="about"]').tap();
+  await screenIs(page, 'about');
+  await page.locator('#screen-about [data-action="practice"]').tap();
   await screenIs(page, 'playing');
   const render = (mode: 'spawn' | 'landmark' | 'impact' | 'metrics') => page.evaluate(({ mode, I, INPUT_LEN, EVT }) => {
     const { engine, renderer, rafId } = window.__BREACH__ as unknown as { engine: Engine; renderer: Renderer; rafId: number };
@@ -192,12 +195,11 @@ for (const [width, height] of [[1280, 720], [1024, 768], [390, 844], [320, 640]]
     const errors = await setup(page);
     if (width === 1280) await shot(page, 'menu');
     await withinViewport(page, '#screen-menu', 'button, .menu__wordmark');
-    await page.locator('#screen-menu [data-action="mission"]').tap();
-    await screenIs(page, 'sectors');
-    await page.locator('[data-sector-card="0"] [data-action="brief"]').tap();
-    await screenIs(page, 'briefing');
-    await withinViewport(page, '#screen-briefing', 'h2, button, .panel');
-    await page.locator('[data-action="start-mission"]').tap();
+    // P4: Jugar entra directo a la arena; la cadena de campaña quedó sin entrada de menú.
+    await page.locator('#screen-menu [data-goto="about"]').tap();
+    await screenIs(page, 'about');
+    await withinViewport(page, '#screen-about', 'h2, button, .panel');
+    await page.locator('#screen-about [data-action="practice"]').tap();
     await screenIs(page, 'playing');
     await withinViewport(page, '#app', '#hud-hp, #hud-ammo, #hud-time, #hud-score, .hud__minimap, #touch-layer button');
     if (width === 390) await shot(page, 'mobile');

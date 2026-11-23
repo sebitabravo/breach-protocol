@@ -21,7 +21,10 @@ async function setup(page: Page) {
     const { renderer } = window.__BREACH__ as unknown as { renderer: Renderer };
     return Reflect.get(renderer, 'scene').environment && Reflect.get(renderer, 'surfaces').materials.slice(0, 3).every((m: { map: unknown }) => m.map);
   });
-  await page.locator('#screen-menu [data-action="practice"]').tap();
+  // P4: la práctica vive en "Cómo jugar" desde el menú.
+  await page.locator('#screen-menu [data-goto="about"]').tap();
+  await screenIs(page, 'about');
+  await page.locator('#screen-about [data-action="practice"]').tap();
   await screenIs(page, 'playing');
   return errors;
 }

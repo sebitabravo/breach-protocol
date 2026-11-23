@@ -36,7 +36,10 @@ async function setup(page: Page, quality: 'high' | 'medium', fallback = false): 
 }
 
 async function practice(page: Page): Promise<void> {
-  await page.locator('#screen-menu [data-action="practice"]').tap();
+  // P4: la práctica vive en "Cómo jugar" desde el menú.
+  await page.locator('#screen-menu [data-goto="about"]').tap();
+  await screenIs(page, 'about');
+  await page.locator('#screen-about [data-action="practice"]').tap();
   await screenIs(page, 'playing');
   await expect(page.locator('#hud-sector-code')).toHaveText('SIMULADOR');
   await expect(page.locator('#hud-mode')).toBeHidden();

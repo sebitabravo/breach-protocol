@@ -27,7 +27,9 @@ async function startPlaying(page: Page): Promise<void> {
   await seedStorage(page, { tutorialSeen: true });
   await page.goto('/');
   await screenIs(page, 'menu');
-  await page.locator('#screen-menu [data-action="practice"]').tap();
+  await page.locator('#screen-menu [data-goto="about"]').tap();
+  await screenIs(page, 'about');
+  await page.locator('#screen-about [data-action="practice"]').tap();
   await screenIs(page, 'playing');
   await expect(page.locator('#app')).toHaveClass(/is-touch/);
 }
@@ -202,9 +204,10 @@ test('with the tutorial visible the HUD blocks still do not overlap', async ({ p
   await seedStorage(page, { tutorialSeen: false });
   await page.goto('/');
   await screenIs(page, 'menu');
-  await page.locator('#screen-menu [data-action="play"]').tap();
-  await screenIs(page, 'calibrate');
-  await page.locator('#screen-calibrate [data-action="play"]').tap();
+  // P4: sin gate de calibración; el tutorial vive en "Cómo jugar".
+  await page.locator('#screen-menu [data-goto="about"]').tap();
+  await screenIs(page, 'about');
+  await page.locator('#screen-about [data-action="tutorial-replay"]').tap();
   await screenIs(page, 'playing');
   await expect(page.locator('#tutorial')).toBeVisible();
   const sizes = info.project.name === 'mobile-landscape' ? [...LANDSCAPE, TABLET] : PORTRAIT.filter((size) => size.height >= HUD_MIN_PORTRAIT_HEIGHT);

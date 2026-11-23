@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { screenIs, seedStorage } from './support';
+import { screenIs, seedStorage, startPractice } from './support';
 
 test.beforeEach(async ({ page }) => {
   await seedStorage(page, { tutorialSeen: true });
@@ -8,8 +8,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the pause screen is a modal dialog and focus lands on Continuar', async ({ page }) => {
-  await page.locator('#screen-menu [data-action="practice"]').click();
-  await screenIs(page, 'playing');
+  await startPractice(page);
   await page.keyboard.press('Escape');
   await screenIs(page, 'pause');
   const dialog = page.getByRole('dialog', { name: 'Pausa' });
@@ -19,13 +18,15 @@ test('the pause screen is a modal dialog and focus lands on Continuar', async ({
   await screenIs(page, 'playing');
 });
 
-test('Esc goes back one level on the sector list and the briefing', async ({ page }) => {
-  await page.locator('#screen-menu [data-action="mission"]').click();
-  await screenIs(page, 'sectors');
-  await page.locator('#screen-sectors [data-action="brief"]').first().click();
-  await screenIs(page, 'briefing');
+test('Esc goes back one level on Cómo jugar and on settings opened from the menu', async ({ page }) => {
+  // P4: la cadena de campaña (sectors -> briefing) no tiene entrada de menú; su
+  // contrato de Esc vive en tests/unit/flow.test.ts y tests/unit/screens.test.ts.
+  await page.locator('#screen-menu [data-goto="about"]').click();
+  await screenIs(page, 'about');
   await page.keyboard.press('Escape');
-  await screenIs(page, 'sectors');
+  await screenIs(page, 'menu');
+  await page.locator('#screen-menu [data-action="settings"]').click();
+  await screenIs(page, 'pause');
   await page.keyboard.press('Escape');
   await screenIs(page, 'menu');
 });

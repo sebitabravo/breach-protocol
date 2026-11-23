@@ -77,30 +77,12 @@
             <span class="wordmark__text">SEBITA<span class="wordmark__colon">:</span> BREACH<br />PROTOCOL</span>
           </div>
           <p class="menu__tagline">La red cayó. Queda una última conexión.</p>
-          <nav class="menu__list" aria-label="Modos de juego">
+          <nav class="menu__list" aria-label="Menú principal">
             <button class="navitem navitem--primary" data-action="play">
               <span class="navitem__label">Jugar</span><span class="navitem__meta" id="menu-play-meta">sector 01</span>
             </button>
-            <button class="navitem" data-action="mission">
-              <span class="navitem__label">Misión</span><span class="navitem__meta">3 sectores</span>
-            </button>
-            <button class="navitem" data-action="overflow">
-              <span class="navitem__label">Overflow</span><span class="navitem__meta">oleadas sin fin</span>
-            </button>
-            <button class="navitem" data-action="daily">
-              <span class="navitem__label">Protocolo diario</span><span class="navitem__meta" id="menu-daily-meta">incidente UTC</span>
-            </button>
-            <button class="navitem" data-action="practice">
-              <span class="navitem__label">Simulador</span><span class="navitem__meta" id="menu-practice-meta">tutorial en 3 pasos</span>
-            </button>
-            <button class="navitem" data-action="tutorial-replay">
-              <span class="navitem__label">Repetir tutorial</span><span class="navitem__meta">3 pasos</span>
-            </button>
-            <button class="navitem" data-goto="leaderboard">
-              <span class="navitem__label">Clasificación</span><span class="navitem__meta">tableros</span>
-            </button>
-            <button class="navitem" data-action="engineering">
-              <span class="navitem__label">Engineering Mode</span><span class="navitem__meta">F3</span>
+            <button class="navitem" data-goto="about">
+              <span class="navitem__label">Cómo jugar</span><span class="navitem__meta">tutorial · práctica</span>
             </button>
             <button class="navitem" data-action="settings">
               <span class="navitem__label">Ajustes</span><span class="navitem__meta">audio · gráficos · acceso</span>
@@ -128,8 +110,6 @@
             <div class="panel__head"><span class="panel__label">estado de la red</span></div>
             <ul class="menu__stats">
               <li><span>sectores recuperados</span><b id="menu-cleared">0/3</b></li>
-              <li><span>racha diaria</span><b id="menu-streak">0 días</b></li>
-              <li><span>récord overflow</span><b id="menu-overflow">—</b></li>
             </ul>
           </div>
         </div>
@@ -138,8 +118,6 @@
           <span>v0.1.0 · build local</span>
           <span id="menu-record">récord: —</span>
           <span class="menufoot__links">
-            <button class="navlink" data-goto="about">cómo funciona</button>
-            <button class="navlink" data-goto="calibrate">controles</button>
             <a class="navlink" href="https://sebita.dev" target="_blank" rel="noreferrer noopener">sebita.dev ↗</a>
           </span>
         </footer>
@@ -231,7 +209,7 @@
         <div class="sheet">
           <header class="sheet__head">
             <h2>Calibración</h2>
-            <p>Ajustá el control antes de entrar. Podés cambiarlo después.</p>
+            <p>Ajustá sensibilidad y mano dominante. Se guarda en este equipo.</p>
           </header>
           <div class="calib">
             <ol class="calib__steps">
@@ -267,7 +245,6 @@
           </div>
           <footer class="sheet__foot">
             <button class="btn btn--ghost" data-goto="menu">Volver</button>
-            <button class="btn btn--primary" data-action="play">Empezar en el simulador ▸</button>
           </footer>
         </div>
       </section>
@@ -320,8 +297,6 @@
             <button class="tab is-active" role="tab" aria-selected="true" data-board="mission:s01">S01 misión</button>
             <button class="tab" role="tab" aria-selected="false" data-board="mission:s02">S02 misión</button>
             <button class="tab" role="tab" aria-selected="false" data-board="mission:s03">S03 misión</button>
-            <button class="tab" role="tab" aria-selected="false" data-board="overflow">Overflow</button>
-            <button class="tab" role="tab" aria-selected="false" data-board="daily">Diario de hoy</button>
           </nav>
           <div class="panel board" aria-live="polite">
             <div class="board__head"><span>#</span><span>operador</span><span>puntaje</span><span>fecha</span></div>
@@ -512,7 +487,6 @@
                 <button class="btn btn--primary btn--block" data-action="resume" data-autofocus>Continuar ▸</button>
                 <button class="btn btn--ghost btn--block" data-action="restart">Reiniciar</button>
                 <button class="btn btn--ghost btn--block" data-action="tutorial-replay">Repetir tutorial</button>
-                <button class="btn btn--ghost btn--block" data-action="engineering">Engineering Mode</button>
                 <button class="btn btn--ghost btn--block" data-action="menu">Salir al menú</button>
               </div>
               <div class="pane" data-pane="controls">
@@ -601,6 +575,7 @@
                 <label class="field field--row" for="set-handed"><span class="field__label">Mano dominante: zurdo</span><input id="set-handed" class="switch" role="switch" type="checkbox" /></label>
                 <label class="field field--row" for="set-autoreload"><span class="field__label">Auto-recarga</span><input id="set-autoreload" class="switch" role="switch" type="checkbox" checked /></label>
                 <label class="field field--row" for="set-aimassist"><span class="field__label">Ayuda de puntería táctil</span><input id="set-aimassist" class="switch" role="switch" type="checkbox" checked /></label>
+                <button class="btn btn--ghost btn--block" data-goto="calibrate">Calibrar controles</button>
                 <button class="btn btn--ghost btn--block" data-action="reset-settings">Restablecer ajustes</button>
               </div>
             </div>
@@ -679,7 +654,7 @@
 
           <footer class="page__foot">
             <button class="btn btn--ghost" data-action="menu">Menú</button>
-            <button class="btn btn--ghost" data-action="engineering">Ver ingeniería</button>
+            <button class="btn btn--ghost" data-goto="leaderboard">Clasificación</button>
             <button class="btn btn--ghost" data-action="restart">Repetir</button>
             <button class="btn btn--primary" data-action="next-sector" id="result-next" hidden>Siguiente sector ▸</button>
           </footer>

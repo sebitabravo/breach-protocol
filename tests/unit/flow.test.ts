@@ -1,24 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { INITIAL_FLOW, pauseSubtitle, routesToCalibration, transition, type FlowState } from '../../src/core/screens';
+import { INITIAL_FLOW, pauseSubtitle, transition, type FlowState } from '../../src/core/screens';
 
 function at(screen: FlowState['screen'], extra: Partial<FlowState> = {}): FlowState {
   return { ...INITIAL_FLOW, screen, ...extra };
 }
 
 describe('boot routing', () => {
-  it('sends a first visit to calibration and a returning player to the menu', () => {
-    expect(transition(INITIAL_FLOW, { type: 'boot-complete', tutorialSeen: false }).screen).toBe('calibrate');
-    expect(transition(INITIAL_FLOW, { type: 'boot-complete', tutorialSeen: true }).screen).toBe('menu');
-  });
-
-  it('only an explicit Jugar from a first-time visitor enters through calibration', () => {
-    expect(routesToCalibration(false, 'play', true)).toBe(true);
-    expect(routesToCalibration(true, 'play', true)).toBe(false);
-    expect(routesToCalibration(false, 'overflow', true)).toBe(false);
-  });
-
-  it('an idle preload with no intent never swaps the landing menu for calibration', () => {
-    expect(routesToCalibration(false, undefined, false)).toBe(false);
+  it('lands every completed boot on the menu: calibration is not a gate, first visit included', () => {
+    expect(transition(INITIAL_FLOW, { type: 'boot-complete' }).screen).toBe('menu');
   });
 
   it('falls back to the error screen when boot fails, and only from boot', () => {
@@ -27,8 +16,32 @@ describe('boot routing', () => {
   });
 });
 
+describe('calibration is a settings surface, not a gate', () => {
+  it('calibrate still opens from the menu page navigation', () => {
+    expect(transition(at('menu'), { type: 'open', screen: 'calibrate' }).screen).toBe('calibrate');
+  });
+
+  it('calibrate opens from the pause sheet so it stays reachable from settings', () => {
+    expect(transition(at('pause', { pauseOrigin: 'game' }), { type: 'open', screen: 'calibrate' }).screen).toBe('calibrate');
+    expect(transition(at('pause', { pauseOrigin: 'menu' }), { type: 'open', screen: 'calibrate' }).screen).toBe('calibrate');
+  });
+
+  it('leaving calibrate with a live paused match returns to that pause, not to the menu', () => {
+    expect(transition(at('calibrate', { pauseOrigin: 'game' }), { type: 'open', screen: 'pause' }).screen).toBe('pause');
+  });
+
+  it('leaving calibrate without a live match returns to the menu page navigation', () => {
+    expect(transition(at('calibrate', { pauseOrigin: 'menu' }), { type: 'open', screen: 'menu' }).screen).toBe('menu');
+  });
+
+  it('opening the menu clears a stale game pause origin', () => {
+    expect(transition(at('pause'), { type: 'open', screen: 'menu' })).toMatchObject({ screen: 'menu', pauseOrigin: 'menu' });
+    expect(transition(at('result'), { type: 'open', screen: 'menu' })).toMatchObject({ screen: 'menu', pauseOrigin: 'menu' });
+  });
+});
+
 describe('mission flow', () => {
-  it('goes menu -> sectors -> briefing -> playing with the chosen sector', () => {
+  it('the campaign chain (sectors -> briefing -> playing) stays valid in the machine', () => {
     let state = at('menu');
     state = transition(state, { type: 'open', screen: 'sectors' });
     expect(state.screen).toBe('sectors');
@@ -40,6 +53,14 @@ describe('mission flow', () => {
 
   it('cannot brief a sector from anywhere but the sector list', () => {
     expect(transition(at('menu'), { type: 'brief', mapId: 2 }).screen).toBe('menu');
+  });
+
+  it('a Jugar start needs no briefing: the sector is chosen automatically', () => {
+    expect(transition(at('menu'), { type: 'start', mode: 'run', mapId: 0 })).toMatchObject({
+      screen: 'playing',
+      mode: 'run',
+      mapId: 0,
+    });
   });
 
   it('finishes into results and restarts the same mode from there', () => {
@@ -70,10 +91,6 @@ describe('pause flow', () => {
     expect(transition(settings, { type: 'resume' })).toBe(settings);
   });
 
-  it('leaves a pause for the menu', () => {
-    expect(transition(at('pause'), { type: 'open', screen: 'menu' }).screen).toBe('menu');
-  });
-
   it('does not open a page from the middle of a match', () => {
     expect(transition(at('playing'), { type: 'open', screen: 'leaderboard' }).screen).toBe('playing');
   });
@@ -89,11 +106,6 @@ describe('page navigation', () => {
 });
 
 describe('start rules', () => {
-  it('starts overflow and daily runs straight from the menu', () => {
-    expect(transition(at('menu'), { type: 'start', mode: 'overflow', mapId: 0 }).mode).toBe('overflow');
-    expect(transition(at('menu'), { type: 'start', mode: 'daily', mapId: 0 }).mode).toBe('daily');
-  });
-
   it('never starts during boot, on the error screen or on top of a live match', () => {
     expect(transition(at('boot'), { type: 'start', mode: 'run', mapId: 0 }).screen).toBe('boot');
     expect(transition(at('fallback'), { type: 'start', mode: 'run', mapId: 0 }).screen).toBe('fallback');
