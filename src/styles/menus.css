@@ -45,8 +45,8 @@
 }
 
 .check[data-state="ok"] .check__dot {
-  background: var(--primary);
-  border-color: var(--primary);
+  background: var(--state-ok);
+  border-color: var(--state-ok);
 }
 
 .check[data-state="fail"] .check__dot {
@@ -57,15 +57,15 @@
 .boot__bar {
   height: 4px;
   border: 1px solid var(--border);
-  background: rgba(4, 10, 14, 0.8);
+  background: rgba(0, 0, 0, 0.8);
 }
 
 .boot__bar > i {
   display: block;
   height: 100%;
   width: 4%;
-  background: var(--primary);
-  transition: width 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  background: var(--text);
+  transition: width var(--t-fast);
 }
 
 .boot__meta {
@@ -109,10 +109,11 @@
 }
 
 .fallback__title {
-  font-family: var(--sans);
-  font-weight: 700;
+  font-family: var(--pixel);
+  font-weight: 400;
   font-size: var(--fs-h3);
-  line-height: var(--lh-h3);
+  line-height: 1.1;
+  letter-spacing: 0;
 }
 
 /* ============================ menu ============================ */
@@ -157,22 +158,25 @@
   padding: 0 var(--dist-2);
   border: 1px solid transparent;
   border-left: 2px solid transparent;
-  background: rgba(16, 24, 32, 0.4);
   color: var(--text);
   text-align: left;
-  transition: background var(--t-fast), border-color var(--t-fast);
+  transition: background var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
 }
 
 .navitem:hover {
-  background: rgba(25, 36, 46, 0.9);
+  background: var(--fill);
   border-left-color: var(--muted);
 }
 
+.navitem:active {
+  transform: translateY(2px);
+}
+
 .navitem__label {
-  font-family: var(--sans);
+  font-family: var(--mono);
   font-size: var(--fs-small);
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .navitem__meta {
@@ -186,13 +190,14 @@
   text-overflow: ellipsis;
 }
 
+/* Entrada principal: inversión fg/bg, no menta. */
 .navitem--primary {
-  border-left-color: var(--primary);
-  background: rgba(92, 224, 139, 0.12);
+  border-left-color: var(--text);
+  background: var(--fill);
 }
 
 .navitem--primary .navitem__label {
-  color: var(--primary);
+  color: var(--text);
 }
 
 .menu__stage {
@@ -214,10 +219,10 @@
   flex: 1;
   min-height: 200px;
   background:
-    linear-gradient(135deg, rgba(92, 224, 139, 0.08), transparent 60%),
-    repeating-linear-gradient(to right, transparent 0 31px, rgba(46, 63, 79, 0.5) 31px 32px),
-    repeating-linear-gradient(to bottom, transparent 0 31px, rgba(46, 63, 79, 0.5) 31px 32px),
-    radial-gradient(120% 100% at 30% 10%, #16222d, #070d12);
+    repeating-linear-gradient(to right, transparent 0 31px, rgba(255, 255, 255, 0.07) 31px 32px),
+    repeating-linear-gradient(to bottom, transparent 0 31px, rgba(255, 255, 255, 0.07) 31px 32px),
+    var(--bg);
+  border-bottom: 1px solid var(--border);
   overflow: hidden;
 }
 
@@ -235,8 +240,8 @@
 .menu__sector b {
   font-family: var(--mono);
   font-size: 44px;
-  color: rgba(228, 237, 246, 0.22);
-  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.22);
+  letter-spacing: 0;
 }
 
 .menu__monogram {
@@ -244,10 +249,11 @@
   right: var(--dist-2);
   top: 50%;
   transform: translateY(-50%);
-  font-family: var(--sans);
-  font-weight: 700;
+  font-family: var(--pixel);
+  font-weight: 400;
   font-size: clamp(48px, 6vw, 84px);
-  color: rgba(92, 224, 139, 0.35);
+  color: rgba(255, 255, 255, 0.16);
+  letter-spacing: 0;
 }
 
 .menu__status {
@@ -311,7 +317,7 @@
 
 .navlink:hover {
   color: var(--text);
-  border-color: var(--primary);
+  border-color: var(--text);
 }
 
 /* ============================ pages (sectores, briefing, clasificación, resultados) ============================ */
@@ -342,11 +348,11 @@
 }
 
 .page__head h2 {
-  font-family: var(--sans);
+  font-family: var(--pixel);
+  font-weight: 400;
+  line-height: 1;
   font-size: var(--fs-h2);
-  font-weight: 700;
-  line-height: var(--lh-h2);
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   margin: 4px 0 var(--dist);
 }
 
@@ -381,7 +387,7 @@
   align-content: start;
   padding: var(--dist-2);
   border: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(25, 36, 46, 0.9), rgba(16, 24, 32, 0.92));
+  background: var(--fill);
 }
 
 .sector__head {
@@ -404,7 +410,7 @@
 .sector__icon {
   width: 22px;
   height: 22px;
-  color: var(--accent);
+  color: var(--muted);
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
@@ -423,24 +429,31 @@
 }
 
 .sector[data-state="open"] .sector__state {
-  color: var(--primary);
-  border-color: var(--primary-dim);
+  color: var(--text);
+  border-color: var(--border);
 }
 
+/* Desbloqueado (éxito) conserva el verde de estado, nunca la marca. */
 .sector[data-state="cleared"] .sector__state {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--state-ok);
+  border-color: rgba(92, 224, 139, 0.35);
 }
 
-.sector[data-state="locked"] {
-  opacity: 0.7;
+/* Bloqueado: intercambio de color, no opacidad. */
+.sector[data-state="locked"] .sector__title {
+  color: var(--subtle);
+}
+
+.sector[data-state="locked"] .sector__icon {
+  color: var(--subtle);
 }
 
 .sector__title {
-  font-family: var(--sans);
+  font-family: var(--mono);
   font-size: var(--fs-h3);
-  font-weight: 700;
+  font-weight: 500;
   line-height: var(--lh-h3);
+  letter-spacing: 0;
 }
 
 .sector__stats {
@@ -471,8 +484,11 @@
   color: var(--warning);
 }
 
+/* Deshabilitado: intercambio de color, nunca opacidad. */
 .btn:disabled {
-  opacity: 0.45;
+  color: var(--subtle);
+  border-color: var(--border);
+  background: none;
   cursor: not-allowed;
   transform: none;
 }
@@ -520,7 +536,7 @@
   top: 7px;
   width: 10px;
   height: 10px;
-  border: 1px solid var(--primary);
+  border: 1px solid var(--text);
 }
 
 .brief__unlock {
@@ -533,8 +549,8 @@
 }
 
 .brief__unlock b {
-  color: var(--primary);
-  font-weight: 600;
+  color: var(--text);
+  font-weight: 500;
 }
 
 /* ============================ leaderboard ============================ */
@@ -555,9 +571,9 @@
 }
 
 .board-tabs .tab.is-active {
-  color: #04140c;
-  background: var(--primary);
-  border-color: var(--primary);
+  color: var(--bg);
+  background: var(--text);
+  border-color: var(--text);
 }
 
 .board {
@@ -595,7 +611,7 @@
 }
 
 .board__row:nth-child(1) .board__cell--rank {
-  color: var(--primary);
+  color: var(--text);
 }
 
 .board__cell--rank,
@@ -653,23 +669,23 @@
   display: flex;
   gap: var(--dist-2);
   padding: var(--dist-2);
-  border: 1px solid var(--border-soft);
-  background: rgba(16, 24, 32, 0.6);
+  border: 1px solid var(--border);
+  background: var(--bg);
 }
 
 .calib__n {
   font-family: var(--mono);
-  color: var(--primary);
+  color: var(--text);
   font-size: var(--fs-small);
   letter-spacing: 0.1em;
 }
 
 .calib__steps b {
   display: block;
-  font-family: var(--sans);
+  font-family: var(--mono);
   font-size: var(--fs-small);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 500;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -687,23 +703,23 @@
 
 .card {
   padding: var(--dist-2);
-  border: 1px solid var(--border-soft);
-  background: rgba(16, 24, 32, 0.6);
+  border: 1px solid var(--border);
+  background: var(--bg);
 }
 
 .card h3 {
   display: flex;
   gap: var(--dist);
-  font-family: var(--sans);
+  font-family: var(--mono);
   font-size: var(--fs-small);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 500;
+  letter-spacing: 0;
   text-transform: uppercase;
   margin-bottom: var(--dist);
 }
 
 .card__n {
-  color: var(--primary);
+  color: var(--text);
   font-family: var(--mono);
 }
 
@@ -748,9 +764,13 @@
 }
 
 .tab.is-active {
-  color: var(--primary);
-  border-left-color: var(--primary);
-  background: rgba(92, 224, 139, 0.07);
+  color: var(--text);
+  border-left-color: var(--text);
+  background: var(--fill);
+}
+
+.tab:active {
+  transform: translateY(2px);
 }
 
 .pane {
@@ -759,7 +779,7 @@
 
 .pane.is-active {
   display: block;
-  animation: pane-arrive 125ms steps(4, end) both;
+  animation: pane-arrive var(--t-fast) both;
 }
 
 .pane > .section-title { margin-bottom: var(--dist-2); }
@@ -777,7 +797,7 @@
   justify-content: space-between;
   gap: var(--dist);
   padding: 6px var(--dist);
-  background: rgba(25, 36, 46, 0.6);
+  background: var(--bg);
   font-size: var(--fs-caption);
 }
 
@@ -802,26 +822,29 @@
 }
 
 .result__head h2 {
-  font-family: var(--sans);
+  font-family: var(--pixel);
+  font-weight: 400;
+  line-height: 1;
   font-size: var(--fs-h2);
-  font-weight: 700;
-  line-height: var(--lh-h2);
+  letter-spacing: 0;
   margin-top: 4px;
 }
 
+/* Grado sin marca: caja plana + borde de 1 px con la letra en fg. */
 .grade {
   display: grid;
   place-items: center;
   width: 88px;
   height: 88px;
   flex: none;
-  border: 1px solid var(--primary-dim);
-  background: rgba(92, 224, 139, 0.08);
-  color: var(--primary);
-  font-family: var(--mono);
-  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--fill);
+  color: var(--text);
+  font-family: var(--pixel);
+  font-weight: 400;
   font-size: 48px;
   line-height: 1;
+  letter-spacing: 0;
 }
 
 .result__grid {
@@ -849,8 +872,8 @@
 .result__record {
   justify-self: start;
   padding: 2px 8px;
-  background: var(--primary);
-  color: #04140c;
+  background: var(--text);
+  color: var(--bg);
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.14em;
@@ -859,7 +882,7 @@
 
 .result__unlock {
   font-size: var(--fs-caption);
-  color: var(--primary);
+  color: var(--text);
 }
 
 .result__detail { min-width: 0; }
@@ -896,15 +919,15 @@
 .result__timebar {
   height: 6px;
   border: 1px solid var(--border);
-  background: rgba(4, 10, 14, 0.7);
+  background: rgba(0, 0, 0, 0.7);
 }
 
 .result__timebar > i {
   display: block;
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, var(--primary), var(--accent));
-  transition: width 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  background: var(--text);
+  transition: width var(--t-base);
 }
 
 .board-submit {
@@ -934,7 +957,7 @@
   font-family: var(--mono);
   font-size: 40px;
   line-height: 1;
-  color: var(--primary);
+  color: var(--text);
 }
 
 .board-submit__form {
@@ -970,7 +993,7 @@
 }
 
 .input:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--text);
   outline-offset: 0;
 }
 
@@ -984,8 +1007,8 @@
   display: grid;
   gap: 4px;
   padding: var(--dist) var(--dist-2);
-  border: 1px solid var(--primary-dim);
-  background: rgba(8, 15, 20, 0.86);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.86);
   pointer-events: none;
 }
 
@@ -994,10 +1017,11 @@
 }
 
 .tutorial h3 {
-  font-family: var(--sans);
+  font-family: var(--mono);
   font-size: var(--fs-h4);
-  font-weight: 700;
+  font-weight: 500;
   line-height: var(--lh-h4);
+  letter-spacing: 0;
   color: var(--text);
 }
 
@@ -1032,13 +1056,13 @@
 }
 
 .tutorial.is-step-done {
-  animation: tutorial-step-done 520ms ease-out;
+  animation: tutorial-step-done var(--t-base);
 }
 
 @keyframes tutorial-step-done {
   0% {
-    border-color: var(--primary);
-    background: rgba(92, 224, 139, 0.22);
+    border-color: var(--text);
+    background: rgba(255, 255, 255, 0.15);
   }
 }
 
@@ -1075,7 +1099,7 @@
 }
 
 .tutorial__dots i.is-current {
-  background: var(--primary);
+  background: var(--text);
 }
 
 .tutorial__dots i.is-done {
@@ -1095,12 +1119,12 @@
 
 .sheet--tutorial-handoff {
   width: min(520px, 100%);
-  border-top: 2px solid var(--primary);
+  border-top: 2px solid var(--text);
 }
 
 .sheet--tutorial-handoff .sheet__head .eyebrow {
   margin-bottom: var(--dist);
-  color: var(--primary);
+  color: var(--text);
   font-size: var(--fs-caption);
 }
 
@@ -1131,9 +1155,9 @@
   place-items: center;
   width: 24px;
   height: 24px;
-  border: 1px solid var(--primary-dim);
-  color: var(--primary);
-  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: var(--bg);
 }
 
 .tutorial-time {
@@ -1186,10 +1210,8 @@
 
 @media (max-width: 760px) {
   :root {
-    --fs-h1: 32px;
-    --lh-h1: 38px;
-    --fs-h2: 24px;
-    --lh-h2: 30px;
+    --fs-h2: clamp(1.5rem, 6vw, 2.5rem);
+    --lh-h2: 1;
     --fs-h3: 18px;
     --lh-h3: 24px;
     --fs-body: 15px;
@@ -1247,7 +1269,7 @@
 
   .tab.is-active {
     border-left-color: transparent;
-    border-bottom-color: var(--primary);
+    border-bottom-color: var(--text);
   }
 
   .result__stats {

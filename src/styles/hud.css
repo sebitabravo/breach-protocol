@@ -25,13 +25,13 @@
 #hud::before {
   top: 0;
   height: max(24%, 165px);
-  background: linear-gradient(to bottom, rgba(6, 10, 14, 0.93) 0%, rgba(6, 10, 14, 0.86) 92px, rgba(6, 10, 14, 0.60) 120px, transparent 100%);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.93) 0%, rgba(0, 0, 0, 0.86) 92px, rgba(0, 0, 0, 0.60) 120px, transparent 100%);
 }
 
 #hud::after {
   bottom: 0;
   height: 24%;
-  background: linear-gradient(to top, rgba(6, 10, 14, 0.82) 0%, rgba(6, 10, 14, 0.55) 55%, transparent 100%);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.55) 55%, transparent 100%);
 }
 
 #app[data-screen="playing"] #hud {
@@ -91,10 +91,10 @@
 }
 
 .hud__sector-name {
-  font-family: var(--sans);
+  font-family: var(--mono);
   font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -137,7 +137,7 @@
 .hud__obj-icon {
   width: 18px;
   height: 18px;
-  color: var(--primary);
+  color: var(--text);
 }
 
 @media (min-width: 1101px) {
@@ -150,7 +150,7 @@
     max-width: min(440px, 36vw);
     padding: 8px 16px 8px 12px;
     border: 1px solid var(--border);
-    background: rgba(8, 15, 20, 0.72);
+    background: rgba(0, 0, 0, 0.72);
     text-align: left;
   }
 
@@ -161,7 +161,7 @@
   }
 
   .hud__block--objective > .hud__kicker {
-    color: var(--primary);
+    color: var(--text);
   }
 
   /* La tarjeta es más alta que el bloque anterior: los terminales bajan para no tocarla. */
@@ -197,9 +197,9 @@
 }
 
 .hud__sub {
-  font-family: var(--sans);
+  font-family: var(--mono);
   font-size: 13px;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   color: var(--text);
 }
 
@@ -219,7 +219,7 @@
   position: absolute;
   z-index: -1;
   inset: -5px -16px;
-  background: linear-gradient(90deg, transparent, rgba(6, 10, 14, 0.85) 12% 88%, transparent);
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.85) 12% 88%, transparent);
   mask-image: linear-gradient(transparent, #000 28% 72%, transparent);
 }
 
@@ -260,7 +260,7 @@
   height: 160px;
   border: 1px solid var(--border);
   border-radius: 50%;
-  background: rgba(8, 15, 20, 0.72);
+  background: rgba(0, 0, 0, 0.72);
   overflow: hidden;
 }
 
@@ -300,12 +300,12 @@
 }
 
 .node.is-charging {
-  background: linear-gradient(90deg, var(--primary) var(--p, 0%), var(--surface-3) var(--p, 0%));
+  background: linear-gradient(90deg, var(--text) var(--p, 0%), var(--surface-3) var(--p, 0%));
 }
 
 .node.is-active {
-  background: var(--primary);
-  border-color: var(--primary);
+  background: var(--text);
+  border-color: var(--text);
 }
 
 /* ------------------------------------------------------------------ feed */
@@ -325,10 +325,10 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
-  background: rgba(8, 15, 20, 0.55);
+  background: rgba(0, 0, 0, 0.55);
   padding: 2px 6px;
-  border-left: 2px solid var(--primary-dim);
-  animation: feedin 180ms steps(4, end);
+  border-left: 2px solid var(--border);
+  animation: feedin var(--t-fast);
 }
 
 .feedline--danger {
@@ -337,8 +337,8 @@
 }
 
 .feedline--good {
-  border-left-color: var(--primary);
-  color: var(--primary);
+  border-left-color: var(--state-ok);
+  color: var(--state-ok);
 }
 
 @keyframes feedin {
@@ -364,7 +364,7 @@
   position: absolute;
   inset: -5px;
   border-radius: 50%;
-  background: conic-gradient(var(--primary) var(--channel, 0%), #81929488 0);
+  background: conic-gradient(var(--text) var(--channel, 0%), #81818188 0);
   mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
 }
 
@@ -374,13 +374,13 @@
   left: 50%;
   width: 2px;
   height: 2px;
-  background: var(--primary);
+  background: var(--text);
   transform: translate(-50%, -50%);
 }
 
 .crosshair__t {
   position: absolute;
-  background: var(--primary);
+  background: var(--text);
   opacity: 0.9;
 }
 
@@ -432,7 +432,7 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  #app:not([data-motion="reduce"]) .hitmarker.is-hot { animation: hit-pop 160ms cubic-bezier(0.18, 0.67, 0.34, 1) both; }
+  #app:not([data-motion="reduce"]) .hitmarker.is-hot { animation: hit-pop var(--t-fast) both; }
   #app:not([data-motion="reduce"]) .hitmarker.is-hot.is-repeat { animation-name: hit-pop-repeat; }
 }
 
@@ -450,8 +450,8 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  #app:not([data-motion="reduce"]) .vitals .bar[data-flash="a"]::after { animation: hp-flash 230ms ease-out both; }
-  #app:not([data-motion="reduce"]) .vitals .bar[data-flash="b"]::after { animation: hp-flash-repeat 230ms ease-out both; }
+  #app:not([data-motion="reduce"]) .vitals .bar[data-flash="a"]::after { animation: hp-flash var(--t-fast) both; }
+  #app:not([data-motion="reduce"]) .vitals .bar[data-flash="b"]::after { animation: hp-flash-repeat var(--t-fast) both; }
 }
 
 @keyframes hp-flash { from { opacity: 0.94; } to { opacity: 0; } }
@@ -532,11 +532,11 @@
 .objective-diamond,
 .objective-chevron {
   fill: none;
-  stroke: var(--primary);
+  stroke: var(--text);
   stroke-width: 2.2px;
   stroke-linejoin: round;
   stroke-linecap: square;
-  filter: drop-shadow(0 0 2px #02080b) drop-shadow(0 0 1px #02080b);
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 1)) drop-shadow(0 0 1px rgba(0, 0, 0, 1));
 }
 
 .objective-chevron { stroke-width: 3.5px; }
@@ -549,20 +549,20 @@
   max-width: 100%;
   margin: 0 auto;
   padding: 3px 7px;
-  background: rgba(8, 15, 20, 0.94);
+  background: rgba(0, 0, 0, 0.94);
   border: 1px solid var(--primary-dim);
   color: var(--text);
-  font: 600 12px/1.25 var(--mono);
+  font: 500 12px/1.25 var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.objective-label b { color: var(--primary); }
+.objective-label b { color: var(--text); }
 .objective-label span:not([hidden]) { margin-left: 4px; }
 #objective-marker[data-close] .objective-label b { display: none; }
 #objective-marker[data-close] .objective-label span { margin-left: 0; }
 #objective-marker[data-close] .objective-label { font-size: 14px; }
-#objective-marker[data-ready] .objective-label { border-color: var(--primary); }
+#objective-marker[data-ready] .objective-label { border-color: var(--text); }
 
 /* ------------------------------------------------------------------ bottom row */
 .hud__bottom {
@@ -592,7 +592,7 @@
 .vitals__icon {
   width: 22px;
   height: 22px;
-  color: var(--primary);
+  color: var(--text);
 }
 
 .vitals__num {
@@ -636,9 +636,9 @@
   font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--accent);
-  background: rgba(8, 15, 20, 0.85);
-  border: 1px solid rgba(77, 227, 198, 0.3);
+  color: var(--state-ok);
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(92, 224, 139, 0.3);
   line-height: 16px;
   padding: 0 4px;
 }
@@ -666,19 +666,18 @@
   font-family: var(--mono);
   font-size: 11px;
   color: var(--muted);
-  background: rgba(8, 15, 20, 0.6);
+  background: rgba(0, 0, 0, 0.6);
 }
 
 .slot.is-active {
-  border-color: var(--primary);
-  color: #04140c;
-  background: var(--primary);
+  border-color: var(--text);
+  color: var(--bg);
+  background: var(--text);
 }
 
 .slot.is-locked {
   color: var(--subtle);
   border-style: dashed;
-  opacity: 0.6;
 }
 
 .ammo__weapon {
@@ -741,7 +740,7 @@
 }
 
 .ammo .bar > i {
-  background: var(--primary);
+  background: var(--text);
 }
 
 .ammo__hint {
@@ -763,7 +762,7 @@
   text-align: center;
   padding: var(--dist) var(--dist-3);
   border: 1px solid rgba(255, 91, 107, 0.45);
-  background: rgba(40, 10, 14, 0.55);
+  background: rgba(30, 6, 9, 0.55);
 }
 
 .hud__extraction[hidden] {
@@ -794,7 +793,7 @@
   opacity: 0;
   pointer-events: none;
   background: radial-gradient(120% 100% at 50% 50%, transparent 40%, rgba(255, 91, 107, 0.55) 100%);
-  transition: opacity 240ms ease-out;
+  transition: opacity var(--t-fast);
 }
 
 .hud__notice {
@@ -804,7 +803,7 @@
   transform: translate(-50%, -50%);
   padding: var(--dist) var(--dist-3);
   border: 1px solid var(--border);
-  background: rgba(8, 15, 20, 0.9);
+  background: rgba(0, 0, 0, 0.9);
   font-family: var(--mono);
   font-size: var(--fs-small);
   letter-spacing: 0.14em;
@@ -995,9 +994,11 @@
   }
 
   #hud .tutorial {
-    top: calc(160px + var(--safe-t));
+    /* Geist Mono envuelve una línea más en los pasos largos: subir el panel 8 px
+       mantiene el borde por debajo de la mira (y de .crosshair en 320×640). */
+    top: calc(154px + var(--safe-t));
     gap: 2px;
-    padding: 5px 12px;
+    padding: 4px 12px;
     line-height: 1.3;
   }
 

@@ -17,11 +17,11 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--sans);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
+  /* Resolución: body es Geist Mono 15/24. La voz de la interfaz es una sola. */
+  font: 400 var(--fs-body)/var(--lh-body) var(--mono);
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -75,7 +75,7 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 
@@ -96,8 +96,8 @@ a {
   background: radial-gradient(
     115% 92% at 50% 45%,
     transparent 40%,
-    rgba(3, 8, 12, 0.22) 66%,
-    rgba(2, 6, 10, 0.45) 100%
+    rgba(0, 0, 0, 0.22) 66%,
+    rgba(0, 0, 0, 0.45) 100%
   );
 }
 
@@ -157,11 +157,11 @@ a {
 #app[data-screen="briefing"] .gl-vignette,
 #app[data-screen="leaderboard"] .gl-vignette,
 #app[data-screen="result"] .gl-vignette {
-  background: linear-gradient(180deg, rgba(4, 10, 15, 0.55) 0%, rgba(4, 10, 15, 0.35) 45%, rgba(4, 10, 15, 0.72) 100%);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0.35) 45%, rgba(0, 0, 0, 0.72) 100%);
 }
 
 .screen--overlay {
-  background: rgba(4, 9, 13, 0.72);
+  background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(6px);
   align-items: center;
   justify-content: center;
@@ -172,7 +172,7 @@ a {
 /* The shell still owns visibility and focus. Only the arriving content moves. */
 @media (prefers-reduced-motion: no-preference) {
   #app:not([data-motion="reduce"]) :is(#screen-menu, #screen-briefing, #screen-result, #screen-tutorial-handoff) > :not(.menu__backdrop) {
-    animation: screen-arrive 240ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+    animation: screen-arrive var(--t-base) both;
   }
   #app:not([data-motion="reduce"]) :is(#screen-menu, #screen-briefing, #screen-result)::after,
   #app:not([data-motion="reduce"])[data-screen="playing"]::after {
@@ -181,8 +181,8 @@ a {
     inset: 0;
     pointer-events: none;
     z-index: 22;
-    background: linear-gradient(180deg, #20374457, #080e16c9);
-    animation: screen-sync 225ms steps(5, end) both;
+    background: linear-gradient(180deg, rgba(20, 20, 20, 0.34), rgba(0, 0, 0, 0.79));
+    animation: screen-sync var(--t-base) both;
   }
 }
 
@@ -198,11 +198,11 @@ a {
 /* ------------------------------------------------------------------ type */
 .section-title {
   color: var(--text);
-  font: 600 12px/1.35 var(--mono);
+  font: 500 12px/1.35 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   padding-inline-start: var(--dist);
-  border-inline-start: 2px solid #66808c;
+  border-inline-start: 2px solid var(--text);
 }
 .eyebrow {
   font-size: var(--fs-caption);
@@ -217,28 +217,30 @@ a {
   letter-spacing: 0.04em;
 }
 
+/* Marca: el wordmark es display Pixel 400, como los títulos de Resolución. */
 .wordmark {
   display: flex;
   gap: var(--dist);
   align-items: flex-start;
-  font-family: var(--sans);
-  letter-spacing: 0.02em;
-  line-height: 1.02;
+  font-family: var(--pixel);
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1;
 }
 
 .wordmark__slash {
-  color: var(--primary);
-  font-weight: 700;
+  color: var(--text);
+  font-weight: 400;
 }
 
 .wordmark__colon {
-  color: var(--primary);
+  color: var(--text);
 }
 
 .wordmark--lg .wordmark__text {
   font-size: clamp(20px, 3.2vw, 34px);
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 /* ------------------------------------------------------------------ buttons */
@@ -249,35 +251,35 @@ a {
   gap: var(--dist);
   min-height: 48px;
   padding: 0 var(--dist-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--text);
   background: var(--surface-2);
   color: var(--text);
   font-size: var(--fs-small);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  transition: transform var(--t-fast), background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+  font-weight: 500;
+  transition: background-color var(--t-fast), color var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
 }
 
 .btn:hover {
   border-color: var(--muted);
-  background: var(--surface-3);
+  background: var(--fill);
 }
 
+/* El press baja el control 2px con el mismo steps() de 80 ms del sistema. */
 .btn:active {
-  transform: translateY(1px);
+  transform: translateY(2px);
 }
 
 .btn--primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #04140c;
-  font-weight: 600;
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+  font-weight: 500;
 }
 
 .btn--primary:hover {
-  background: var(--primary-600);
-  border-color: var(--primary-600);
-  color: #02100a;
+  background: var(--bg);
+  border-color: var(--text);
+  color: var(--text);
 }
 
 .btn--ghost {
@@ -287,7 +289,9 @@ a {
 }
 
 .btn--ghost:hover {
-  color: var(--text);
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
 }
 
 .btn--sm {
@@ -302,19 +306,37 @@ a {
   margin-bottom: var(--dist);
 }
 
+/* Deshabilitado no reduce opacidad: pasa a --subtle y --border, porque el sistema es
+   plano y la opacidad intermedia inventa un gris que no existe en la paleta. */
+.btn:disabled {
+  color: var(--subtle);
+  border-color: var(--border);
+  background: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn--primary:disabled {
+  background: var(--fill);
+}
+
 .iconbtn {
   display: grid;
   place-items: center;
   width: 44px;
   height: 44px;
   border: 1px solid var(--border);
-  background: rgba(16, 24, 32, 0.8);
+  background: rgba(0, 0, 0, 0.8);
   color: var(--muted);
 }
 
 .iconbtn:hover {
   color: var(--text);
   border-color: var(--muted);
+}
+
+.iconbtn:active {
+  transform: translateY(2px);
 }
 
 .iconbtn svg {
@@ -343,16 +365,16 @@ a {
 }
 
 .chip--live {
-  border-color: var(--primary-dim);
-  color: var(--primary);
-  background: rgba(92, 224, 139, 0.08);
+  /* Estado vivo: verde de estado, no marca. Punto + borde de 1 px, sin fondos de acento. */
+  border-color: rgba(92, 224, 139, 0.35);
+  color: var(--state-ok);
 }
 
 .chip--live::before {
   content: "";
   width: 6px;
   height: 6px;
-  background: var(--primary);
+  background: var(--state-ok);
   animation: pulse 1.6s steps(2, end) infinite;
 }
 
@@ -364,8 +386,9 @@ a {
 
 /* ------------------------------------------------------------------ panels */
 .panel {
+  /* Superficie plana: --fill + borde de 1 px; se elimina el degradado del panel. */
   border: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(25, 36, 46, 0.9), rgba(16, 24, 32, 0.92));
+  background: var(--fill);
 }
 
 .panel__head {
@@ -430,7 +453,7 @@ a {
 }
 
 .field__label b {
-  color: var(--primary);
+  color: var(--text);
   font-weight: 500;
 }
 
@@ -467,7 +490,7 @@ input[type="range"]::-webkit-slider-thumb {
   width: 12px;
   height: 20px;
   margin-top: -9px;
-  background: var(--primary);
+  background: var(--text);
 }
 
 input[type="range"]::-moz-range-track {
@@ -481,7 +504,7 @@ input[type="range"]::-moz-range-thumb {
   height: 20px;
   border: none;
   border-radius: 0;
-  background: var(--primary);
+  background: var(--text);
 }
 
 .select {
@@ -494,7 +517,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* Switch sobre un checkbox real (role="switch"): `appearance: none` quita el azul del
-   sistema, y el knob es un fondo de gradiente para no depender de pseudo-elementos. */
+   sistema. El knob es un fondo sólido para no depender de pseudo-elementos. */
 .switch {
   -webkit-appearance: none;
   appearance: none;
@@ -510,18 +533,19 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .switch:checked {
-  border-color: var(--primary);
-  background: linear-gradient(var(--primary), var(--primary)) no-repeat calc(100% - 3px) 50% / 16px 16px,
-    rgba(92, 224, 139, 0.16);
+  border-color: var(--text);
+  background: linear-gradient(var(--text), var(--text)) no-repeat calc(100% - 3px) 50% / 16px 16px,
+    var(--fill);
 }
 
 .switch:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--text);
   outline-offset: 3px;
 }
 
 .switch:disabled {
-  opacity: 0.45;
+  border-color: var(--border);
+  background: linear-gradient(var(--subtle), var(--subtle)) no-repeat 3px 50% / 16px 16px, var(--fill);
   cursor: not-allowed;
 }
 
@@ -542,15 +566,19 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .seg.is-active {
-  background: var(--primary);
-  color: #04140c;
+  background: var(--text);
+  color: var(--bg);
+}
+
+.seg:not(.is-active):active {
+  transform: translateY(2px);
 }
 
 /* ------------------------------------------------------------------ sheet */
 .sheet {
   width: min(680px, 100%);
   border: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(16, 24, 32, 0.97), rgba(9, 15, 20, 0.99));
+  background: var(--fill);
   padding: var(--dist-3);
   margin: auto;
 }
@@ -564,10 +592,11 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .sheet__head h2 {
-  font-family: var(--sans);
+  font-family: var(--pixel);
+  font-weight: 400;
   font-size: var(--fs-h2);
-  line-height: var(--lh-h2);
-  letter-spacing: 0.02em;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 .sheet__head p {
@@ -591,15 +620,15 @@ input[type="range"]::-moz-range-thumb {
   position: relative;
   height: 10px;
   border: 1px solid var(--border);
-  background: rgba(4, 10, 14, 0.7);
+  background: rgba(0, 0, 0, 0.7);
 }
 
 .bar > i {
   display: block;
   height: 100%;
   width: 100%;
-  background: var(--primary);
-  transition: width 90ms linear, background 200ms;
+  background: var(--text);
+  transition: width var(--t-fast);
 }
 
 .bar--slim {
@@ -653,7 +682,7 @@ code {
   align-items: center;
   justify-content: center;
   gap: var(--dist);
-  background: rgba(8, 15, 20, 0.88);
+  background: rgba(0, 0, 0, 0.88);
   color: var(--text);
   text-align: center;
   z-index: 80;
