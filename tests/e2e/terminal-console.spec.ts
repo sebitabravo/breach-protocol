@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { Engine, WorldEvent } from '../../src/wasm/bridge';
+import type { Engine, Snapshot, WorldEvent } from '../../src/wasm/bridge';
 import type { Renderer } from '../../src/render/renderer';
 import { EVT, I, INPUT_LEN } from '../../src/wasm/protocol';
 import { screenIs } from './support';
@@ -86,7 +86,8 @@ async function frame(page: Page, shot: '20m' | '8m' | 'close' | 'channel' | 'act
     renderer.renderGame(view, 1, 0, [], track);
     const { calls, triangles } = renderer;
     Reflect.get(app, 'hud').update(state, true);
-    Reflect.get(app, 'updateChannelRing')?.call(app, state);
+    // P5: el anillo de canal se extrajo a core/channel-ring (antes updateChannelRing).
+    (Reflect.get(app, 'channelRing') as { update(s: Snapshot): void }).update(state);
     Reflect.get(app, 'objectiveMarker')?.hide();
     const hardware = Reflect.get(Reflect.get(renderer, 'sector'), 'terminals');
     const live = hardware?.batch.geometry.getAttribute('aLive');

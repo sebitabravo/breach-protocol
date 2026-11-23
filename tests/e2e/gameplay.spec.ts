@@ -163,7 +163,11 @@ test.describe('390×844 completion hand-off', () => {
     await screenIs(page, 'menu');
     await page.reload();
     await screenIs(page, 'menu');
-    await page.locator('#screen-menu').getByRole('button', { name: /Repetir tutorial/ }).tap();
+    // P4: la repetición del tutorial vive en "Cómo jugar" (decisión de flujo del
+    // owner); el menú ya no ofrece "Repetir tutorial".
+    await page.locator('#screen-menu [data-goto="about"]').tap();
+    await screenIs(page, 'about');
+    await page.locator('#screen-about [data-action="tutorial-replay"]').tap();
     await screenIs(page, 'playing');
     await expect(page.locator('#tut-index')).toHaveText('1');
     await expect(screen).toBeHidden();

@@ -1134,8 +1134,23 @@
     left: calc(104px + var(--safe-l));
   }
 
+  /* Geist Mono es ~24% más ancho que el sans anterior: el objetivo (11 px) necesita
+     ~178 px entre el sector y el reloj a 667 px. Se reserva ese ancho sin recortar
+     el nombre de sector (13 px lo muestra entero) ni apretar el tracking global. */
   .hud__block--sector {
-    width: 150px;
+    width: 136px;
+  }
+
+  .hud__sector-name {
+    font-size: 13px;
+  }
+
+  .hud__kicker {
+    letter-spacing: 0.12em;
+  }
+
+  #app.is-touch .hud__block--right {
+    gap: 8px;
   }
 
   .hud__wave {
@@ -1155,6 +1170,10 @@
   .hud__block--objective {
     top: calc(34px + var(--safe-t));
     width: min(300px, 44vw);
+  }
+
+  .hud__block--objective .hud__sub {
+    font-size: 11px;
   }
 
   .hud__feed {

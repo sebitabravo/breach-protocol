@@ -42,7 +42,7 @@ test('escape from settings opened on the menu returns to the menu', async ({ pag
   await expect(app).toHaveAttribute('data-screen', 'menu');
 });
 
-test('the calibration sheet can be scrolled to START at 320x640', async ({ page }) => {
+test('the calibration sheet can be scrolled to its last control at 320x640', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 640 });
   await page.goto('/');
   const app = page.locator('#app');
@@ -53,9 +53,12 @@ test('the calibration sheet can be scrolled to START at 320x640', async ({ page 
   await page.locator('#screen-pause [data-tab="access"]').click();
   await page.locator('#screen-pause [data-goto="calibrate"]').click();
   await screenIs(page, 'calibrate');
+  // P4: la calibración ya no arranca la partida (no hay START); el último control
+  // de la hoja es "Volver". La intención se conserva: la hoja debe ser scrollable
+  // hasta el final a 320x640.
   const start = page.locator('#screen-calibrate [data-goto="menu"]');
   const scrollable = await page.evaluate(() => {
-    let node = document.querySelector('#screen-calibrate [data-action="play"]')!.parentElement;
+    let node = document.querySelector('#screen-calibrate [data-goto="menu"]')!.parentElement;
     while (node && node !== document.documentElement) {
       const overflow = getComputedStyle(node).overflowY;
       if ((overflow === 'auto' || overflow === 'scroll') && node.scrollHeight > node.clientHeight) return true;
@@ -63,7 +66,7 @@ test('the calibration sheet can be scrolled to START at 320x640', async ({ page 
     }
     return false;
   });
-  expect(scrollable, 'a real user must be able to scroll to START').toBe(true);
+  expect(scrollable, 'a real user must be able to scroll to the end of the sheet').toBe(true);
   await start.scrollIntoViewIfNeeded();
   await expect(start).toBeInViewport();
 });
