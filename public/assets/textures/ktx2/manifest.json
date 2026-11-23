@@ -1,0 +1,105 @@
+{
+  "tool": "toktx",
+  "version": "v4.4.2",
+  "generatedAt": "2026-11-22T23:20:43.547Z",
+  "supercompression": {
+    "uastc": "zstd",
+    "etc1s": "basis-lz"
+  },
+  "transcoder": {
+    "source": "node_modules/three/examples/jsm/libs/basis/",
+    "three": "0.181.0"
+  },
+  "files": [
+    {
+      "name": "floor",
+      "suffix": "diff",
+      "encodeClass": "etc1s",
+      "bytes": 214484,
+      "sourceBytes": 259668,
+      "flags": "--encode etc1s --clevel 4 --qlevel 200 --genmipmap",
+      "oetf": "srgb",
+      "sha256": "e40e69731a76c4d265c34b0fd9cea58507304d196c73b75f444003c866fd6d4d"
+    },
+    {
+      "name": "floor",
+      "suffix": "nor",
+      "encodeClass": "uastc",
+      "bytes": 1148052,
+      "sourceBytes": 146536,
+      "flags": "--encode uastc --uastc_quality 2 --zcmp --genmipmap",
+      "oetf": "linear",
+      "sha256": "e64e58694a0bc3205038b060d5ee473ba21bc0e8234a37bf2ed5e2ffe89504c2"
+    },
+    {
+      "name": "floor",
+      "suffix": "arm",
+      "encodeClass": "etc1s",
+      "bytes": 84056,
+      "sourceBytes": 24124,
+      "flags": "--encode etc1s --clevel 4 --qlevel 200 --genmipmap",
+      "oetf": "linear",
+      "sha256": "aa60677b74cbc288f153f095941083b20465197f9311596af12c5594e3d94970"
+    },
+    {
+      "name": "wall",
+      "suffix": "diff",
+      "encodeClass": "etc1s",
+      "bytes": 211135,
+      "sourceBytes": 227564,
+      "flags": "--encode etc1s --clevel 4 --qlevel 200 --genmipmap",
+      "oetf": "srgb",
+      "sha256": "25079badb782939ada503788e82b84690ed14b676dd17b75ba9ff3e7634d79cf"
+    },
+    {
+      "name": "wall",
+      "suffix": "nor",
+      "encodeClass": "uastc",
+      "bytes": 1340690,
+      "sourceBytes": 266956,
+      "flags": "--encode uastc --uastc_quality 2 --zcmp --genmipmap",
+      "oetf": "linear",
+      "sha256": "e991d9ab77346c615c508d256aee31efc7d710e23effc406e12fbdc2940e556f"
+    },
+    {
+      "name": "wall",
+      "suffix": "arm",
+      "encodeClass": "etc1s",
+      "bytes": 122779,
+      "sourceBytes": 50060,
+      "flags": "--encode etc1s --clevel 4 --qlevel 200 --genmipmap",
+      "oetf": "linear",
+      "sha256": "103d84e0d32d8adbaa7492fbe56a3f6a7dff5ee9909665711acf340eb3b5576c"
+    },
+    {
+      "name": "metal",
+      "suffix": "diff",
+      "encodeClass": "etc1s",
+      "bytes": 202834,
+      "sourceBytes": 90062,
+      "flags": "--encode etc1s --clevel 4 --qlevel 200 --genmipmap",
+      "oetf": "srgb",
+      "sha256": "8753e8abe86bdca697ef02bc2ef44b156f47f8aeecfebd1c4aa11696a2ebe2a2"
+    },
+    {
+      "name": "metal",
+      "suffix": "nor",
+      "encodeClass": "uastc",
+      "bytes": 1161188,
+      "sourceBytes": 100016,
+      "flags": "--encode uastc --uastc_quality 2 --zcmp --genmipmap",
+      "oetf": "linear",
+      "sha256": "8b027f2f11cca593aed0989dfb3b6b15670540cdab6f2ddd509d2fa4ccbfae60"
+    },
+    {
+      "name": "metal",
+      "suffix": "arm",
+      "encodeClass": "etc1s",
+      "bytes": 265762,
+      "sourceBytes": 196310,
+      "flags": "--encode etc1s --clevel 4 --qlevel 200 --genmipmap",
+      "oetf": "linear",
+      "sha256": "599116ecc13098e712129cecfb00057b42591a0bc41506eb676901eb20d67cd8"
+    }
+  ]
+}
