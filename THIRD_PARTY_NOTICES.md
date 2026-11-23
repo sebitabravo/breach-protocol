@@ -155,6 +155,29 @@ La paleta azul-negra y sus acentos menta y de peligro provienen de los mockups
 del dueño del proyecto, no de sebita.dev ni de otro sitio. Ver
 [`docs/adr/0002-visual-direction.md`](docs/adr/0002-visual-direction.md).
 
+La etapa P1 del product reset reemplazó esa paleta por la del sistema
+"Resolución" del propio dueño (monocromo puro `#000/#141414/#262626` y sus
+counterparte claras): el mockup queda como antecedente histórico del ADR, no
+como identidad vigente. Los tokens de estado (peligro, aviso, éxito) se
+conservan solo donde un juego necesita vocabulario de fallo.
+
+## Fuentes
+
+La interfaz usa Geist Pixel (forma Square) para roles de display y Geist Mono
+Regular/Medium para cuerpo y datos. Los `.woff2` se copiaron byte-exactos del
+checkout propio del portafolio (`public/fonts/` de
+`/Users/sebitabravo/Developer/portfolio`, declarados ahí vía `@font-face`). No
+se descargaron de un CDN ni se modificaron; se distribuyen embebidos en el
+build web.
+
+| Componente | Uso | Derechos | Licencia |
+|---|---|---|---|
+| Geist (Pixel Square, Geist Mono 400/500) | Tipográfico de la interfaz | Copyright (c) 2023 Vercel, in collaboration with basement.studio | SIL Open Font License 1.1 |
+
+La licencia completa (SIL OFL 1.1) está copiada en `public/fonts/LICENSE.txt`.
+Los overrides de fallback (`size-adjust`, `ascent-override`, `descent-override`)
+son mediciones propias documentadas en `src/styles/tokens.css`.
+
 ## Herramientas del agente
 
 Inventario de herramientas de agente fijadas por versión y no incluidas en el

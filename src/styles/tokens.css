@@ -1,24 +1,80 @@
 /**
- * Resolución-inspired design tokens for the game shell.
+ * Resolución — design tokens for the game shell (P1 of the product reset).
  *
- * The palette follows the product mockups attached to the brief (dark blue-black
- * surfaces plus one mint accent). ADR-0002 records why that wins over the
- * monochrome variant in SPEC.md §5.2: the mockups are the newer human direction.
+ * Ported from the owner's portfolio system (Resolución) so the interface speaks
+ * the same identity as sebita.dev: Geist Pixel for display roles, Geist Mono for
+ * body and data, the pure monochrome family, the 8 px grid and the stepped
+ * motion language. The retint is the reference verbatim; gameplay state colours
+ * (danger / warning / low-ammo / hit / success) stay because a shooter needs a
+ * failure vocabulary — they now read as state, never as branding.
+ *
+ * Fonts are copied byte-exact from the portfolio checkout's public/fonts/
+ * (Vercel Geist, SIL OFL 1.1) — see THIRD_PARTY_NOTICES.md.
  */
+
+@font-face {
+  font-family: "Geist Pixel";
+  src: url(/fonts/GeistPixel-Square.woff2) format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-weight: 400;
+  src: url(/fonts/GeistMono-Regular.woff2) format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-weight: 500;
+  src: url(/fonts/GeistMono-Medium.woff2) format("woff2");
+  font-display: swap;
+}
+/* Fallback with metrics matched to Geist Mono (advance 0.6em; ascent 1.005; descent 0.295) so the swap never moves the layout.
+   Measured with fontTools over fonts/GeistMono-Regular.woff2 and the local faces:
+   Menlo (advance 0.60205; ascent 0.92822; descent 0.23583) and Courier New (advance 0.60010; ascent 0.83252; descent 0.30030). */
+@font-face {
+  font-family: "Geist Mono Fallback";
+  src: local("Menlo"), local("Menlo-Regular");
+  size-adjust: 99.66%;
+  ascent-override: 100.84%;
+  descent-override: 29.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: "Geist Mono Fallback CN";
+  src: local("Courier New"), local("CourierNewPSMT");
+  size-adjust: 99.98%;
+  ascent-override: 100.52%;
+  descent-override: 29.5%;
+  line-gap-override: 0%;
+}
+
 :root {
-  --bg: #080f14;
-  --surface-1: #101820;
-  --surface-2: #19242e;
-  --surface-3: #223240;
-  --border: #2e3f4f;
-  --border-soft: #1d2a35;
-  --text: #e4edf6;
-  --muted: #96aaba;
-  --subtle: #7a92a4;
-  --primary: #5ce08b;
-  --primary-600: #34c79a;
-  --primary-dim: #1d4b3c;
-  --accent: #4de3c6;
+  color-scheme: dark;
+  /* Pure monochrome family (#000 / #141414 / #262626 + light counterparts). */
+  --bg: #000000;
+  --line: #262626;
+  --fill: #141414;
+  --text: #ffffff;
+  --muted: #a1a1a1;
+  --subtle: #8a8a8a;
+
+  /* Game-surface aliases over the same family: a panel is --fill + 1px --line. */
+  --surface-1: #141414;
+  --surface-2: #141414;
+  --surface-3: #262626;
+  --border: #262626;
+  --border-soft: #262626;
+
+  /* Brand roles have no colour any more: the system inverts fg/bg.
+     --primary is the monochrome stroke; --primary-dim is its transparent step
+     (the only derived grey the system allows, used as a hairline on state cards). */
+  --primary: #ffffff;
+  --primary-600: #ffffff;
+  --primary-dim: rgba(255, 255, 255, 0.28);
+
+  /* Gameplay state vocabulary (failure / success), kept by design. */
+  --state-ok: #5ce08b;
   --danger: #ff5b6b;
   --warning: #ffce6b;
 
@@ -28,29 +84,31 @@
   --dist-4: 32px;
   --dist-5: 48px;
 
-  /* Sin descargas de fuentes (ADR 0005): stacks del sistema. --sans para títulos y
-     texto; --mono para números, etiquetas y datos. */
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  /* Type: Geist Pixel for display, Geist Mono for everything else.
+     Matches Resolución: body 15/24, small 13/20; the game keeps a caption step
+     (12/16) that the reference does not define — needed for HUD meta lines. */
+  --pixel: "Geist Pixel", ui-monospace, "SF Mono", Menlo, monospace;
+  --mono: "Geist Mono", "Geist Mono Fallback", "Geist Mono Fallback CN", ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: "Geist Mono", "Geist Mono Fallback", "Geist Mono Fallback CN", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --fs-h1: 48px;
-  --lh-h1: 56px;
-  --fs-h2: 32px;
-  --lh-h2: 40px;
-  --fs-h3: 24px;
+  --fs-h2: clamp(2.5rem, 6vw, 5rem);
+  --lh-h2: 1;
+  --fs-h3: 1.5rem;
   --lh-h3: 32px;
   --fs-h4: 18px;
   --lh-h4: 24px;
-  --fs-body: 16px;
+  --fs-body: 15px;
   --lh-body: 24px;
-  --fs-small: 14px;
+  --fs-small: 13px;
   --lh-small: 20px;
   --fs-caption: 12px;
   --lh-caption: 16px;
 
-  --t-fast: 120ms steps(3, end);
-  --t-base: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  --radius: 2px;
+  /* Stepped motion: feedback 80ms steps(4), entry 480ms steps(8).
+     Press = translateY(2px); disabled = colour swap, never opacity. */
+  --t-fast: 80ms steps(4, end);
+  --t-base: 480ms steps(8, end);
+
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
@@ -59,18 +117,26 @@
 }
 
 :root[data-theme="light"] {
-  --bg: #f4f7f9;
-  --surface-1: #ffffff;
-  --surface-2: #eef2f5;
-  --surface-3: #e2e9ee;
-  --border: #c3d0d9;
-  --border-soft: #dbe4ea;
-  --text: #0b141b;
-  --muted: #4a5c68;
-  --subtle: #6a7c88;
-  --primary: #0f9d63;
-  --primary-600: #0b8050;
-  --primary-dim: #cdeadf;
-  --accent: #0b8f7d;
+  color-scheme: light;
+  --bg: #ffffff;
+  --line: #e5e5e5;
+  --fill: #f2f2f2;
+  --text: #000000;
+  --muted: #5c5c5c;
+  --subtle: #6b6b6b;
+
+  --surface-1: #f2f2f2;
+  --surface-2: #f2f2f2;
+  --surface-3: #e5e5e5;
+  --border: #e5e5e5;
+  --border-soft: #e5e5e5;
+
+  --primary: #000000;
+  --primary-600: #000000;
+  --primary-dim: rgba(0, 0, 0, 0.28);
+
+  /* State tokens need darker, readable counterparts on white. */
+  --state-ok: #0a7a4b;
   --danger: #c92f3f;
+  --warning: #8a5200;
 }
