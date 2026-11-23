@@ -2,7 +2,7 @@
  * Enlaza los controles de ajustes (pausa y calibración) con `Settings`. No guarda
  * nada: reporta cambios como parches y se resincroniza desde el estado real.
  */
-import type { GfxOverride, Locale, Quality, Settings } from '../core/settings';
+import { GFX_EFFECTS, type GfxOverride, type Locale, type Quality, type Settings } from '../core/settings';
 import { byId } from './dom';
 
 export interface SettingsFormHooks {
@@ -67,8 +67,6 @@ const GFX_LABELS: Record<Locale, { group: string; items: Record<string, string>;
     options: ['Auto', 'On', 'Off'],
   },
 };
-
-const GFX_EFFECTS = ['bloom', 'shadows', 'environment', 'lights', 'mist'] as const;
 
 /** Aplica ajustes de marcado: nada aquí toca la identidad del juego. */
 function localizeGfxLabels(locale: Locale): void {

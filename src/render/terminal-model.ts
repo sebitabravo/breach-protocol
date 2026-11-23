@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PLAYER } from '../core/constants';
 import { FACE, MeshBuilder } from './geometry';
 import { SURFACE, TILE } from './surfaces';
 import { tint, type Tint } from './architecture';
@@ -18,12 +19,12 @@ export const CONSOLE_ROLE = { screen: 1, stencil: 2, bar: 3, rotor: 4 } as const
 // authored housing was drawn at CONSOLE_TOP_LOCAL (2.70 m — taller than the player,
 // which is the reported defect) and is brought down as ONE instance-matrix scale so
 // the machine peaks at TERMINAL_TOP: just above the standing eye, still under the
-// player's 1.80 m crown, with the composed silhouette, the shared instanced batch,
+// player crown, with the composed silhouette, the shared instanced batch,
 // the material set and the canvas screen layout intact (no extra draws or textures).
-/** Player metrics mirrored from the sim core (core/src/player.rs); the render-side
- * camera's EYE_HEIGHT in src/render/camera.ts must stay in sync. */
-export const PLAYER_HEIGHT = 1.8;
-export const PLAYER_EYE_HEIGHT = 1.62;
+/** Player metrics derived from the single owner (src/core/constants.ts, which the
+ * drift test pins against core/src/player.rs). */
+export const PLAYER_HEIGHT = PLAYER.height;
+export const PLAYER_EYE_HEIGHT = PLAYER.eyeHeight;
 /** Machine top plane: cowling and beacon stack peak here, below the player's crown. */
 export const TERMINAL_TOP = PLAYER_EYE_HEIGHT + 0.16;
 /** Authored local space top of the housing (the height it was originally drawn at). */

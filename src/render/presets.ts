@@ -2,7 +2,7 @@
  * Presets de calidad del renderer. El controlador de calidad (core/quality.ts)
  * decide cuál aplicar; acá solo se traducen a DPR, sombras y presupuesto de FX.
  */
-import type { GfxOverride } from '../core/settings';
+import { GFX_EFFECTS, GFX_KEYS, type GfxKey, type GfxOverride } from '../core/settings';
 export type QualityName = 'low' | 'medium' | 'high';
 
 export interface QualityPreset {
@@ -54,14 +54,21 @@ export function playPixelRatio(
   return Math.min(preset.dpr, dprCap, deviceDpr, Math.sqrt(PLAY_PIXEL_BUDGET[preset.name] / area)) * s;
 }
 
-/** Plan de efectos visibles, ya resuelto contra el preset. */
-export interface GfxPlan {
-  bloom: boolean;
-  shadows: boolean;
-  environment: boolean;
-  lights: boolean;
-  mist: boolean;
-}
+/** Plan de efectos visibles, ya resuelto contra el preset. La forma deriva de
+ * GFX_KEYS en core/settings.ts (`gfxBloom` → `bloom`); los nombres nunca se
+ * repiten acá como unión de literales. */
+type StripGfx<Key extends string> = Key extends `gfx${infer Effect}` ? Uncapitalize<Effect> : Key;
+export type GfxPlan = { [Key in GfxKey as StripGfx<Key>]: boolean };
+
+/** Regla `auto` de cada efecto (T5a), en el mismo orden que GFX_KEYS: la única
+ * lista de claves vive en core/settings.ts. */
+const AUTO_BY_KEY: Record<GfxKey, (preset: QualityPreset) => boolean> = {
+  gfxBloom: (preset) => preset.name !== 'low',
+  gfxShadows: (preset) => preset.shadows,
+  gfxEnvironment: () => true,
+  gfxLights: () => true,
+  gfxMist: () => true,
+};
 
 /**
  * Resuelve los cinco overrides `auto|on|off` del jugador contra la derivación
@@ -75,14 +82,12 @@ export interface GfxPlan {
  */
 export function resolveGfxPlan(
   preset: QualityPreset,
-  gfx: Record<'gfxBloom' | 'gfxShadows' | 'gfxEnvironment' | 'gfxLights' | 'gfxMist', GfxOverride>,
+  gfx: Record<GfxKey, GfxOverride>,
 ): GfxPlan {
   const pick = (state: GfxOverride, auto: boolean): boolean => (state === 'auto' ? auto : state === 'on');
-  return {
-    bloom: pick(gfx.gfxBloom, preset.name !== 'low'),
-    shadows: pick(gfx.gfxShadows, preset.shadows),
-    environment: pick(gfx.gfxEnvironment, true),
-    lights: pick(gfx.gfxLights, true),
-    mist: pick(gfx.gfxMist, true),
-  };
+  const plan = {} as Record<string, boolean>;
+  GFX_KEYS.forEach((key, i) => {
+    plan[GFX_EFFECTS[i]] = pick(gfx[key], AUTO_BY_KEY[key](preset));
+  });
+  return plan as GfxPlan;
 }

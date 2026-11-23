@@ -1,8 +1,7 @@
 /** Pinta la pantalla de resultados a partir de una partida ya cerrada. */
+import { MATCH_SECONDS } from '../core/constants';
 import { grade, type RunResult } from '../core/scores';
 import { byId } from './dom';
-
-const MATCH_LIMIT_SECONDS = 180;
 
 function sectionTitle(text: string): HTMLHeadingElement {
   const title = document.createElement('h3');
@@ -46,5 +45,5 @@ export function renderResult(run: RunResult, isRecord: boolean, truncated: boole
   byId('result-input').textContent = run.input === 'touch' ? 'táctil' : 'mouse';
   byId('result-record').hidden = !isRecord;
   byId('result-prefix').hidden = !truncated;
-  byId('result-timebar').style.width = `${Math.min(100, (run.durationMs / 1000 / MATCH_LIMIT_SECONDS) * 100)}%`;
+  byId('result-timebar').style.width = `${Math.min(100, (run.durationMs / 1000 / MATCH_SECONDS) * 100)}%`;
 }

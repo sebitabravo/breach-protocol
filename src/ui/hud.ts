@@ -10,7 +10,14 @@ import type { Mode } from '../core/screens';
 import type { FeedKind } from '../core/events';
 import { damageBearing } from '../core/bearing';
 import { FIXED_DT } from '../core/loop';
+import { rgbOf, STATE_COLORS } from '../render/palette';
 import { byId } from './dom';
+
+/** Colores de estado derivados del dueño único (src/render/palette.ts, espejo de
+ * tokens.css). El RGB desglosado compone los `rgba()` del minimapa sin repetir
+ * el hex; los literales se calculan una vez, fuera del camino caliente. */
+const [OK_R, OK_G, OK_B] = rgbOf(STATE_COLORS.ok);
+const MINT_FADE = `rgba(${OK_R},${OK_G},${OK_B},0.16)`;
 
 /** Siluetas de arma para el bloque de munición (viewBox 64×24), leídas de las mismas proporciones del viewmodel. */
 export const WEAPON_ICON: Record<number, string> = {
@@ -403,7 +410,7 @@ export class Hud {
       const live = state.node(i);
       // Forma además de color: activo = cuadrado lleno, pendiente = cuadrado hueco.
       if (live.active) {
-        ctx.fillStyle = '#5ce08b';
+        ctx.fillStyle = STATE_COLORS.ok;
         ctx.fillRect(node.x * scale - 2, node.z * scale - 2, 4, 4);
       } else {
         ctx.strokeStyle = 'rgba(150,170,186,0.9)';
@@ -415,7 +422,7 @@ export class Hud {
     for (let i = 0; i < 32; i += 1) {
       const enemy = state.enemy(i);
       if (enemy.state === ENEMY_STATE.dead) continue;
-      ctx.fillStyle = enemy.kind === 1 ? '#ffce6b' : '#ff5b6b';
+      ctx.fillStyle = enemy.kind === 1 ? STATE_COLORS.warning : STATE_COLORS.danger;
       ctx.beginPath();
       traceEnemyMarker(ctx, enemy.kind, enemy.x * scale, enemy.z * scale);
       ctx.fill();
@@ -424,13 +431,13 @@ export class Hud {
 
     ctx.save();
     ctx.translate(size / 2, size / 2);
-    ctx.fillStyle = 'rgba(92,224,139,0.16)';
+    ctx.fillStyle = MINT_FADE;
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.arc(0, 0, size * 0.42, -Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = '#5ce08b';
+    ctx.fillStyle = STATE_COLORS.ok;
     ctx.beginPath();
     ctx.moveTo(0, -5);
     ctx.lineTo(3.4, 4);

@@ -3,6 +3,15 @@
  * Values come from the renderer, the frame loop and the simulation itself.
  */
 import type { DebugOverlays, OverlayKey } from '../render/renderer';
+import { rgbOf, STATE_COLORS } from '../render/palette';
+
+/** Colores de estado derivados del dueño único (src/render/palette.ts, espejo de
+ * tokens.css); los `rgba()` se componen una vez, fuera del camino caliente. */
+const [OK_R, OK_G, OK_B] = rgbOf(STATE_COLORS.ok);
+const [DANGER_R, DANGER_G, DANGER_B] = rgbOf(STATE_COLORS.danger);
+const MINT_GRID = `rgba(${OK_R},${OK_G},${OK_B},0.35)`;
+const BAR_OK = `rgba(${OK_R},${OK_G},${OK_B},0.75)`;
+const BAR_OVER = `rgba(${DANGER_R},${DANGER_G},${DANGER_B},0.85)`;
 
 /** Los overlays de debug viven en el renderer; este host lo expone el mismo gancho que usan las pruebas/e2e. */
 interface DebugHost {
@@ -202,19 +211,19 @@ export class Engineering {
     ctx.fillRect(0, 0, width, height);
     // 16.7 ms budget line
     const budgetY = height - (16.7 / 40) * height;
-    ctx.strokeStyle = 'rgba(92,224,139,0.35)';
+    ctx.strokeStyle = MINT_GRID;
     ctx.beginPath();
     ctx.moveTo(0, budgetY);
     ctx.lineTo(width, budgetY);
     ctx.stroke();
 
     const n = this.samples.length;
-    ctx.fillStyle = '#5ce08b';
+    ctx.fillStyle = STATE_COLORS.ok;
     for (let i = 0; i < n; i += 1) {
       const v = Math.min(40, this.samples[i]);
       const h = (v / 40) * height;
       const x = (i / 120) * width;
-      ctx.fillStyle = v > 16.7 ? 'rgba(255,91,107,0.85)' : 'rgba(92,224,139,0.75)';
+      ctx.fillStyle = v > 16.7 ? BAR_OVER : BAR_OK;
       ctx.fillRect(x, height - h, Math.max(1, width / 120 - 1), h);
     }
   }
