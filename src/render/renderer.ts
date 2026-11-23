@@ -30,7 +30,7 @@ import { PoseInterpolator, type Pose } from './interp';
 import { ObjectiveBeacon, objectiveOccluded } from './objective-beacon';
 import type { ObjectiveClip } from './objective-projection';
 import { PRESETS, MIN_RENDER_SCALE, playPixelRatio, resolveGfxPlan, type QualityName, type QualityPreset } from './presets';
-import { AdaptiveScale } from '../core/quality';
+import { sharedResolutionPolicy, type ResolutionDecision, type ResolutionPolicy } from '../core/resolution-policy';
 import { postPlan, PostFx } from './postfx';
 import { E, ENEMY_BASE, ENEMY_STATE, ENEMY_STRIDE, MAX_ENEMIES, MAX_NODES } from '../wasm/protocol';
 import type { GfxOverrides } from '../core/settings';
@@ -393,12 +393,11 @@ export class Renderer {
   private cssWidth = 1;
   private cssHeight = 1;
   /**
-   * Factor adaptativo de resolución (T5b, recorte continuo bajo carga). Encima del presupuesto
-   * de píxeles del preset: multiplica el DPR efectivo, nunca lo sube. El renderer es su único
-   * dueño del timing: se alimenta con el intervalo real de rAF de cada frame de juego.
+   * Dueño único de la decisión de resolución (P3): la política decide preset y
+   * escala — y la razón — acá solo se aplica lo decidido. El renderer alimenta
+   * su puerto con el intervalo real de rAF de cada frame de juego.
    */
-  private readonly adaptiveScale: AdaptiveScale;
-  private scaleValue = 1;
+  private readonly policy: ResolutionPolicy;
   /** performance.now() del draw anterior de juego; alimenta el controlador de escala. */
   private lastFrameAt = 0;
   private lastCalls = 0;
@@ -509,7 +508,7 @@ export class Renderer {
     const useAuthored = this.hooks.authoredViewmodel ?? new URLSearchParams(window.location.search).get('viewmodel') !== 'kenney';
     this.viewmodel = new Viewmodel(this.viewCamera, useAuthored);
     this.enemies = new EnemyPool(this.scene);
-    this.adaptiveScale = new AdaptiveScale();
+    this.policy = sharedResolutionPolicy();
 
     this.resize();
   }
@@ -548,23 +547,22 @@ export class Renderer {
 
   /**
    * Fija el factor adaptativo desde afuera (driver externo, futuro toggle del jugador).
-   * Reinicia el controlador interno a esa escala: la decisión siguiente parte de ahí.
+   * La escala se fija en la política: la decisión siguiente parte de ahí.
    */
   setAdaptiveScale(scale: number): void {
     const s = Number.isFinite(scale) ? Math.min(1, Math.max(MIN_RENDER_SCALE, scale)) : 1;
-    this.scaleValue = s;
-    this.adaptiveScale.reset(s);
+    this.policy.resetScale(s);
     this.applyAdaptiveScale();
   }
 
   /** Factor adaptativo vigente (1 = presupuesto completo): lo lee el panel de engineering. */
   get renderScale(): number {
-    return this.scaleValue;
+    return this.policy.scale;
   }
 
-  /** Controlador de escala (escala, piso, contador de recortes): entrada del gate del controlador de preset. */
-  get adaptive(): AdaptiveScale {
-    return this.adaptiveScale;
+  /** Última decisión del dueño único de resolución (preset + escala + razón): la lee el panel. */
+  get resolution(): ResolutionDecision {
+    return this.policy.decision;
   }
 
   /**
@@ -651,9 +649,9 @@ export class Renderer {
     }
   }
 
-  /** DPR efectivo del preset vigente, incluido el recorte adaptativo (T5b). */
+  /** DPR efectivo del preset vigente, incluido el recorte decidido por la política. */
   private computeDpr(): number {
-    return playPixelRatio(this.presetValue, this.cssWidth, this.cssHeight, this.dprCap, window.devicePixelRatio || 1, this.scaleValue);
+    return playPixelRatio(this.presetValue, this.cssWidth, this.cssHeight, this.dprCap, window.devicePixelRatio || 1, this.policy.scale);
   }
 
   /** Re-aplica solo el DPR (y el target del composer) tras un cambio de escala, sin resize completo. */
@@ -949,16 +947,13 @@ export class Renderer {
 
   /** One frame: reset the counters once, render through the composer or directly, record metrics. */
   private draw(r: THREE.WebGLRenderer): void {
-    // Alimentación del recorte adaptativo (T5b): intervalo real de rAF de juego
+    // Alimentación del puerto de escala del dueño único (P3): intervalo real de rAF de juego
     // (los frames de órbita del menú no mueven la señal: no hace falta proteger el menú).
-    // La decisión de un hitch/pausa (Δ > 250 ms) se ignora dentro de AdaptiveScale.
+    // La decisión de un hitch/pausa (Δ > 250 ms) se ignora dentro de la política.
     const now = performance.now();
     if (!this.drawingOrbit && this.lastFrameAt > 0) {
-      const decision = this.adaptiveScale.sample(now - this.lastFrameAt);
-      if (decision.changed) {
-        this.scaleValue = decision.scale;
-        this.applyAdaptiveScale();
-      }
+      const decision = this.policy.sampleRenderSignal(now - this.lastFrameAt);
+      if (decision.changed) this.applyAdaptiveScale();
     }
     this.lastFrameAt = now;
     this.sector?.setTime(this.elapsed);
