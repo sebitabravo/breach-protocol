@@ -144,13 +144,6 @@ export const I = {
 export const INPUT_LEN = 16;
 
 export const WEAPON = { sidearm: 1, carbine: 2, shotgun: 3 } as const;
-
-export const WEAPON_LABEL: Record<number, string> = {
-  [WEAPON.sidearm]: 'PB-01 SIDEARM',
-  [WEAPON.carbine]: 'AR-04 CARBINE',
-  [WEAPON.shotgun]: 'SG-08 SCATTER',
-};
-
 export function assertProtocol(version: number): void {
   if (version !== PROTOCOL_VERSION) {
     throw new Error(
