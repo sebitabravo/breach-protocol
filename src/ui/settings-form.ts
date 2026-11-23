@@ -2,7 +2,7 @@
  * Enlaza los controles de ajustes (pausa y calibración) con `Settings`. No guarda
  * nada: reporta cambios como parches y se resincroniza desde el estado real.
  */
-import { GFX_EFFECTS, type GfxOverride, type Locale, type Quality, type Settings } from '../core/settings';
+import { GFX_EFFECTS, type GfxOverride, type Quality, type Settings } from '../core/settings';
 import { byId } from './dom';
 
 export interface SettingsFormHooks {
@@ -35,50 +35,6 @@ export function sensitivityOf(settings: Settings, usingTouch: boolean): number {
 
 function isChecked(node: Field): boolean {
   return (node as HTMLInputElement).checked;
-}
-
-/**
- * Rótulos del grupo gráfico. La página base va en español (lang="es") y el
- * único mecanismo de idioma del proyecto es `settings.locale` (es/en), así
- * que los rótulos se resincronizan desde la vista en cada sync en vez de
- * quedar clavados a un solo idioma en el marcado.
- */
-const GFX_LABELS: Record<Locale, { group: string; items: Record<string, string>; options: [string, string, string] }> = {
-  es: {
-    group: 'Detalle por efecto (auto sigue a la calidad elegida)',
-    items: {
-      bloom: 'Bloom',
-      shadows: 'Sombras',
-      environment: 'Entorno (reflejos HDRI)',
-      lights: 'Luces prácticas',
-      mist: 'Neblina',
-    },
-    options: ['Auto', 'Activado', 'Desactivado'],
-  },
-  en: {
-    group: 'Per-effect detail (auto follows the chosen quality)',
-    items: {
-      bloom: 'Bloom',
-      shadows: 'Shadows',
-      environment: 'Environment (HDRI reflections)',
-      lights: 'Practical lights',
-      mist: 'Mist',
-    },
-    options: ['Auto', 'On', 'Off'],
-  },
-};
-
-/** Aplica ajustes de marcado: nada aquí toca la identidad del juego. */
-function localizeGfxLabels(locale: Locale): void {
-  const t = GFX_LABELS[locale];
-  const group = document.getElementById('gfx-group-label');
-  if (group) group.textContent = t.group;
-  for (const effect of GFX_EFFECTS) {
-    const label = document.getElementById(`gfx-label-${effect}`);
-    if (label) label.textContent = t.items[effect];
-    const select = document.getElementById(`set-gfx-${effect}`) as HTMLSelectElement | null;
-    if (select) for (const [i, option] of Array.from(select.options).entries()) option.textContent = t.options[i];
-  }
 }
 
 export class SettingsForm {
@@ -174,7 +130,8 @@ export class SettingsForm {
       const key = `gfx${effect[0].toUpperCase()}${effect.slice(1)}` as keyof Settings;
       set(`set-gfx-${effect}`, settings[key]);
     }
-    localizeGfxLabels(settings.locale);
+    // Los rótulos del grupo gráfico viven en el catálogo de i18n y se aplican
+    // declarativamente (data-i18n / data-i18n en las options); no hay mapa local.
     set('calib-sens', calibSens);
     set('calib-invert', settings.invertY);
     set('calib-autoreload', settings.autoReload);

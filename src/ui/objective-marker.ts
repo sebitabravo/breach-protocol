@@ -1,4 +1,5 @@
 import { CLOSE_OBJECTIVE_METRES, fitObjective, formatObjectiveDistance, projectObjective, roundedObjectiveDistance, type ObjectiveClip, type ObjectiveProjection, type ScreenRect } from '../render/objective-projection';
+import { t } from '../i18n/runtime';
 import { byId } from './dom';
 
 const PROTECTED = '.hud__minimap, .hud__block, .hud__objective-track, .hud__feed, .vitals, .ammo, #crosshair, #tutorial, .touch__stick, .tbtn';
@@ -66,7 +67,7 @@ export class ObjectiveMarker {
     }
     const close = metres < CLOSE_OBJECTIVE_METRES;
     const changed = target !== this.target;
-    if (changed) this.name.textContent = `Terminal ${String(target + 1).padStart(2, '0')}`;
+    if (changed) this.name.textContent = t('objective.terminalFmt', { n: String(target + 1).padStart(2, '0') });
     if (close !== this.close) {
       this.root.toggleAttribute('data-close', close);
       this.distance.hidden = close;
@@ -79,14 +80,14 @@ export class ObjectiveMarker {
         this.distance.textContent = formatObjectiveDistance(rounded);
       }
     } else if (usingTouch !== this.usingTouch || !this.close) {
-      this.hold.textContent = usingTouch ? 'mantené Ⓔ' : 'mantené E';
+      this.hold.textContent = usingTouch ? t('objective.holdTouch') : t('objective.holdKey');
     }
     // Do not make distance or camera movement live regions.
     if (changed || ready !== this.ready || (ready && usingTouch !== this.usingTouch)) {
       this.root.toggleAttribute('data-ready', ready);
       this.status.textContent = ready
-        ? `${this.name.textContent}. Mantené ${usingTouch ? 'el botón de interactuar' : 'E'} para activar.`
-        : `Objetivo marcado: ${this.name.textContent}.`;
+        ? t('objective.readyFmt', { name: this.name.textContent, action: usingTouch ? t('objective.actionTouch') : 'E' })
+        : t('objective.markedFmt', { name: this.name.textContent });
     }
     this.target = target;
     this.close = close;

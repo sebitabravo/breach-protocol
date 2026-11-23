@@ -5,16 +5,15 @@ import {
   type ProgressState,
 } from '../core/progress';
 import { SECTOR_IDS, sectorInfo, type SectorId } from '../core/sectors';
+import { t, formatNumber, formatDurationMs } from '../i18n/runtime';
 import { byId } from './dom';
 
-export function clock(ms: number | null): string {
-  if (ms === null) return '—';
-  const seconds = Math.floor(ms / 1000);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+function clock(ms: number | null): string {
+  return ms === null ? '—' : formatDurationMs(ms);
 }
 
 function points(value: number): string {
-  return value > 0 ? value.toLocaleString('es-CL') : '—';
+  return value > 0 ? formatNumber(value) : '—';
 }
 
 function sectorLabel(id: SectorId): string {
@@ -45,7 +44,10 @@ export function renderSectorCards(state: ProgressState): void {
     const cleared = isSectorCleared(state, id);
     card.dataset.state = !unlocked ? 'locked' : cleared ? 'cleared' : 'open';
     const label = document.querySelector<HTMLElement>(`[data-state-label="${id}"]`);
-    if (label) label.textContent = !unlocked ? 'bloqueado' : cleared ? 'completado' : 'disponible';
+    if (label) label.textContent = !unlocked ? t('sectors.stateLocked') : cleared ? t('sectors.stateCleared') : t('sectors.stateOpen');
+    const title = card.querySelector<HTMLElement>('.sector__title');
+    // El dueño del nombre del sector es sectors.ts; la tarjeta lo refleja.
+    if (title) title.textContent = sectorInfo(id).title;
     const score = document.querySelector<HTMLElement>(`[data-sector-score="${id}"]`);
     if (score) score.textContent = points(record.bestScore);
     const time = document.querySelector<HTMLElement>(`[data-sector-time="${id}"]`);
@@ -53,7 +55,7 @@ export function renderSectorCards(state: ProgressState): void {
     const lock = document.querySelector<HTMLElement>(`[data-sector-lock="${id}"]`);
     if (lock) {
       lock.hidden = unlocked;
-      lock.textContent = unlocked ? '' : `Completá ${sectorLabel((id - 1) as SectorId)} para desbloquear.`;
+      lock.textContent = unlocked ? '' : t('sectors.lockFmt', { sector: sectorLabel((id - 1) as SectorId) });
     }
     const button = card.querySelector<HTMLButtonElement>('button[data-action="brief"]');
     if (button) button.disabled = !unlocked;
@@ -62,8 +64,11 @@ export function renderSectorCards(state: ProgressState): void {
 
 export function renderBriefing(id: SectorId): void {
   const sector = sectorInfo(id);
-  byId('brief-eyebrow').textContent = `misión 0${id + 1}`;
-  byId('brief-title').textContent = `Reactivación del ${sector.code.toLowerCase().replace('_', ' ')} · ${sector.title}`;
+  byId('brief-eyebrow').textContent = t('brief.eyebrowFmt', { n: `0${id + 1}` });
+  byId('brief-title').textContent = t('brief.titleFmt', {
+    sector: sector.code.toLowerCase().replace('_', ' '),
+    title: sector.title,
+  });
   byId('brief-narrative').textContent = sector.narrative;
   fillList(byId('brief-objectives'), sector.objectives);
   fillList(byId('brief-rewards'), sector.rewards);

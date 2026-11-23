@@ -53,6 +53,8 @@ import {
 } from './tutorial';
 import { boardFor, fetchBoard, sanitizeName, submitRun, type BoardKey, type RunMode } from '../net/leaderboard';
 import { MUTATORS, type MapData, type Mutator } from '../world/map';
+import { t, initI18n, onLocaleChange, formatNumber, formatTime } from '../i18n/runtime';
+import { CATALOG, type CatalogKey } from '../i18n/catalog';
 import {
   INITIAL_FLOW,
   escapeAction,
@@ -104,10 +106,10 @@ function clampSector(id: number): SectorId {
 }
 
 function ineligibleReason(mode: Mode, won: boolean, shotgunEnabled: boolean): string {
-  if (mode === 'practice') return 'El simulador no cuenta para ningún tablero.';
-  if (shotgunEnabled) return 'Las partidas con SG-08 no entran al tablero: el desbloqueo no se puede verificar.';
-  if (mode === 'run' && !won) return 'Las derrotas de misión no entran al tablero. Reintentá el sector.';
-  return 'Esta partida no entra a ningún tablero.';
+  if (mode === 'practice') return t('board.ineligiblePractice');
+  if (shotgunEnabled) return t('board.ineligibleShotgun');
+  if (mode === 'run' && !won) return t('board.ineligibleLoss');
+  return t('board.ineligibleOther');
 }
 
 /**
@@ -204,9 +206,9 @@ export function devEngineeringRequested(search: string): boolean {
 }
 
 /** Rótulos de la resiliencia de arranque. La página base va en español (lang="es")
- *  y el único mecanismo de idioma del proyecto es `settings.locale` (es/en),
- *  igual que los rótulos gráficos de SettingsForm: se resuelven desde el idioma
- *  cargado, sin una segunda vía de traducción en el marcado. */
+ *  y el único mecanismo de idioma del proyecto es `settings.locale` (es/en).
+ *  El copy vive en el catálogo único de i18n; esta ficha es una proyección del
+ *  catálogo para el camino de boot (sin segundo origen de verdad). */
 export interface BootCopy {
   slow: string;
   unsupportedTitle: string;
@@ -216,35 +218,20 @@ export interface BootCopy {
   items: Record<BootCapability, string>;
 }
 
-const BOOT_COPY: Record<Locale, BootCopy> = {
-  es: {
-    slow: 'el arranque está tardando más de lo usual…',
-    unsupportedTitle: 'Este navegador no puede iniciar el protocolo',
-    unsupportedBody: 'Faltan capacidades obligatorias para ejecutar el juego. Probá una versión actualizada de:',
-    floor: 'versiones mínimas',
-    retry: 'Reintentar',
-    items: {
-      wasm: 'WebAssembly (núcleo de simulación)',
-      webgl2: 'WebGL2 (render del juego)',
-      runtime: `APIs del arranque: ${BOOT_REQUIRED_RUNTIME_APIS.join(', ')}`,
-    },
-  },
-  en: {
-    slow: 'Boot is taking longer than usual…',
-    unsupportedTitle: 'This browser cannot start the protocol',
-    unsupportedBody: 'Required capabilities to run the game are missing. Try an updated version of:',
-    floor: 'minimum versions',
-    retry: 'Retry',
-    items: {
-      wasm: 'WebAssembly (simulation core)',
-      webgl2: 'WebGL2 (game renderer)',
-      runtime: `Boot APIs: ${BOOT_REQUIRED_RUNTIME_APIS.join(', ')}`,
-    },
-  },
-};
-
 export function bootCopy(locale: Locale): BootCopy {
-  return BOOT_COPY[locale];
+  const pick = (key: CatalogKey): string => CATALOG[locale][key];
+  return {
+    slow: pick('boot.slow'),
+    unsupportedTitle: pick('boot.unsupportedTitle'),
+    unsupportedBody: pick('boot.unsupportedBody'),
+    floor: pick('boot.floor'),
+    retry: pick('boot.retry'),
+    items: {
+      wasm: pick('boot.itemsWasm'),
+      webgl2: pick('boot.itemsWebgl2'),
+      runtime: pick('boot.itemsRuntimeFmt').replace('{apis}', BOOT_REQUIRED_RUNTIME_APIS.join(', ')),
+    },
+  };
 }
 
 export class GameApp {
@@ -295,6 +282,8 @@ export class GameApp {
   private readonly destructiveConfirm = new Map<string, SkipConfirm>();
   private boardToken = 0;
   private lastSeq = 0;
+  private lastRendered: { run: RunResult; isRecord: boolean; truncated: boolean } | null = null;
+  private offLocaleChange: (() => void) | null = null;
   private events: WorldEvent[] = [];
   private frameSamples: number[] = [];
   private lastNow = 0;
@@ -312,7 +301,9 @@ export class GameApp {
   async boot(takeIntent: () => HTMLElement | undefined): Promise<void> {
     const view = new BootView();
     const forced = forcedBootState(window.location.search);
-    const copy = bootCopy(this.settings.locale);
+    // Un solo mecanismo de idioma: el runtime aplica el catálogo y repinta el
+    // marcado estático antes de que el flujo pinte nada dinámico.
+    initI18n(this.settings.locale);
     // La acción de recuperación vive en la pantalla de boot y recarga la página:
     // se ata acá porque bindGlobalUI solo corre si el arranque completa.
     byId('boot-retry').addEventListener('click', () => window.location.reload(), { signal: this.abort.signal });
@@ -322,7 +313,7 @@ export class GameApp {
     const bootStartedAt = performance.now();
     const surfaceBootSlow = (kind: 'slow' | 'stalled'): void => {
       const note = byId('boot-slow');
-      note.textContent = copy.slow;
+      note.textContent = t('boot.slow');
       note.hidden = false;
       if (kind === 'stalled') byId('boot-retry').hidden = false;
     };
@@ -361,7 +352,7 @@ export class GameApp {
           if (capability !== 'runtime') view.setCheck(capability, 'fail');
         }
         stopBootWatch();
-        this.renderBootUnsupported(missing, copy);
+        this.renderBootUnsupported(missing);
         this.dispatch({ type: 'boot-failed' });
         return;
       }
@@ -412,9 +403,10 @@ export class GameApp {
       // ni dejar su intervalo vivo.
       stopBootWatch();
       view.setProgress(100);
-      view.setMeta(`núcleo listo · ${this.wasmKib.toFixed(1)} KiB · ${this.loadMs.toFixed(0)} ms`);
+      view.setMeta(t('boot.metaReadyFmt', { kib: this.wasmKib.toFixed(1), ms: this.loadMs.toFixed(0) }));
 
       this.bindGlobalUI();
+      this.offLocaleChange = onLocaleChange(() => this.relocalize());
       const intent = takeIntent();
       // P4: ningún boot completo pasa por calibración; el menú es la pantalla de aterrizaje.
       this.dispatch({ type: 'boot-complete' });
@@ -439,11 +431,11 @@ export class GameApp {
   /** Pantalla dedicada de navegador sin soporte: nombra lo que falta, el piso de
    *  versiones y la única acción útil (ir a un navegador actualizado; Reintentar
    *  no puede crear una capability). */
-  private renderBootUnsupported(missing: readonly BootCapability[], copy: BootCopy): void {
+  private renderBootUnsupported(missing: readonly BootCapability[]): void {
     const section = byId('screen-fallback');
     section.dataset.boot = 'unsupported';
-    byId('fallback-title').textContent = copy.unsupportedTitle;
-    byId('fallback-detail').textContent = copy.unsupportedBody;
+    byId('fallback-title').textContent = t('boot.unsupportedTitle');
+    byId('fallback-detail').textContent = t('boot.unsupportedBody');
     const list = byId('fallback-missing');
     list.replaceChildren(...missing.map((id) => {
       const item = document.createElement('li');
@@ -451,12 +443,12 @@ export class GameApp {
       item.setAttribute('data-state', 'fail');
       const dot = document.createElement('span');
       dot.className = 'check__dot';
-      item.append(dot, copy.items[id]);
+      item.append(dot, t(`boot.items${id[0].toUpperCase()}${id.slice(1)}` as CatalogKey));
       return item;
     }));
     list.hidden = false;
     byId('fallback-floor').textContent =
-      `${copy.floor}: ${BOOT_MINIMUM_BROWSERS.map((browser) => `${browser.name} ${browser.version}+`).join(' · ')}`;
+      `${t('boot.floor')}: ${BOOT_MINIMUM_BROWSERS.map((browser) => `${browser.name} ${browser.version}+`).join(' · ')}`;
     byId('fallback-floor').hidden = false;
     byId('fallback-retry').hidden = true;
   }
@@ -606,9 +598,9 @@ export class GameApp {
     const sector = sectorInfo(clampSector(this.map?.id ?? 0));
     const labels: Record<Mode, { code: string; name: string }> = {
       run: { code: sector.code.replace('_', ' '), name: sector.title },
-      overflow: { code: 'OVERFLOW', name: sector.title },
-      daily: { code: 'DIARIO', name: sector.title },
-      practice: { code: 'SIMULADOR', name: 'Campo de práctica' },
+      overflow: { code: t('hud.overflowCode'), name: sector.title },
+      daily: { code: t('hud.dailyCode'), name: sector.title },
+      practice: { code: t('hud.practiceCode'), name: t('hud.practiceName') },
     };
     return {
       mode,
@@ -626,16 +618,20 @@ export class GameApp {
       : [WEAPON.sidearm, WEAPON.carbine];
   }
 
+  private pauseSubtitleFor(): string {
+    return this.flow.pauseOrigin === 'menu' ? t('pause.settingsSub') : pauseSubtitle(this.flow.mode, this.flow.mapId);
+  }
+
   private pause(origin: PauseOrigin = this.flow.pauseOrigin): void {
     if (!this.dispatch({ type: 'pause', origin })) return;
-    byId('pause-sub').textContent = pauseSubtitle(this.flow.mode, this.flow.mapId);
+    byId('pause-sub').textContent = this.pauseSubtitleFor();
     this.syncPauseLabels();
     this.audio.suspend();
   }
 
   private syncPauseLabels(): void {
     const resume = this.app.querySelector<HTMLElement>('#screen-pause [data-action="resume"]');
-    if (resume) resume.textContent = this.flow.pauseOrigin === 'menu' ? 'Volver ▸' : 'Continuar ▸';
+    if (resume) resume.textContent = this.flow.pauseOrigin === 'menu' ? t('pause.resumeBack') : t('pause.resume');
   }
 
   private resume(): void {
@@ -649,7 +645,7 @@ export class GameApp {
 
   private openSettingsFromMenu(): void {
     if (!this.dispatch({ type: 'settings' })) return;
-    byId('pause-sub').textContent = 'Ajustes del protocolo';
+    byId('pause-sub').textContent = t('pause.settingsSub');
     this.syncPauseLabels();
   }
 
@@ -658,7 +654,7 @@ export class GameApp {
     // partida que abandonar. El menú es el destino solo sin partida viva detrás.
     if (this.flow.screen === 'calibrate' && this.flow.pauseOrigin === 'game') {
       if (this.dispatch({ type: 'open', screen: 'pause' })) {
-        byId('pause-sub').textContent = pauseSubtitle(this.flow.mode, this.flow.mapId);
+        byId('pause-sub').textContent = this.pauseSubtitleFor();
         this.syncPauseLabels();
       }
       return;
@@ -698,6 +694,7 @@ export class GameApp {
     const truncated = this.engine.logTruncated;
     this.pending = this.capturePending(mode, won, truncated);
     renderResult(run, run.score > 0 && run.score > (previousBest ?? 0), truncated);
+    this.lastRendered = { run, isRecord: run.score > 0 && run.score > (previousBest ?? 0), truncated };
     this.renderUnlocks(before, after, won);
     byId<HTMLInputElement>('board-name').value = this.progress.state.playerName;
     renderBoardPanel(this.boardPanel());
@@ -741,7 +738,7 @@ export class GameApp {
 
   private boardPanel(): BoardPanel {
     const pending = this.pending;
-    if (!pending) return { kind: 'ineligible', reason: 'Sin partida para enviar.' };
+    if (!pending) return { kind: 'ineligible', reason: t('board.noPending') };
     if (pending.board === null) return { kind: 'ineligible', reason: pending.reason };
     return { kind: 'idle', where: boardLabel(pending.board) };
   }
@@ -752,15 +749,15 @@ export class GameApp {
     const runWon = this.flow.mode === 'run' && won;
     const lines: string[] = [];
     if (runWon && nextSector !== null && isSectorUnlocked(after, nextSector) && !isSectorUnlocked(before, nextSector)) {
-      lines.push(`${SECTORS[nextSector].code} desbloqueado`);
+      lines.push(t('unlock.sectorFmt', { code: SECTORS[nextSector].code }));
     }
     if (runWon && sector === 1 && isShotgunUnlocked(after) && !isShotgunUnlocked(before)) {
-      lines.push('SG-08 desbloqueada');
+      lines.push(t('unlock.shotgun'));
     }
     if (runWon && sector === 2 && isSectorCleared(after, sector) && !isSectorCleared(before, sector)) {
-      lines.push('Red recuperada');
+      lines.push(t('unlock.network'));
     }
-    byId('result-unlock').textContent = lines.length ? `Recompensa: ${lines.join(' · ')}` : '';
+    byId('result-unlock').textContent = lines.length ? t('unlock.fmt', { items: lines.join(' · ') }) : '';
     byId('result-unlock').hidden = lines.length === 0;
     byId('result-next').hidden = !(runWon && nextSector !== null);
   }
@@ -792,7 +789,7 @@ export class GameApp {
 
   private refreshMenu(): void {
     const best = bestScore('run');
-    byId('menu-record').textContent = best === null ? 'récord: —' : `récord: ${best.toLocaleString('es-CL')}`;
+    byId('menu-record').textContent = t('menu.recordFmt', { score: best === null ? '—' : formatNumber(best) });
     renderMenu(this.progress.state);
   }
 
@@ -992,7 +989,7 @@ export class GameApp {
     const memory =
       'memory' in performance
         ? `${(((performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0) / 1048576).toFixed(0)} MB`
-        : 'no disponible';
+        : t('eng.memoryUnavailable');
     this.eng.update({
       fps: mean > 0 ? 1000 / mean : 0,
       p50: pick(0.5),
@@ -1007,7 +1004,7 @@ export class GameApp {
       memory,
       wasmKib: this.wasmKib,
       loadMs: this.loadMs,
-      note: `arranque: ${new Date(this.bootAt).toLocaleTimeString('es-CL')} · eventos perdidos: ${state?.lostEvents ?? 0}`,
+      note: t('eng.noteFmt', { time: formatTime(new Date(this.bootAt)), lost: state?.lostEvents ?? 0 }),
     });
   }
 
@@ -1028,7 +1025,7 @@ export class GameApp {
         if (repeat) return true;
         if (action === 'continue') this.setTutorialStep(continueTutorial(this.tutorial));
         else if (this.skipConfirm.press(performance.now()) === 'skip') this.setTutorialStep(skipTutorial(this.tutorial));
-        else this.toast('Retroceso otra vez para omitir el tutorial');
+        else this.toast(t('toast.tutorialSkip'));
         return true;
       },
       onPointerLockLost: () => {
@@ -1037,7 +1034,7 @@ export class GameApp {
         }
       },
       onPointerLockError: () => {
-        if (this.flow.screen !== 'tutorial-handoff' && pointerLockErrorAction(this.flow) === 'hint') this.toast('clic para capturar el mouse');
+        if (this.flow.screen !== 'tutorial-handoff' && pointerLockErrorAction(this.flow) === 'hint') this.toast(t('toast.pointerLock'));
       },
       isPlaying: () => this.flow.screen === 'playing',
       onTouchDetected: () => {
@@ -1146,7 +1143,7 @@ export class GameApp {
       element.textContent = label;
       return true;
     }
-    element.textContent = '¿Seguro? Tocá de nuevo';
+    element.textContent = t('pause.confirm');
     window.setTimeout(() => { element.textContent = label; }, 3000);
     return false;
   }
@@ -1205,11 +1202,11 @@ export class GameApp {
         else this.resume();
         break;
       case 'restart':
-        if (!this.confirmInPause(action, element, 'Reiniciar')) break;
+        if (!this.confirmInPause(action, element, t('pause.restart'))) break;
         await this.startMatch(this.flow.mode, this.flow.mapId);
         break;
       case 'menu':
-        if (!this.confirmInPause(action, element, 'Salir al menú')) break;
+        if (!this.confirmInPause(action, element, t('pause.quit'))) break;
         this.goToMenu();
         break;
       case 'engineering':
@@ -1219,7 +1216,7 @@ export class GameApp {
         this.settings = resetSettings();
         this.applySettings();
         this.syncSettingsUI();
-        this.toast('ajustes restablecidos');
+        this.toast(t('toast.reset'));
         break;
       case 'retry':
         window.location.reload();
@@ -1330,12 +1327,36 @@ export class GameApp {
       settings: this.settings,
       telemetry: this.eng?.visible ?? this.settings.telemetry,
       usingTouch: this.input?.usingTouch ?? false,
-      gfxDetail: `preset ${this.renderer?.preset.name ?? '—'} · dpr ${(this.renderer?.dpr ?? 1).toFixed(2)} · aim assist ${this.settings.aimAssistTouch ? 'on' : 'off'}`,
+      gfxDetail: t('pause.gfxDetailFmt', {
+        preset: this.renderer?.preset.name ?? '—',
+        dpr: (this.renderer?.dpr ?? 1).toFixed(2),
+        assist: this.settings.aimAssistTouch ? t('pause.assistOn') : t('pause.assistOff'),
+      }),
     };
     this.settingsForm.sync(view);
   }
 
+  /** Re-render en vivo de lo que ya está en pantalla: el cambio de locale no recarga. */
+  private relocalize(): void {
+    this.refreshMenu();
+    if (this.flow.screen === 'pause') {
+      byId('pause-sub').textContent = this.pauseSubtitleFor();
+      this.syncPauseLabels();
+    }
+    if (this.flow.screen === 'sectors') renderSectorCards(this.progress.state);
+    if (this.flow.screen === 'briefing') renderBriefing(clampSector(this.flow.mapId));
+    if (this.flow.screen === 'result') {
+      if (this.lastRendered) renderResult(this.lastRendered.run, this.lastRendered.isRecord, this.lastRendered.truncated);
+      renderBoardPanel(this.boardPanel());
+    }
+    if (this.flow.screen === 'tutorial-handoff') renderTutorialHandoff(this.flow.outcome, this.flow.elapsedSeconds);
+    this.hud?.relocalize();
+    this.eng?.relocalize();
+    this.syncSettingsUI();
+  }
+
   dispose(): void {
+    this.offLocaleChange?.();
     this.abort.abort();
     cancelAnimationFrame(this.rafId);
     this.input?.detach();

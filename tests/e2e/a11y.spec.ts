@@ -31,6 +31,25 @@ test('Esc goes back one level on Cómo jugar and on settings opened from the men
   await screenIs(page, 'menu');
 });
 
+test('practice and tutorial replay in Cómo jugar are reachable and operable by keyboard', async ({ page }) => {
+  await page.locator('#screen-menu [data-goto="about"]').click();
+  await screenIs(page, 'about');
+  const practice = page.getByRole('button', { name: 'Campo de práctica' });
+  const replay = page.getByRole('button', { name: 'Repetir tutorial' });
+  await expect(practice).toBeVisible();
+  await expect(replay).toBeVisible();
+  // Botones nativos dentro de la pantalla: el orden de tabulación los alcanza
+  // desde el primer Tab y Enter activa la práctica.
+  let reached = '';
+  for (let i = 0; i < 40 && reached !== 'practice'; i += 1) {
+    await page.keyboard.press('Tab');
+    reached = await page.evaluate(() => document.activeElement?.closest('[data-action]')?.getAttribute('data-action') ?? '');
+  }
+  expect(reached, 'el teclado alcanza la práctica desde Cómo jugar').toBe('practice');
+  await page.keyboard.press('Enter');
+  await screenIs(page, 'playing');
+});
+
 test('the toast is announced politely to assistive technology', async ({ page }) => {
   const toast = page.locator('#toast');
   await expect(toast).toHaveAttribute('role', 'status');

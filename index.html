@@ -42,50 +42,50 @@
   </head>
   <body>
     <div id="app" data-screen="shell">
-      <canvas id="gl" class="gl" tabindex="-1" aria-label="Arena de juego"></canvas>
+      <canvas id="gl" class="gl" tabindex="-1" aria-label="Arena de juego" data-i18n-aria="hud.arenaAria"></canvas>
       <div class="gl-vignette" aria-hidden="true"></div>
       <div class="gl-scanlines" aria-hidden="true"></div>
 
       <!-- ============================ BOOT ============================ -->
-      <section id="screen-boot" class="screen screen--boot" aria-label="Cargando">
+      <section id="screen-boot" class="screen screen--boot" aria-label="Cargando" data-i18n-aria="boot.ariaLoading">
         <div class="boot">
           <div class="wordmark wordmark--lg">
             <span class="wordmark__slash">//</span>
             <span class="wordmark__text">SEBITA<span class="wordmark__colon">:</span> BREACH<br />PROTOCOL</span>
           </div>
-          <p class="boot__tagline">La red cayó. Queda una última conexión.</p>
+          <p class="boot__tagline" data-i18n="boot.tagline">La red cayó. Queda una última conexión.</p>
           <div class="boot__checks" id="boot-checks">
-            <div class="check" data-check="wasm"><span class="check__dot"></span>núcleo de simulación (wasm)</div>
-            <div class="check" data-check="webgl2"><span class="check__dot"></span>render webgl2</div>
-            <div class="check" data-check="arena"><span class="check__dot"></span>sector 01</div>
-            <div class="check" data-check="audio"><span class="check__dot"></span>sistema de audio</div>
+            <div class="check" data-check="wasm"><span class="check__dot"></span><span data-i18n="boot.checkWasm">núcleo de simulación (wasm)</span></div>
+            <div class="check" data-check="webgl2"><span class="check__dot"></span><span data-i18n="boot.checkWebgl2">render webgl2</span></div>
+            <div class="check" data-check="arena"><span class="check__dot"></span><span data-i18n="boot.checkArena">sector 01</span></div>
+            <div class="check" data-check="audio"><span class="check__dot"></span><span data-i18n="boot.checkAudio">sistema de audio</span></div>
           </div>
           <div class="boot__bar"><i id="boot-progress"></i></div>
-          <p class="boot__meta" id="boot-meta" role="status">inicializando…</p>
+          <p class="boot__meta" id="boot-meta" role="status" data-i18n="boot.metaInit">inicializando…</p>
           <p class="boot__slow" id="boot-slow" role="status" hidden></p>
           <div class="hero__actions">
-            <button class="btn btn--ghost" id="boot-retry" data-action="retry" hidden>Reintentar</button>
+            <button class="btn btn--ghost" id="boot-retry" data-action="retry" hidden data-i18n="boot.retry">Reintentar</button>
           </div>
         </div>
       </section>
 
       <!-- ============================ MENU ============================ -->
-      <section id="screen-menu" class="screen screen--menu" aria-label="Menú principal">
+      <section id="screen-menu" class="screen screen--menu" aria-label="Menú principal" data-i18n-aria="menu.aria">
         <aside class="menu__nav">
           <div class="wordmark wordmark--lg menu__wordmark">
             <span class="wordmark__slash">//</span>
             <span class="wordmark__text">SEBITA<span class="wordmark__colon">:</span> BREACH<br />PROTOCOL</span>
           </div>
-          <p class="menu__tagline">La red cayó. Queda una última conexión.</p>
-          <nav class="menu__list" aria-label="Menú principal">
+          <p class="menu__tagline" data-i18n="menu.tagline">La red cayó. Queda una última conexión.</p>
+          <nav class="menu__list" aria-label="Menú principal" data-i18n-aria="menu.aria">
             <button class="navitem navitem--primary" data-action="play">
-              <span class="navitem__label">Jugar</span><span class="navitem__meta" id="menu-play-meta">sector 01</span>
+              <span class="navitem__label" data-i18n="menu.play">Jugar</span><span class="navitem__meta" id="menu-play-meta">sector 01</span>
             </button>
             <button class="navitem" data-goto="about">
-              <span class="navitem__label">Cómo jugar</span><span class="navitem__meta">tutorial · práctica</span>
+              <span class="navitem__label" data-i18n="menu.howTo">Cómo jugar</span><span class="navitem__meta" data-i18n="menu.howToMeta">tutorial · práctica</span>
             </button>
             <button class="navitem" data-action="settings">
-              <span class="navitem__label">Ajustes</span><span class="navitem__meta">audio · gráficos · acceso</span>
+              <span class="navitem__label" data-i18n="menu.settingsLabel">Ajustes</span><span class="navitem__meta" data-i18n="menu.settingsMeta">audio · gráficos · acceso</span>
             </button>
           </nav>
         </aside>
@@ -94,29 +94,29 @@
           <div class="panel menu__art">
             <div class="panel__head">
               <span class="panel__label" id="menu-sector-code">sector 01 · core room</span>
-              <span class="chip chip--live">simulación</span>
+              <span class="chip chip--live" data-i18n="menu.simulation">simulación</span>
             </div>
             <div class="menu__scene" aria-hidden="true">
               <span class="menu__sector">SECTOR<br /><b>01</b></span>
               <span class="menu__monogram">//</span>
             </div>
             <dl class="kv">
-              <div><dt>núcleo</dt><dd>rust → wasm</dd></div>
-              <div><dt>render</dt><dd>three.js</dd></div>
-              <div><dt>paso fijo</dt><dd>60 hz</dd></div>
+              <div><dt data-i18n="menu.kvCore">núcleo</dt><dd>rust → wasm</dd></div>
+              <div><dt data-i18n="menu.kvRender">render</dt><dd>three.js</dd></div>
+              <div><dt data-i18n="menu.kvFixed">paso fijo</dt><dd>60 hz</dd></div>
             </dl>
           </div>
           <div class="panel menu__status">
-            <div class="panel__head"><span class="panel__label">estado de la red</span></div>
+            <div class="panel__head"><span class="panel__label" data-i18n="menu.networkStatus">estado de la red</span></div>
             <ul class="menu__stats">
-              <li><span>sectores recuperados</span><b id="menu-cleared">0/3</b></li>
+              <li><span data-i18n="menu.cleared">sectores recuperados</span><b id="menu-cleared">0/3</b></li>
             </ul>
           </div>
         </div>
 
         <footer class="menufoot">
-          <span>v0.1.0 · build local</span>
-          <span id="menu-record">récord: —</span>
+          <span data-i18n="menu.build">v0.1.0 · build local</span>
+          <span id="menu-record"></span>
           <span class="menufoot__links">
             <a class="navlink" href="https://sebita.dev" target="_blank" rel="noreferrer noopener">sebita.dev ↗</a>
           </span>
@@ -124,187 +124,193 @@
       </section>
 
       <!-- ============================ SECTORS ========================= -->
-      <section id="screen-sectors" class="screen screen--page" aria-label="Selección de sector">
+      <section id="screen-sectors" class="screen screen--page" aria-label="Selección de sector" data-i18n-aria="sectors.aria">
         <div class="page">
           <header class="page__head">
-            <p class="eyebrow">misión · campaña</p>
-            <h2>Selección de sector</h2>
-            <p>Reactivá los subsistemas en orden. Cada sector limpio abre el siguiente.</p>
+            <p class="eyebrow" data-i18n="sectors.eyebrow">misión · campaña</p>
+            <h2 data-i18n="sectors.title">Selección de sector</h2>
+            <p data-i18n="sectors.subtitle">Reactivá los subsistemas en orden. Cada sector limpio abre el siguiente.</p>
           </header>
           <div class="sector-grid">
             <article class="sector" data-sector-card="0">
               <div class="sector__head">
                 <span class="sector__code"><svg class="sector__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 20V8h6v12m-2-6h2"/></svg> SECTOR_01</span>
-                <span class="sector__state" data-state-label="0">disponible</span>
+                <span class="sector__state" data-state-label="0" data-i18n="sectors.stateOpen">disponible</span>
               </div>
-              <h3 class="sector__title">Control de Acceso</h3>
+              <h3 class="sector__title"></h3>
               <dl class="sector__stats">
-                <div><dt>mejor puntuación</dt><dd data-sector-score="0">—</dd></div>
-                <div><dt>mejor tiempo</dt><dd data-sector-time="0">—</dd></div>
+                <div><dt data-i18n="sectors.bestScore">mejor puntuación</dt><dd data-sector-score="0">—</dd></div>
+                <div><dt data-i18n="sectors.bestTime">mejor tiempo</dt><dd data-sector-time="0">—</dd></div>
               </dl>
               <p class="sector__lock" data-sector-lock="0" hidden></p>
-              <button class="btn btn--primary btn--block" data-action="brief" data-sector="0">Ver briefing ▸</button>
+              <button class="btn btn--primary btn--block" data-action="brief" data-sector="0" data-i18n="sectors.brief">Ver briefing ▸</button>
             </article>
             <article class="sector" data-sector-card="1">
               <div class="sector__head">
                 <span class="sector__code"><svg class="sector__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M3.34 7l17.32 10m0-10L3.34 17M9 4l3 3 3-3M9 20l3-3 3 3"/></svg> SECTOR_02</span>
-                <span class="sector__state" data-state-label="1">bloqueado</span>
+                <span class="sector__state" data-state-label="1" data-i18n="sectors.stateLocked">bloqueado</span>
               </div>
-              <h3 class="sector__title">Refrigeración</h3>
+              <h3 class="sector__title"></h3>
               <dl class="sector__stats">
-                <div><dt>mejor puntuación</dt><dd data-sector-score="1">—</dd></div>
-                <div><dt>mejor tiempo</dt><dd data-sector-time="1">—</dd></div>
+                <div><dt data-i18n="sectors.bestScore">mejor puntuación</dt><dd data-sector-score="1">—</dd></div>
+                <div><dt data-i18n="sectors.bestTime">mejor tiempo</dt><dd data-sector-time="1">—</dd></div>
               </dl>
               <p class="sector__lock" data-sector-lock="1" hidden></p>
-              <button class="btn btn--primary btn--block" data-action="brief" data-sector="1">Ver briefing ▸</button>
+              <button class="btn btn--primary btn--block" data-action="brief" data-sector="1" data-i18n="sectors.brief">Ver briefing ▸</button>
             </article>
             <article class="sector" data-sector-card="2">
               <div class="sector__head">
                 <span class="sector__code"><svg class="sector__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="5" rx="1"/><rect x="4" y="10" width="16" height="5" rx="1"/><rect x="4" y="16" width="16" height="5" rx="1"/><path d="M7 6.5h2m-2 6h2m-2 6h2"/></svg> SECTOR_03</span>
-                <span class="sector__state" data-state-label="2">bloqueado</span>
+                <span class="sector__state" data-state-label="2" data-i18n="sectors.stateLocked">bloqueado</span>
               </div>
-              <h3 class="sector__title">Archivo</h3>
+              <h3 class="sector__title"></h3>
               <dl class="sector__stats">
-                <div><dt>mejor puntuación</dt><dd data-sector-score="2">—</dd></div>
-                <div><dt>mejor tiempo</dt><dd data-sector-time="2">—</dd></div>
+                <div><dt data-i18n="sectors.bestScore">mejor puntuación</dt><dd data-sector-score="2">—</dd></div>
+                <div><dt data-i18n="sectors.bestTime">mejor tiempo</dt><dd data-sector-time="2">—</dd></div>
               </dl>
               <p class="sector__lock" data-sector-lock="2" hidden></p>
-              <button class="btn btn--primary btn--block" data-action="brief" data-sector="2">Ver briefing ▸</button>
+              <button class="btn btn--primary btn--block" data-action="brief" data-sector="2" data-i18n="sectors.brief">Ver briefing ▸</button>
             </article>
           </div>
           <footer class="page__foot">
-            <button class="btn btn--ghost" data-goto="menu">← Menú</button>
+            <button class="btn btn--ghost" data-goto="menu" data-i18n="sectors.back">← Menú</button>
           </footer>
         </div>
       </section>
 
       <!-- ============================ BRIEFING ======================== -->
-      <section id="screen-briefing" class="screen screen--page" aria-label="Briefing de misión">
+      <section id="screen-briefing" class="screen screen--page" aria-label="Briefing de misión" data-i18n-aria="brief.aria">
         <div class="page">
           <header class="page__head">
-            <p class="eyebrow" id="brief-eyebrow">misión 01</p>
-            <h2 id="brief-title">Reactivación del sector 01</h2>
+            <p class="eyebrow" id="brief-eyebrow"></p>
+            <h2 id="brief-title"></h2>
             <p id="brief-narrative" class="brief__narrative"></p>
           </header>
           <div class="brief-grid">
             <section class="panel brief__block">
-              <h3 class="panel__label">Objetivos</h3>
+              <h3 class="panel__label" data-i18n="brief.objectives">Objetivos</h3>
               <ul class="checklist" id="brief-objectives"></ul>
             </section>
             <section class="panel brief__block">
-              <h3 class="panel__label">Recompensas</h3>
+              <h3 class="panel__label" data-i18n="brief.rewards">Recompensas</h3>
               <ul class="checklist" id="brief-rewards"></ul>
-              <p class="brief__unlock"><span class="eyebrow">desbloquea</span> <b id="brief-unlock"></b></p>
+              <p class="brief__unlock"><span class="eyebrow" data-i18n="brief.unlocks">desbloquea</span> <b id="brief-unlock"></b></p>
             </section>
           </div>
           <footer class="page__foot">
-            <button class="btn btn--ghost" data-goto="sectors">← Volver</button>
-            <button class="btn btn--primary" data-action="start-mission">Iniciar misión ▸</button>
+            <button class="btn btn--ghost" data-goto="sectors" data-i18n="brief.back">← Volver</button>
+            <button class="btn btn--primary" data-action="start-mission" data-i18n="brief.start">Iniciar misión ▸</button>
           </footer>
         </div>
       </section>
 
       <!-- ============================ HOME: CALIBRATE ================= -->
-      <section id="screen-calibrate" class="screen screen--calibrate" aria-label="Calibración de controles">
+      <section id="screen-calibrate" class="screen screen--calibrate" aria-label="Calibración de controles" data-i18n-aria="calibrate.aria">
         <div class="sheet">
           <header class="sheet__head">
-            <h2>Calibración</h2>
-            <p>Ajustá sensibilidad y mano dominante. Se guarda en este equipo.</p>
+            <h2 data-i18n="calibrate.title">Calibración</h2>
+            <p data-i18n="calibrate.subtitle">Ajustá sensibilidad y mano dominante. Se guarda en este equipo.</p>
           </header>
           <div class="calib">
             <ol class="calib__steps">
-              <li><span class="calib__n">01</span><div><b>Movete</b><p>WASD en teclado, joystick a la izquierda en táctil.</p></div></li>
-              <li><span class="calib__n">02</span><div><b>Mirá</b><p>Mouse con pointer lock, arrastrá con el pulgar derecho en táctil.</p></div></li>
-              <li><span class="calib__n">03</span><div><b>Dispará</b><p>Click izquierdo o el botón de disparo. Mantené para automático.</p></div></li>
+              <li><span class="calib__n">01</span><div><b data-i18n="calibrate.stepMoveTitle">Movete</b><p data-i18n="calibrate.stepMoveBody">WASD en teclado, joystick a la izquierda en táctil.</p></div></li>
+              <li><span class="calib__n">02</span><div><b data-i18n="calibrate.stepLookTitle">Mirá</b><p data-i18n="calibrate.stepLookBody">Mouse con pointer lock, arrastrá con el pulgar derecho en táctil.</p></div></li>
+              <li><span class="calib__n">03</span><div><b data-i18n="calibrate.stepShootTitle">Dispará</b><p data-i18n="calibrate.stepShootBody">Click izquierdo o el botón de disparo. Mantené para automático.</p></div></li>
             </ol>
             <div class="calib__form">
               <fieldset class="field">
-                <legend>Mano dominante</legend>
-                <div class="segmented" role="radiogroup" aria-label="Mano dominante">
-                  <button class="seg is-active" role="radio" aria-checked="true" data-handedness="right">Diestro</button>
-                  <button class="seg" role="radio" aria-checked="false" data-handedness="left">Zurdo</button>
+                <legend data-i18n="calibrate.hand">Mano dominante</legend>
+                <div class="segmented" role="radiogroup" aria-label="Mano dominante" data-i18n-aria="calibrate.hand">
+                  <button class="seg is-active" role="radio" aria-checked="true" data-handedness="right" data-i18n="calibrate.right">Diestro</button>
+                  <button class="seg" role="radio" aria-checked="false" data-handedness="left" data-i18n="calibrate.left">Zurdo</button>
                 </div>
               </fieldset>
               <label class="field" for="calib-sens">
-                <span class="field__label">Sensibilidad <b id="calib-sens-val">1.00×</b></span>
+                <span class="field__label"><span data-i18n="calibrate.sensitivity">Sensibilidad</span> <b id="calib-sens-val">1.00×</b></span>
                 <input id="calib-sens" type="range" min="0.2" max="3" step="0.05" value="1" />
               </label>
               <label class="field field--row" for="calib-invert">
-                <span class="field__label">Invertir eje Y</span>
+                <span class="field__label" data-i18n="calibrate.invertY">Invertir eje Y</span>
                 <input id="calib-invert" type="checkbox" class="switch" role="switch" />
               </label>
               <label class="field field--row" for="calib-autoreload">
-                <span class="field__label">Auto-recarga</span>
+                <span class="field__label" data-i18n="calibrate.autoReload">Auto-recarga</span>
                 <input id="calib-autoreload" type="checkbox" class="switch" role="switch" checked />
               </label>
               <label class="field field--row" for="calib-aimassist">
-                <span class="field__label">Ayuda de puntería (táctil)</span>
+                <span class="field__label" data-i18n="calibrate.aimAssist">Ayuda de puntería (táctil)</span>
                 <input id="calib-aimassist" type="checkbox" class="switch" role="switch" checked />
               </label>
             </div>
           </div>
           <footer class="sheet__foot">
-            <button class="btn btn--ghost" data-goto="menu">Volver</button>
+            <button class="btn btn--ghost" data-goto="menu" data-i18n="calibrate.back">Volver</button>
           </footer>
         </div>
       </section>
 
       <!-- ============================ ABOUT ========================== -->
-      <section id="screen-about" class="screen screen--about" aria-label="Cómo funciona">
+      <section id="screen-about" class="screen screen--about" aria-label="Cómo funciona" data-i18n-aria="about.aria">
         <div class="sheet sheet--wide">
           <header class="sheet__head">
-            <h2>Cómo funciona</h2>
-            <p>Qué corre dónde, y por qué está hecho así.</p>
+            <h2 data-i18n="about.title">Cómo funciona</h2>
+            <p data-i18n="about.subtitle">Qué corre dónde, y por qué está hecho así.</p>
           </header>
           <div class="about-grid">
             <article class="card">
-              <h3><span class="card__n">01</span> Núcleo en Rust</h3>
-              <p>Movimiento, colisiones contra cajas, hitscan, máquinas de estado de los enemigos, oleadas y objetivos se simulan en Rust compilado a WebAssembly. Paso fijo de 60 Hz y RNG con semilla: la misma entrada produce el mismo mundo.</p>
-              <p class="mono-dim">core/ · pruebas deterministas · wasm de ~78 KiB</p>
+              <h3><span class="card__n">01</span> <span data-i18n="about.card1Title">Núcleo en Rust</span></h3>
+              <p data-i18n="about.card1Body">Movimiento, colisiones contra cajas, hitscan, máquinas de estado de los enemigos, oleadas y objetivos se simulan en Rust compilado a WebAssembly. Paso fijo de 60 Hz y RNG con semilla: la misma entrada produce el mismo mundo.</p>
+              <p class="mono-dim" data-i18n="about.card1Meta">core/ · pruebas deterministas · wasm de ~78 KiB</p>
             </article>
             <article class="card">
-              <h3><span class="card__n">02</span> Render con Three.js</h3>
-              <p>La escena se dibuja desde el snapshot de la simulación. Cajas instanciadas, geometría combinada por enemigo, cero texturas externas y calidad adaptable con histéresis.</p>
-              <p class="mono-dim">draw calls + triángulos visibles en Engineering Mode</p>
+              <h3><span class="card__n">02</span> <span data-i18n="about.card2Title">Render con Three.js</span></h3>
+              <p data-i18n="about.card2Body">La escena se dibuja desde el snapshot de la simulación. Cajas instanciadas, geometría combinada por enemigo, cero texturas externas y calidad adaptable con histéresis.</p>
+              <p class="mono-dim" data-i18n="about.card2Meta">draw calls + triángulos visibles en Engineering Mode</p>
             </article>
             <article class="card">
-              <h3><span class="card__n">03</span> Cero copias por frame</h3>
-              <p>El snapshot vive en la memoria lineal del módulo. El navegador lo lee con un <code>Float32Array</code> sobre el mismo buffer: no hay <i>JSON</i> ni serialización entre Rust y JavaScript.</p>
+              <h3><span class="card__n">03</span> <span data-i18n="about.card3Title">Cero copias por frame</span></h3>
+              <p><span data-i18n="about.card3Body1">El snapshot vive en la memoria lineal del módulo. El navegador lo lee con un</span> <code>Float32Array</code> <span data-i18n="about.card3Body2">sobre el mismo buffer: no hay</span> <i>JSON</i> <span data-i18n="about.card3Body3">ni serialización entre Rust y JavaScript.</span></p>
               <p class="mono-dim">bp_snapshot_ptr() + protocol.ts</p>
             </article>
             <article class="card">
-              <h3><span class="card__n">04</span> Tablero verificable</h3>
-              <p>Cada partida se guarda como registro de entradas. El servidor la re-simula con el mismo núcleo y calcula el puntaje él mismo. Las derrotas de misión no entran al tablero.</p>
+              <h3><span class="card__n">04</span> <span data-i18n="about.card4Title">Tablero verificable</span></h3>
+              <p data-i18n="about.card4Body">Cada partida se guarda como registro de entradas. El servidor la re-simula con el mismo núcleo y calcula el puntaje él mismo. Las derrotas de misión no entran al tablero.</p>
               <p class="mono-dim">docs/api-contract.md</p>
             </article>
           </div>
+          <!-- P4: "Cómo jugar" aloja la práctica y la repetición del tutorial (decisión del
+               owner). Rutas que ya existen: handleAction('practice' | 'tutorial-replay'). -->
+          <div class="hero__actions">
+            <button class="btn btn--ghost" data-action="practice" data-i18n="hud.practiceName">Campo de práctica</button>
+            <button class="btn btn--ghost" data-action="tutorial-replay" data-i18n="pause.tutorialReplay">Repetir tutorial</button>
+          </div>
           <footer class="sheet__foot">
-            <button class="btn btn--ghost" data-goto="menu">Volver</button>
-            <button class="btn btn--primary" data-action="mission">Jugar misión ▸</button>
+            <button class="btn btn--ghost" data-goto="menu" data-i18n="about.back">Volver</button>
+            <button class="btn btn--primary" data-action="mission" data-i18n="about.missionBtn">Jugar misión ▸</button>
           </footer>
         </div>
       </section>
 
       <!-- ========================== LEADERBOARD ====================== -->
-      <section id="screen-leaderboard" class="screen screen--page" aria-label="Clasificación">
+      <section id="screen-leaderboard" class="screen screen--page" aria-label="Clasificación" data-i18n-aria="leaderboard.aria">
         <div class="page">
           <header class="page__head">
-            <p class="eyebrow">tableros verificados</p>
-            <h2>Clasificación</h2>
-            <p>Puntajes re-simulados por el servidor. Solo cuentan los registros que el tablero acepta.</p>
+            <p class="eyebrow" data-i18n="leaderboard.eyebrow">tableros verificados</p>
+            <h2 data-i18n="leaderboard.title">Clasificación</h2>
+            <p data-i18n="leaderboard.subtitle">Puntajes re-simulados por el servidor. Solo cuentan los registros que el tablero acepta.</p>
           </header>
-          <nav class="board-tabs" role="tablist" aria-label="Tableros">
-            <button class="tab is-active" role="tab" aria-selected="true" data-board="mission:s01">S01 misión</button>
-            <button class="tab" role="tab" aria-selected="false" data-board="mission:s02">S02 misión</button>
-            <button class="tab" role="tab" aria-selected="false" data-board="mission:s03">S03 misión</button>
+          <nav class="board-tabs" role="tablist" aria-label="Tableros" data-i18n-aria="leaderboard.tabsAria">
+            <button class="tab is-active" role="tab" aria-selected="true" data-board="mission:s01" data-i18n="leaderboard.tabS01">S01 misión</button>
+            <button class="tab" role="tab" aria-selected="false" data-board="mission:s02" data-i18n="leaderboard.tabS02">S02 misión</button>
+            <button class="tab" role="tab" aria-selected="false" data-board="mission:s03" data-i18n="leaderboard.tabS03">S03 misión</button>
           </nav>
           <div class="panel board" aria-live="polite">
-            <div class="board__head"><span>#</span><span>operador</span><span>puntaje</span><span>fecha</span></div>
+            <div class="board__head"><span>#</span><span data-i18n="leaderboard.headOperator">operador</span><span data-i18n="leaderboard.headScore">puntaje</span><span data-i18n="leaderboard.headDate">fecha</span></div>
             <ol class="board__rows" id="board-rows"></ol>
-            <p class="board__state" id="board-state">Cargando…</p>
+            <p class="board__state" id="board-state" data-i18n="leaderboard.loading">Cargando…</p>
           </div>
           <footer class="page__foot">
-            <button class="btn btn--ghost" data-goto="menu">← Menú</button>
+            <button class="btn btn--ghost" data-goto="menu" data-i18n="leaderboard.back">← Menú</button>
           </footer>
         </div>
       </section>
@@ -313,15 +319,15 @@
       <!-- `data-boot` distingue la variante genérica de la dedicada a un navegador sin
            soporte: la segunda nombra lo que falta y el piso de versiones, y esconde
            Reintentar porque recargar no puede crear una capability que no existe. -->
-      <section id="screen-fallback" class="screen screen--fallback" aria-label="Error" data-boot="error">
+      <section id="screen-fallback" class="screen screen--fallback" aria-label="Error" data-boot="error" data-i18n-aria="fallback.aria">
         <div class="boot">
-          <h2 class="fallback__title" id="fallback-title">No pudimos iniciar el protocolo</h2>
-          <p id="fallback-detail" class="boot__tagline">Este navegador no expuso WebGL2.</p>
+          <h2 class="fallback__title" id="fallback-title" data-i18n="fallback.errorTitle">No pudimos iniciar el protocolo</h2>
+          <p id="fallback-detail" class="boot__tagline"></p>
           <ul class="boot__checks" id="fallback-missing" hidden></ul>
           <p class="boot__floor mono-dim" id="fallback-floor" hidden></p>
           <div class="hero__actions">
-            <button class="btn btn--primary" id="fallback-retry" data-action="retry">Reintentar</button>
-            <a class="btn btn--ghost" href="https://sebita.dev" target="_blank" rel="noreferrer noopener">Ir a sebita.dev</a>
+            <button class="btn btn--primary" id="fallback-retry" data-action="retry" data-i18n="fallback.retry">Reintentar</button>
+            <a class="btn btn--ghost" href="https://sebita.dev" target="_blank" rel="noreferrer noopener" data-i18n="fallback.toSebita">Ir a sebita.dev</a>
           </div>
         </div>
       </section>
@@ -335,19 +341,19 @@
         <div class="hud__top">
           <div class="hud__block hud__block--sector">
             <span class="hud__kicker" id="hud-sector-code">SECTOR 01</span>
-            <span class="hud__sector-name" id="hud-sector-name">Control de Acceso</span>
-            <span class="hud__mode" id="hud-mode">misión</span>
+            <span class="hud__sector-name" id="hud-sector-name"></span>
+            <span class="hud__mode" id="hud-mode"></span>
             <div class="hud__wave">
-              <span class="hud__kicker">oleada</span>
+              <span class="hud__kicker" data-i18n="hud.wave">oleada</span>
               <span class="hud__big"><b id="hud-wave">1</b><i id="hud-wave-total">/5</i></span>
               <div class="bar bar--slim"><i id="hud-wave-bar"></i></div>
             </div>
           </div>
 
           <div class="hud__block hud__block--right">
-            <div class="hud__stat"><span class="hud__kicker"><svg class="hud__ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 9v4l3 2M9 2h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span id="hud-time-label">restante</span></span><span class="hud__mid" id="hud-time">3:00</span></div>
-            <div class="hud__stat"><span class="hud__kicker"><svg class="hud__ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a8 8 0 0 0-8 8c0 2.6 1.2 4.4 3 5.5V20h10v-3.5c1.8-1.1 3-2.9 3-5.5a8 8 0 0 0-8-8z" fill="currentColor"/><circle cx="9" cy="11" r="2" fill="#080f14"/><circle cx="15" cy="11" r="2" fill="#080f14"/><path d="M10 17h1v2h-1zM13 17h1v2h-1z" fill="#080f14"/></svg>enemigos</span><span class="hud__mid" id="hud-remaining">0</span></div>
-            <button class="iconbtn" id="btn-pause-hud" aria-label="Pausa">
+            <div class="hud__stat"><span class="hud__kicker"><svg class="hud__ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 9v4l3 2M9 2h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span id="hud-time-label" data-i18n="hud.timeLeft">restante</span></span><span class="hud__mid" id="hud-time">3:00</span></div>
+            <div class="hud__stat"><span class="hud__kicker"><svg class="hud__ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a8 8 0 0 0-8 8c0 2.6 1.2 4.4 3 5.5V20h10v-3.5c1.8-1.1 3-2.9 3-5.5a8 8 0 0 0-8-8z" fill="currentColor"/><circle cx="9" cy="11" r="2" fill="#080f14"/><circle cx="15" cy="11" r="2" fill="#080f14"/><path d="M10 17h1v2h-1zM13 17h1v2h-1z" fill="#080f14"/></svg><span data-i18n="hud.enemies">enemigos</span></span><span class="hud__mid" id="hud-remaining">0</span></div>
+            <button class="iconbtn" id="btn-pause-hud" aria-label="Pausa" data-i18n-aria="hud.pauseAria">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="4" height="14" fill="currentColor"/><rect x="13" y="5" width="4" height="14" fill="currentColor"/></svg>
             </button>
           </div>
@@ -355,13 +361,13 @@
 
         <div class="hud__block hud__block--objective">
           <svg class="hud__obj-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 22 12 12 22 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 8 16 12 12 16 8 12z" fill="currentColor"/></svg>
-          <span class="hud__kicker">objetivo</span>
-          <p class="hud__sub" id="hud-objective-line">reactivá una terminal (0/3)</p>
-          <p class="hud__score"><span class="hud__kicker">puntuación</span> <b id="hud-score">0</b></p>
+          <span class="hud__kicker" data-i18n="hud.objective">objetivo</span>
+          <p class="hud__sub" id="hud-objective-line"></p>
+          <p class="hud__score"><span class="hud__kicker" data-i18n="hud.score">puntuación</span> <b id="hud-score">0</b></p>
         </div>
 
         <div class="hud__objective-track">
-          <span class="hud__kicker">terminales</span>
+          <span class="hud__kicker" data-i18n="hud.nodes">terminales</span>
           <div class="nodes" id="hud-nodes">
             <i class="node"></i><i class="node"></i><i class="node"></i>
           </div>
@@ -387,13 +393,13 @@
             </div>
             <div class="bar"><i id="hud-hp-bar"></i></div>
             <div class="vitals__buffs">
-              <span class="buff" id="buff-assist" hidden>asistencia</span>
-              <span class="buff" id="buff-regen" hidden>regenerando</span>
+              <span class="buff" id="buff-assist" hidden data-i18n="hud.buffAssist">asistencia</span>
+              <span class="buff" id="buff-regen" hidden data-i18n="hud.buffRegen">regenerando</span>
             </div>
           </div>
 
           <div class="ammo">
-            <div class="ammo__slots" id="hud-slots" aria-label="Armas">
+            <div class="ammo__slots" id="hud-slots" aria-label="Armas" data-i18n-aria="hud.weaponsAria">
               <span class="slot" data-weapon="1">1</span>
               <span class="slot" data-weapon="2">2</span>
               <span class="slot" data-weapon="3">3</span>
@@ -411,20 +417,20 @@
         </div>
 
         <div class="hud__extraction" id="hud-extraction" hidden>
-          <span class="hud__kicker hud__kicker--danger">extracción</span>
+          <span class="hud__kicker hud__kicker--danger" data-i18n="hud.extraction">extracción</span>
           <strong id="hud-extraction-time">12.0</strong>
-          <p>mantené la posición</p>
+          <p data-i18n="hud.holdPosition">mantené la posición</p>
         </div>
 
         <aside class="tutorial" id="tutorial" hidden aria-live="polite">
-          <p class="eyebrow">tutorial · paso <span id="tut-index">1</span> de 3</p>
-          <h3 id="tut-title">Moverse</h3>
-          <p id="tut-body">WASD o joystick izquierdo.</p>
+          <p class="eyebrow"><span data-i18n="tutorial.stepPrefix">tutorial · paso</span> <span id="tut-index">1</span> <span data-i18n="tutorial.stepOf">de 3</span></p>
+          <h3 id="tut-title"></h3>
+          <p id="tut-body"></p>
           <div class="tutorial__foot">
             <span class="tutorial__dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            <button class="btn btn--sm tutorial__continue" data-action="tutorial-continue">Continuar</button>
-            <button class="btn btn--ghost btn--sm" data-action="tutorial-skip">Omitir tutorial</button>
-            <p class="tutorial__keys"><span><kbd>Enter</kbd> continuar</span> <i aria-hidden="true">·</i> <span><kbd>Retroceso</kbd> omitir</span></p>
+            <button class="btn btn--sm tutorial__continue" data-action="tutorial-continue" data-i18n="tutorial.continue">Continuar</button>
+            <button class="btn btn--ghost btn--sm" data-action="tutorial-skip" data-i18n="tutorial.skip">Omitir tutorial</button>
+            <p class="tutorial__keys"><span><kbd>Enter</kbd> <span data-i18n="tutorial.keyContinue">continuar</span></span> <i aria-hidden="true">·</i> <span><kbd>Retroceso</kbd> <span data-i18n="tutorial.keySkip">omitir</span></span></p>
           </div>
         </aside>
 
@@ -454,70 +460,70 @@
       <!-- ============================= TOUCH ========================= -->
       <div class="touch" id="touch-layer">
         <div class="touch__stick" id="touch-stick"><span class="touch__knob" id="touch-knob"></span></div>
-        <button class="tbtn tbtn--fire" data-touch="fire" aria-label="Disparar">
+        <button class="tbtn tbtn--fire" data-touch="fire" aria-label="Disparar" data-i18n-aria="touch.fire">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path d="M12 4v5M12 15v5M4 12h5M15 12h5" stroke="currentColor" stroke-width="1.6"/></svg>
         </button>
-        <button class="tbtn tbtn--jump" data-touch="jump" aria-label="Saltar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14M12 20V8M7 13l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button class="tbtn tbtn--reload" data-touch="reload" aria-label="Recargar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.1-5M19 4v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button class="tbtn tbtn--interact" data-touch="interact" aria-label="Interactuar">Ⓔ</button>
-        <button class="tbtn tbtn--switch" data-touch="switch" aria-label="Cambiar arma"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h14l-3-3M20 16H6l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button class="tbtn tbtn--ads" data-touch="ads" aria-label="Apuntar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg></button>
-        <button class="tbtn tbtn--pause" data-touch="pause" aria-label="Pausa"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="4" height="14" fill="currentColor"/><rect x="13" y="5" width="4" height="14" fill="currentColor"/></svg></button>
+        <button class="tbtn tbtn--jump" data-touch="jump" aria-label="Saltar" data-i18n-aria="touch.jump"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14M12 20V8M7 13l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="tbtn tbtn--reload" data-touch="reload" aria-label="Recargar" data-i18n-aria="touch.reload"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.1-5M19 4v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="tbtn tbtn--interact" data-touch="interact" aria-label="Interactuar" data-i18n-aria="touch.interact">Ⓔ</button>
+        <button class="tbtn tbtn--switch" data-touch="switch" aria-label="Cambiar arma" data-i18n-aria="touch.switchWeapon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h14l-3-3M20 16H6l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="tbtn tbtn--ads" data-touch="ads" aria-label="Apuntar" data-i18n-aria="touch.ads"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg></button>
+        <button class="tbtn tbtn--pause" data-touch="pause" aria-label="Pausa" data-i18n-aria="touch.pause"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="4" height="14" fill="currentColor"/><rect x="13" y="5" width="4" height="14" fill="currentColor"/></svg></button>
       </div>
 
-      <p id="rotate-hint" class="rotate-hint" role="status">Girá el teléfono para jugar mejor</p>
+      <p id="rotate-hint" class="rotate-hint" role="status" data-i18n="hud.rotateHint">Girá el teléfono para jugar mejor</p>
 
       <!-- ============================= PAUSE ========================= -->
-      <section id="screen-pause" class="screen screen--overlay" role="dialog" aria-modal="true" aria-label="Pausa">
+      <section id="screen-pause" class="screen screen--overlay" role="dialog" aria-modal="true" aria-label="Pausa" data-i18n-aria="pause.aria">
         <div class="sheet sheet--pause">
           <header class="sheet__head">
-            <h2>En pausa</h2>
-            <p id="pause-sub">Sector 01 · protocolo en curso</p>
+            <h2 data-i18n="pause.title">En pausa</h2>
+            <p id="pause-sub"></p>
           </header>
           <div class="pause">
-            <nav class="tabs" role="tablist" aria-label="Opciones de pausa">
-              <button class="tab is-active" role="tab" aria-selected="true" data-tab="game">Juego</button>
-              <button class="tab" role="tab" aria-selected="false" data-tab="controls">Controles</button>
-              <button class="tab" role="tab" aria-selected="false" data-tab="graphics">Gráficos</button>
-              <button class="tab" role="tab" aria-selected="false" data-tab="audio">Audio</button>
-              <button class="tab" role="tab" aria-selected="false" data-tab="access">Accesibilidad</button>
+            <nav class="tabs" role="tablist" aria-label="Opciones de pausa" data-i18n-aria="pause.tabsAria">
+              <button class="tab is-active" role="tab" aria-selected="true" data-tab="game" data-i18n="pause.tabGame">Juego</button>
+              <button class="tab" role="tab" aria-selected="false" data-tab="controls" data-i18n="pause.tabControls">Controles</button>
+              <button class="tab" role="tab" aria-selected="false" data-tab="graphics" data-i18n="pause.tabGraphics">Gráficos</button>
+              <button class="tab" role="tab" aria-selected="false" data-tab="audio" data-i18n="pause.tabAudio">Audio</button>
+              <button class="tab" role="tab" aria-selected="false" data-tab="access" data-i18n="pause.tabAccess">Accesibilidad</button>
             </nav>
             <div class="pause__panes">
               <div class="pane is-active" data-pane="game">
-                <button class="btn btn--primary btn--block" data-action="resume" data-autofocus>Continuar ▸</button>
-                <button class="btn btn--ghost btn--block" data-action="restart">Reiniciar</button>
-                <button class="btn btn--ghost btn--block" data-action="tutorial-replay">Repetir tutorial</button>
-                <button class="btn btn--ghost btn--block" data-action="menu">Salir al menú</button>
+                <button class="btn btn--primary btn--block" data-action="resume" data-autofocus data-i18n="pause.resume">Continuar ▸</button>
+                <button class="btn btn--ghost btn--block" data-action="restart" data-i18n="pause.restart">Reiniciar</button>
+                <button class="btn btn--ghost btn--block" data-action="tutorial-replay" data-i18n="pause.tutorialReplay">Repetir tutorial</button>
+                <button class="btn btn--ghost btn--block" data-action="menu" data-i18n="pause.quit">Salir al menú</button>
               </div>
               <div class="pane" data-pane="controls">
                 <dl class="keys">
-                  <div><dt>WASD / flechas</dt><dd>mover</dd></div>
-                  <div><dt>mouse</dt><dd>apuntar</dd></div>
-                  <div><dt>click izq.</dt><dd>disparar</dd></div>
-                  <div><dt>click der.</dt><dd>apuntar (mantener)</dd></div>
-                  <div><dt>R</dt><dd>recargar</dd></div>
-                  <div><dt>espacio</dt><dd>saltar</dd></div>
-                  <div><dt>shift</dt><dd>correr</dd></div>
-                  <div><dt>E</dt><dd>interactuar</dd></div>
-                  <div><dt>1 / 2 / 3</dt><dd>cambiar arma</dd></div>
-                  <div><dt>esc</dt><dd>pausa</dd></div>
-                  <div><dt>F3</dt><dd>engineering mode</dd></div>
+                  <div><dt data-i18n="pause.keysWasd">WASD / flechas</dt><dd data-i18n="pause.actionMove">mover</dd></div>
+                  <div><dt data-i18n="pause.keysMouse">mouse</dt><dd data-i18n="pause.actionAim">apuntar</dd></div>
+                  <div><dt data-i18n="pause.keysClickL">click izq.</dt><dd data-i18n="pause.actionShoot">disparar</dd></div>
+                  <div><dt data-i18n="pause.keysClickR">click der.</dt><dd data-i18n="pause.actionAimHold">apuntar (mantener)</dd></div>
+                  <div><dt>R</dt><dd data-i18n="pause.actionReload">recargar</dd></div>
+                  <div><dt data-i18n="pause.keysSpace">espacio</dt><dd data-i18n="pause.actionJump">saltar</dd></div>
+                  <div><dt>shift</dt><dd data-i18n="pause.actionRun">correr</dd></div>
+                  <div><dt>E</dt><dd data-i18n="pause.actionInteract">interactuar</dd></div>
+                  <div><dt>1 / 2 / 3</dt><dd data-i18n="pause.actionSwitch">cambiar arma</dd></div>
+                  <div><dt>esc</dt><dd data-i18n="pause.actionPause">pausa</dd></div>
+                  <div><dt>F3</dt><dd data-i18n="pause.keysEngineering">engineering mode</dd></div>
                 </dl>
-                <p class="mono-dim">En táctil: joystick libre a un lado, arrastre para mirar al otro, botones en la zona del pulgar.</p>
+                <p class="mono-dim" data-i18n="pause.touchNote">En táctil: joystick libre a un lado, arrastre para mirar al otro, botones en la zona del pulgar.</p>
               </div>
               <div class="pane" data-pane="graphics">
                 <label class="field" for="set-quality">
-                  <span class="field__label">Calidad</span>
+                  <span class="field__label" data-i18n="pause.quality">Calidad</span>
                   <select id="set-quality" class="select">
-                    <option value="auto">Auto (adaptable)</option>
-                    <option value="low">Baja</option>
-                    <option value="medium">Media</option>
-                    <option value="high">Alta</option>
+                    <option value="auto" data-i18n="pause.qualityAuto">Auto (adaptable)</option>
+                    <option value="low" data-i18n="pause.qualityLow">Baja</option>
+                    <option value="medium" data-i18n="pause.qualityMedium">Media</option>
+                    <option value="high" data-i18n="pause.qualityHigh">Alta</option>
                   </select>
                 </label>
-                <p class="mono-dim" id="gfx-group-label">Detalle por efecto (auto sigue a la calidad elegida)</p>
+                <p class="mono-dim" id="gfx-group-label" data-i18n="pause.gfxGroup">Detalle por efecto (auto sigue a la calidad elegida)</p>
                 <label class="field" for="set-gfx-bloom">
-                  <span class="field__label" id="gfx-label-bloom">Bloom</span>
+                  <span class="field__label" id="gfx-label-bloom" data-i18n="pause.gfxBloom">Bloom</span>
                   <select id="set-gfx-bloom" class="select">
                     <option value="auto">Auto</option>
                     <option value="on">Activado</option>
@@ -525,7 +531,7 @@
                   </select>
                 </label>
                 <label class="field" for="set-gfx-shadows">
-                  <span class="field__label" id="gfx-label-shadows">Sombras</span>
+                  <span class="field__label" id="gfx-label-shadows" data-i18n="pause.gfxShadows">Sombras</span>
                   <select id="set-gfx-shadows" class="select">
                     <option value="auto">Auto</option>
                     <option value="on">Activado</option>
@@ -533,7 +539,7 @@
                   </select>
                 </label>
                 <label class="field" for="set-gfx-environment">
-                  <span class="field__label" id="gfx-label-environment">Entorno (reflejos HDRI)</span>
+                  <span class="field__label" id="gfx-label-environment" data-i18n="pause.gfxEnvironment">Entorno (reflejos HDRI)</span>
                   <select id="set-gfx-environment" class="select">
                     <option value="auto">Auto</option>
                     <option value="on">Activado</option>
@@ -541,7 +547,7 @@
                   </select>
                 </label>
                 <label class="field" for="set-gfx-lights">
-                  <span class="field__label" id="gfx-label-lights">Luces prácticas</span>
+                  <span class="field__label" id="gfx-label-lights" data-i18n="pause.gfxLights">Luces prácticas</span>
                   <select id="set-gfx-lights" class="select">
                     <option value="auto">Auto</option>
                     <option value="on">Activado</option>
@@ -549,34 +555,34 @@
                   </select>
                 </label>
                 <label class="field" for="set-gfx-mist">
-                  <span class="field__label" id="gfx-label-mist">Neblina</span>
+                  <span class="field__label" id="gfx-label-mist" data-i18n="pause.gfxMist">Neblina</span>
                   <select id="set-gfx-mist" class="select">
                     <option value="auto">Auto</option>
                     <option value="on">Activado</option>
                     <option value="off">Desactivado</option>
                   </select>
                 </label>
-                <label class="field field--row" for="set-motion"><span class="field__label">Reducir movimiento</span><input id="set-motion" class="switch" role="switch" type="checkbox" /></label>
-                <label class="field field--row" for="set-telemetry"><span class="field__label">Mostrar telemetría</span><input id="set-telemetry" class="switch" role="switch" type="checkbox" /></label>
+                <label class="field field--row" for="set-motion"><span class="field__label" data-i18n="pause.reduceMotion">Reducir movimiento</span><input id="set-motion" class="switch" role="switch" type="checkbox" /></label>
+                <label class="field field--row" for="set-telemetry"><span class="field__label" data-i18n="pause.telemetry">Mostrar telemetría</span><input id="set-telemetry" class="switch" role="switch" type="checkbox" /></label>
                 <p class="mono-dim" id="gfx-detail">—</p>
               </div>
               <div class="pane" data-pane="audio">
-                <label class="field field--row" for="set-audio"><span class="field__label">Audio</span><input id="set-audio" class="switch" role="switch" type="checkbox" checked /></label>
-                <label class="field" for="set-volume"><span class="field__label">Volumen <b id="set-volume-val">70%</b></span><input id="set-volume" type="range" min="0" max="1" step="0.05" value="0.7" /></label>
-                <label class="field" for="set-sfx"><span class="field__label">Efectos <b id="set-sfx-val">100%</b></span><input id="set-sfx" type="range" min="0" max="1" step="0.05" value="1" /></label>
-                <label class="field" for="set-ui"><span class="field__label">Interfaz <b id="set-ui-val">100%</b></span><input id="set-ui" type="range" min="0" max="1" step="0.05" value="1" /></label>
-                <p class="mono-dim">Todo el audio se sintetiza con Web Audio API: sin archivos que descargar.</p>
+                <label class="field field--row" for="set-audio"><span class="field__label" data-i18n="pause.audio">Audio</span><input id="set-audio" class="switch" role="switch" type="checkbox" checked /></label>
+                <label class="field" for="set-volume"><span class="field__label"><span data-i18n="pause.volume">Volumen</span> <b id="set-volume-val">70%</b></span><input id="set-volume" type="range" min="0" max="1" step="0.05" value="0.7" /></label>
+                <label class="field" for="set-sfx"><span class="field__label"><span data-i18n="pause.sfx">Efectos</span> <b id="set-sfx-val">100%</b></span><input id="set-sfx" type="range" min="0" max="1" step="0.05" value="1" /></label>
+                <label class="field" for="set-ui"><span class="field__label"><span data-i18n="pause.uiLabel">Interfaz</span> <b id="set-ui-val">100%</b></span><input id="set-ui" type="range" min="0" max="1" step="0.05" value="1" /></label>
+                <p class="mono-dim" data-i18n="pause.audioNote">Todo el audio se sintetiza con Web Audio API: sin archivos que descargar.</p>
               </div>
               <div class="pane" data-pane="access">
-                <label class="field" for="set-sens"><span class="field__label">Sensibilidad <b id="set-sens-val">1.00×</b></span><input id="set-sens" type="range" min="0.2" max="3" step="0.05" value="1" /></label>
-                <label class="field field--row" for="set-invert"><span class="field__label">Invertir eje Y</span><input id="set-invert" class="switch" role="switch" type="checkbox" /></label>
-                <label class="field field--row" for="set-flashes"><span class="field__label">Reducir destellos de daño</span><input id="set-flashes" class="switch" role="switch" type="checkbox" /></label>
-                <label class="field" for="set-hud"><span class="field__label">Escala de HUD <b id="set-hud-val">100%</b></span><input id="set-hud" type="range" min="0.8" max="1.4" step="0.05" value="1" /></label>
-                <label class="field field--row" for="set-handed"><span class="field__label">Mano dominante: zurdo</span><input id="set-handed" class="switch" role="switch" type="checkbox" /></label>
-                <label class="field field--row" for="set-autoreload"><span class="field__label">Auto-recarga</span><input id="set-autoreload" class="switch" role="switch" type="checkbox" checked /></label>
-                <label class="field field--row" for="set-aimassist"><span class="field__label">Ayuda de puntería táctil</span><input id="set-aimassist" class="switch" role="switch" type="checkbox" checked /></label>
-                <button class="btn btn--ghost btn--block" data-goto="calibrate">Calibrar controles</button>
-                <button class="btn btn--ghost btn--block" data-action="reset-settings">Restablecer ajustes</button>
+                <label class="field" for="set-sens"><span class="field__label"><span data-i18n="pause.sensitivity">Sensibilidad</span> <b id="set-sens-val">1.00×</b></span><input id="set-sens" type="range" min="0.2" max="3" step="0.05" value="1" /></label>
+                <label class="field field--row" for="set-invert"><span class="field__label" data-i18n="pause.invertY">Invertir eje Y</span><input id="set-invert" class="switch" role="switch" type="checkbox" /></label>
+                <label class="field field--row" for="set-flashes"><span class="field__label" data-i18n="pause.flashes">Reducir destellos de daño</span><input id="set-flashes" class="switch" role="switch" type="checkbox" /></label>
+                <label class="field" for="set-hud"><span class="field__label"><span data-i18n="pause.hudScale">Escala de HUD</span> <b id="set-hud-val">100%</b></span><input id="set-hud" type="range" min="0.8" max="1.4" step="0.05" value="1" /></label>
+                <label class="field field--row" for="set-handed"><span class="field__label" data-i18n="pause.handedLeft">Mano dominante: zurdo</span><input id="set-handed" class="switch" role="switch" type="checkbox" /></label>
+                <label class="field field--row" for="set-autoreload"><span class="field__label" data-i18n="pause.autoReload">Auto-recarga</span><input id="set-autoreload" class="switch" role="switch" type="checkbox" checked /></label>
+                <label class="field field--row" for="set-aimassist"><span class="field__label" data-i18n="pause.aimAssist">Ayuda de puntería táctil</span><input id="set-aimassist" class="switch" role="switch" type="checkbox" checked /></label>
+                <button class="btn btn--ghost btn--block" data-goto="calibrate" data-i18n="pause.calibrate">Calibrar controles</button>
+                <button class="btn btn--ghost btn--block" data-action="reset-settings" data-i18n="pause.reset">Restablecer ajustes</button>
               </div>
             </div>
           </div>
@@ -587,76 +593,76 @@
       <section id="screen-tutorial-handoff" class="screen screen--overlay screen--tutorial-handoff" aria-labelledby="tut-handoff-title">
         <div class="sheet sheet--tutorial-handoff">
           <header class="sheet__head">
-            <p class="eyebrow">SIMULADOR</p>
+            <p class="eyebrow" data-i18n="handoff.eyebrow">SIMULADOR</p>
             <h2 id="tut-handoff-title">TUTORIAL COMPLETADO</h2>
           </header>
           <div id="tut-handoff-recap">
-            <ul class="tutorial-recap" role="list" aria-label="Acciones aprendidas">
-              <li><span aria-hidden="true">✓</span> Moverte</li>
-              <li><span aria-hidden="true">✓</span> Apuntar y disparar</li>
-              <li><span aria-hidden="true">✓</span> Activar un terminal</li>
+            <ul class="tutorial-recap" role="list" aria-label="Acciones aprendidas" data-i18n-aria="handoff.recapAria">
+              <li><span aria-hidden="true">✓</span> <span data-i18n="handoff.recapMove">Moverte</span></li>
+              <li><span aria-hidden="true">✓</span> <span data-i18n="handoff.recapShoot">Apuntar y disparar</span></li>
+              <li><span aria-hidden="true">✓</span> <span data-i18n="handoff.recapTerminal">Activar un terminal</span></li>
             </ul>
-            <p class="tutorial-time"><span>Tiempo transcurrido</span> <time id="tut-handoff-time"></time></p>
+            <p class="tutorial-time"><span data-i18n="handoff.timeLabel">Tiempo transcurrido</span> <time id="tut-handoff-time"></time></p>
           </div>
-          <p id="tut-handoff-skip-note" hidden>Podés repetir el tutorial desde el menú.</p>
+          <p id="tut-handoff-skip-note" hidden data-i18n="handoff.skipNote">Podés repetir el tutorial desde el menú.</p>
           <footer class="sheet__foot tutorial-handoff-actions">
-            <button class="btn btn--primary" data-action="tutorial-start" aria-describedby="tut-handoff-title">Empezar el protocolo</button>
-            <button class="btn btn--ghost" data-action="tutorial-practice">Seguir practicando</button>
-            <button class="btn btn--ghost" data-action="menu">Volver al menú</button>
+            <button class="btn btn--primary" data-action="tutorial-start" aria-describedby="tut-handoff-title" data-i18n="handoff.startBtn">Empezar el protocolo</button>
+            <button class="btn btn--ghost" data-action="tutorial-practice" data-i18n="handoff.practiceBtn">Seguir practicando</button>
+            <button class="btn btn--ghost" data-action="menu" data-i18n="handoff.menuBtn">Volver al menú</button>
           </footer>
         </div>
       </section>
 
       <!-- ============================ RESULT ========================= -->
-      <section id="screen-result" class="screen screen--page" aria-label="Resultados">
+      <section id="screen-result" class="screen screen--page" aria-label="Resultados" data-i18n-aria="results.aria">
         <div class="page page--result">
           <header class="result__head">
             <div>
-              <p class="eyebrow" id="result-eyebrow">protocolo completado</p>
+              <p class="eyebrow" id="result-eyebrow"></p>
               <h2 id="result-title">PARTIDA COMPLETADA</h2>
             </div>
             <div class="grade" id="result-grade">S</div>
           </header>
           <div class="result__grid">
             <div class="panel result__score">
-              <span class="hud__kicker">puntuación total</span>
+              <span class="hud__kicker" data-i18n="results.scoreTotal">puntuación total</span>
               <strong id="result-score">0</strong>
-              <span class="result__record" id="result-record" hidden>nuevo récord</span>
+              <span class="result__record" id="result-record" hidden data-i18n="results.record">nuevo récord</span>
               <p class="result__unlock" id="result-unlock" hidden></p>
             </div>
             <dl class="panel result__stats">
-              <div><dt>bajas</dt><dd id="result-kills">0</dd></div>
-              <div><dt>precisión</dt><dd id="result-accuracy">0%</dd></div>
-              <div><dt>terminales</dt><dd id="result-nodes">0/3</dd></div>
-              <div><dt>tiempo</dt><dd id="result-time">0:00</dd></div>
-              <div><dt>daño recibido</dt><dd id="result-damage">0</dd></div>
-              <div><dt>control</dt><dd id="result-input">mouse</dd></div>
+              <div><dt data-i18n="results.kills">bajas</dt><dd id="result-kills">0</dd></div>
+              <div><dt data-i18n="results.accuracy">precisión</dt><dd id="result-accuracy">0%</dd></div>
+              <div><dt data-i18n="results.nodes">terminales</dt><dd id="result-nodes">0/3</dd></div>
+              <div><dt data-i18n="results.time">tiempo</dt><dd id="result-time">0:00</dd></div>
+              <div><dt data-i18n="results.damage">daño recibido</dt><dd id="result-damage">0</dd></div>
+              <div><dt data-i18n="results.control">control</dt><dd id="result-input">mouse</dd></div>
             </dl>
           </div>
           <div class="result__timebar"><i id="result-timebar"></i></div>
 
           <section class="panel board-submit" id="result-board" data-state="idle" aria-live="polite">
             <div class="board-submit__head">
-              <span class="panel__label">tablero</span>
+              <span class="panel__label" data-i18n="results.board">tablero</span>
               <span class="board-submit__where" id="board-where">—</span>
             </div>
-            <p class="board-submit__text" id="board-text" role="status" aria-live="polite">Enviá la partida para verificarla en el servidor.</p>
-            <p class="board-submit__text" id="result-prefix" hidden>Registro recortado: cuenta el prefijo de 20 min.</p>
+            <p class="board-submit__text" id="board-text" role="status" aria-live="polite" data-i18n="results.idleText">Enviá la partida para verificarla en el servidor.</p>
+            <p class="board-submit__text" id="result-prefix" hidden data-i18n="results.truncated">Registro recortado: cuenta el prefijo de 20 min.</p>
             <div class="board-submit__rank" id="board-rank" hidden></div>
             <div class="board-submit__form" id="board-form">
               <label class="field" for="board-name">
-                <span class="field__label">Operador <span class="mono-dim">1–16 caracteres</span></span>
+                <span class="field__label"><span data-i18n="results.operator">Operador</span> <span class="mono-dim" data-i18n="results.operatorHint">1–16 caracteres</span></span>
                 <input id="board-name" class="input" type="text" maxlength="16" autocomplete="nickname" spellcheck="false" />
               </label>
-              <button class="btn btn--primary" data-action="submit-board" id="board-send">Enviar al tablero</button>
+              <button class="btn btn--primary" data-action="submit-board" id="board-send" data-i18n="results.send">Enviar al tablero</button>
             </div>
           </section>
 
           <footer class="page__foot">
-            <button class="btn btn--ghost" data-action="menu">Menú</button>
-            <button class="btn btn--ghost" data-goto="leaderboard">Clasificación</button>
-            <button class="btn btn--ghost" data-action="restart">Repetir</button>
-            <button class="btn btn--primary" data-action="next-sector" id="result-next" hidden>Siguiente sector ▸</button>
+            <button class="btn btn--ghost" data-action="menu" data-i18n="results.menuBtn">Menú</button>
+            <button class="btn btn--ghost" data-goto="leaderboard" data-i18n="results.leaderboardBtn">Clasificación</button>
+            <button class="btn btn--ghost" data-action="restart" data-i18n="results.repeat">Repetir</button>
+            <button class="btn btn--primary" data-action="next-sector" id="result-next" hidden data-i18n="results.nextSector">Siguiente sector ▸</button>
           </footer>
         </div>
       </section>
@@ -666,30 +672,30 @@
         <header class="eng__head">
           <span class="eng__title">ENGINEERING MODE</span>
           <span class="chip chip--live" id="eng-status">live</span>
-          <button class="iconbtn iconbtn--sm" data-action="engineering" aria-label="Cerrar">✕</button>
+          <button class="iconbtn iconbtn--sm" data-action="engineering" aria-label="Cerrar" data-i18n-aria="eng.closeAria">✕</button>
         </header>
         <div class="eng__grid">
-          <div class="eng__metric"><span>fps</span><b id="eng-fps">—</b><i>suavizado</i></div>
+          <div class="eng__metric"><span>fps</span><b id="eng-fps">—</b><i data-i18n="eng.smoothed">suavizado</i></div>
           <div class="eng__metric"><span>frametime p50</span><b id="eng-p50">—</b><i>ms</i></div>
           <div class="eng__metric"><span>frametime p95</span><b id="eng-p95">—</b><i>ms</i></div>
           <div class="eng__metric"><span>draw calls</span><b id="eng-calls">—</b><i>frame</i></div>
-          <div class="eng__metric"><span>triángulos</span><b id="eng-tris">—</b><i>visibles</i></div>
+          <div class="eng__metric"><span data-i18n="eng.triangles">triángulos</span><b id="eng-tris">—</b><i data-i18n="eng.visible">visibles</i></div>
           <div class="eng__metric"><span>ticks sim</span><b id="eng-ticks">—</b><i>60 hz</i></div>
-          <div class="eng__metric"><span>ticks descartados</span><b id="eng-dropped">—</b><i>total</i></div>
-          <div class="eng__metric"><span>calidad</span><b id="eng-quality">—</b><i id="eng-dpr">dpr</i></div>
-          <div class="eng__metric"><span>enemigos</span><b id="eng-enemies">—</b><i>activos</i></div>
-          <div class="eng__metric"><span>memoria js</span><b id="eng-mem">—</b><i>heap</i></div>
+          <div class="eng__metric"><span data-i18n="eng.droppedTicks">ticks descartados</span><b id="eng-dropped">—</b><i>total</i></div>
+          <div class="eng__metric"><span data-i18n="eng.quality">calidad</span><b id="eng-quality">—</b><i id="eng-dpr">dpr</i></div>
+          <div class="eng__metric"><span data-i18n="eng.enemies">enemigos</span><b id="eng-enemies">—</b><i data-i18n="eng.active">activos</i></div>
+          <div class="eng__metric"><span data-i18n="eng.memory">memoria js</span><b id="eng-mem">—</b><i>heap</i></div>
           <div class="eng__metric"><span>wasm</span><b id="eng-wasm">—</b><i>kib</i></div>
-          <div class="eng__metric"><span>carga</span><b id="eng-load">—</b><i>ms</i></div>
+          <div class="eng__metric"><span data-i18n="eng.load">carga</span><b id="eng-load">—</b><i>ms</i></div>
         </div>
-        <canvas id="eng-graph" class="eng__graph" width="360" height="72" aria-label="Histograma de frametime"></canvas>
-        <p class="eng__note" id="eng-note">datos reales del renderer y del bucle de simulación.</p>
+        <canvas id="eng-graph" class="eng__graph" width="360" height="72" aria-label="Histograma de frametime" data-i18n-aria="eng.graphAria"></canvas>
+        <p class="eng__note" id="eng-note" data-i18n="eng.noteDefault">datos reales del renderer y del bucle de simulación.</p>
       </aside>
 
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
       <div id="context-lost" class="ctx-lost" role="alert" hidden>
-        <strong>Gráficos interrumpidos</strong>
-        <span>El navegador soltó el contexto WebGL. Esperando recuperación…</span>
+        <strong data-i18n="contextLost.title">Gráficos interrumpidos</strong>
+        <span data-i18n="contextLost.body">El navegador soltó el contexto WebGL. Esperando recuperación…</span>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

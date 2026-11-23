@@ -4,6 +4,7 @@
  */
 import type { DebugOverlays, OverlayKey } from '../render/renderer';
 import { rgbOf, STATE_COLORS } from '../render/palette';
+import { t, formatNumber, onLocaleChange, type CatalogKey } from '../i18n/runtime';
 
 /** Colores de estado derivados del dueño único (src/render/palette.ts, espejo de
  * tokens.css); los `rgba()` se componen una vez, fuera del camino caliente. */
@@ -19,11 +20,12 @@ interface DebugHost {
   readonly postFxPlan: { bloom: boolean; composer: boolean; msaaSamples: number };
 }
 
-const OVERLAY_LABELS: Record<OverlayKey, string> = {
-  bounds: 'escena',
-  collision: 'colisiones',
-  camera: 'cámara',
-  passes: 'pases',
+/** Claves de catálogo por overlay; los rótulos se resuelven con `t()`. */
+const OVERLAY_KEYS: Record<OverlayKey, CatalogKey> = {
+  bounds: 'eng.overlayBounds',
+  collision: 'eng.overlayCollision',
+  camera: 'eng.overlayCamera',
+  passes: 'eng.overlayPasses',
 };
 
 export interface EngineeringData {
@@ -55,6 +57,7 @@ export class Engineering {
   private ctx = this.graph.getContext('2d');
   private samples: number[] = [];
   private readonly toggles = new Map<OverlayKey, HTMLButtonElement>();
+  private readonly diagLabels: { node: HTMLElement; key: CatalogKey }[] = [];
   private readonly diag: Partial<Record<'pos' | 'look' | 'pfx' | 'passes', HTMLElement>> = {};
   private fields = {
     fps: el('eng-fps'),
@@ -101,7 +104,7 @@ export class Engineering {
     this.fields.p50.textContent = data.p50.toFixed(1);
     this.fields.p95.textContent = data.p95.toFixed(1);
     this.fields.calls.textContent = String(data.calls);
-    this.fields.tris.textContent = data.triangles.toLocaleString('es-CL');
+    this.fields.tris.textContent = formatNumber(data.triangles);
     this.fields.ticks.textContent = String(data.ticks);
     this.fields.dropped.textContent = String(data.dropped);
     this.fields.quality.textContent = data.quality;
@@ -128,13 +131,13 @@ export class Engineering {
     const grid = this.root.querySelector<HTMLElement>('.eng__grid');
     const toggles = document.createElement('div');
     toggles.className = 'eng__overlays-row';
-    for (const key of Object.keys(OVERLAY_LABELS) as OverlayKey[]) {
+    for (const key of Object.keys(OVERLAY_KEYS) as OverlayKey[]) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'eng__toggle';
       button.dataset.overlay = key;
       button.setAttribute('aria-pressed', 'false');
-      button.textContent = OVERLAY_LABELS[key];
+      button.textContent = t(OVERLAY_KEYS[key]);
       toggles.append(button);
       this.toggles.set(key, button);
     }
@@ -149,18 +152,34 @@ export class Engineering {
     });
     if (grid) {
       grid.after(toggles);
-      this.diag.pos = this.metric(grid, 'cámara', 'x · z · y');
-      this.diag.look = this.metric(grid, 'orientación', 'yaw · pitch · fov');
-      this.diag.pfx = this.metric(grid, 'postfx', 'plan resuelto');
-      this.diag.passes = this.metric(grid, 'pases', 'mundo · sombra · vm · comp');
+      this.diag.pos = this.metric(grid, 'eng.metricCamera', 'x · z · y');
+      this.diag.look = this.metric(grid, 'eng.metricOrientation', 'yaw · pitch · fov');
+      this.diag.pfx = this.metric(grid, 'eng.metricPostfx', t('eng.metaPlan'));
+      this.diag.passes = this.metric(grid, 'eng.metricPasses', t('eng.metaPassesList'));
     }
+    // El panel es dev-only, pero si el locale cambia con él abierto, los rótulos siguen al idioma.
+    this.offLocaleChange = onLocaleChange(() => this.relocalize());
   }
 
-  private metric(grid: HTMLElement, label: string, meta: string): HTMLElement {
+  private offLocaleChange: (() => void) | null = null;
+
+  /** Corta la suscripción de cambio de idioma (simétrico con `onLocaleChange`). */
+  dispose(): void {
+    this.offLocaleChange?.();
+  }
+
+  /** Re-aplica los rótulos construidos por script con el idioma activo. */
+  relocalize(): void {
+    for (const [key, button] of this.toggles) button.textContent = t(OVERLAY_KEYS[key]);
+    for (const { node, key } of this.diagLabels) node.textContent = t(key);
+  }
+
+  private metric(grid: HTMLElement, key: CatalogKey, meta: string): HTMLElement {
     const cell = document.createElement('div');
     cell.className = 'eng__metric eng__metric--data';
     const span = document.createElement('span');
-    span.textContent = label;
+    span.textContent = t(key);
+    this.diagLabels.push({ node: span, key });
     const value = document.createElement('b');
     const metaNode = document.createElement('i');
     metaNode.textContent = meta;

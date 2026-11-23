@@ -168,6 +168,17 @@ for (const viewport of VIEWPORTS) {
       await mockApi(page, {});
       await page.goto('/');
       await openHowToPlay(page);
+      // P4: "Cómo jugar" aloja la práctica y la repetición del tutorial. En táctil
+      // ambos destinos cumplen el objetivo mínimo de 44 px.
+      await expect(page.locator('#screen-about [data-action="practice"]')).toBeVisible();
+      await expect(page.locator('#screen-about [data-action="tutorial-replay"]')).toBeVisible();
+      if (viewport.mobile) {
+        for (const action of ['practice', 'tutorial-replay']) {
+          const box = await visibleBox(page, `#screen-about [data-action="${action}"]`);
+          expect(box?.w, `${action} ancho táctil`).toBeGreaterThanOrEqual(44);
+          expect(box?.h, `${action} alto táctil`).toBeGreaterThanOrEqual(44);
+        }
+      }
       await shot(page, viewport, '11-how-to-play');
       await page.locator('#screen-about [data-action="tutorial-replay"]').click();
       await screenIs(page, 'playing');
