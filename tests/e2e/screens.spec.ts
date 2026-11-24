@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { VIEWPORTS, mockApi, openCalibration, screenIs, seedStorage, shot, visibleBox, type Viewport } from './support';
+import { VIEWPORTS, mockApi, openHowToPlay, screenIs, seedStorage, shot, visibleBox, type Viewport } from './support';
 
 const PROGRESS_CLEARED = {
   sectors: [
@@ -59,17 +59,15 @@ async function expectHudVisible(page: Page, selectors: string[]): Promise<void> 
   }
 }
 
+/** P4: Jugar entra directo a la arena del sector recomendado; la cadena de campaña
+ *  (sectores → briefing) queda sin entrada de menú y se verifica a nivel de máquina
+ *  de estados (tests/unit/flow.test.ts). */
 async function startMissionFromMenu(page: Page, viewport: Viewport): Promise<void> {
   await screenIs(page, 'menu');
   await shot(page, viewport, '01-menu');
-  await page.locator('#screen-menu [data-action="mission"]').click();
-  await screenIs(page, 'sectors');
-  await shot(page, viewport, '02-sectors');
-  await page.locator('[data-sector-card="0"] [data-action="brief"]').click();
-  await screenIs(page, 'briefing');
-  await shot(page, viewport, '03-briefing');
-  await page.locator('#screen-briefing [data-action="start-mission"]').click();
+  await page.locator('#screen-menu [data-action="play"]').click();
   await screenIs(page, 'playing');
+  await shot(page, viewport, '02-playing');
   await expect(page.locator('#hud')).toBeVisible();
 }
 
@@ -81,7 +79,7 @@ for (const viewport of VIEWPORTS) {
       hasTouch: viewport.mobile,
     });
 
-    test('menu, sectors, briefing, play, pause, results and leaderboard are reachable and captured', async ({ page }) => {
+    test('menu, play, pause, results, leaderboard and how-to-play are reachable and captured', async ({ page }) => {
       await seedStorage(page, { tutorialSeen: true, progress: PROGRESS_CLEARED });
       await mockApi(page, {});
       await page.goto('/');
@@ -108,16 +106,22 @@ for (const viewport of VIEWPORTS) {
 
       await page.locator('#screen-result [data-action="menu"]').click();
       await screenIs(page, 'menu');
-      await page.locator('#screen-menu [data-goto="leaderboard"]').click();
-      await screenIs(page, 'leaderboard');
-      await expect(page.locator('#board-rows .board__row').first()).toBeVisible();
-      await shot(page, viewport, '07-leaderboard');
-      await page.locator('#screen-leaderboard [data-goto="menu"]').click();
-      await screenIs(page, 'menu');
       await page.locator('#screen-menu [data-goto="about"]').click();
       await screenIs(page, 'about');
-      await shot(page, viewport, '08-about');
+      await shot(page, viewport, '07-how-to-play');
       await page.locator('#screen-about [data-goto="menu"]').click();
+      await screenIs(page, 'menu');
+
+      // La clasificación queda desacoplada del bucle: entrada explícita desde resultados.
+      await page.locator('#screen-menu [data-action="play"]').click();
+      await screenIs(page, 'playing');
+      await page.evaluate(() => window.__BREACH__?.debugRunToEnd());
+      await screenIs(page, 'result');
+      await page.locator('#screen-result [data-goto="leaderboard"]').click();
+      await screenIs(page, 'leaderboard');
+      await expect(page.locator('#board-rows .board__row').first()).toBeVisible();
+      await shot(page, viewport, '08-leaderboard');
+      await page.locator('#screen-leaderboard [data-goto="menu"]').click();
       await screenIs(page, 'menu');
     });
 
@@ -140,7 +144,8 @@ for (const viewport of VIEWPORTS) {
       });
       await page.goto('/');
       await screenIs(page, 'menu');
-      await page.locator('#screen-menu [data-action="overflow"]').click();
+      // P4: Overflow queda oculto del menú (código intacto); el e2e lo alcanza por el handle.
+      await page.evaluate(() => window.__BREACH__!.startMatch('overflow', 0));
       await screenIs(page, 'playing');
       await page.evaluate(() => window.__BREACH__?.debugRunToEnd());
       await screenIs(page, 'result');
@@ -162,9 +167,20 @@ for (const viewport of VIEWPORTS) {
       await seedStorage(page, { tutorialSeen: false });
       await mockApi(page, {});
       await page.goto('/');
-      await openCalibration(page);
-      await shot(page, viewport, '11-calibrate');
-      await page.locator('#screen-calibrate [data-action="play"]').click();
+      await openHowToPlay(page);
+      // P4: "Cómo jugar" aloja la práctica y la repetición del tutorial. En táctil
+      // ambos destinos cumplen el objetivo mínimo de 44 px.
+      await expect(page.locator('#screen-about [data-action="practice"]')).toBeVisible();
+      await expect(page.locator('#screen-about [data-action="tutorial-replay"]')).toBeVisible();
+      if (viewport.mobile) {
+        for (const action of ['practice', 'tutorial-replay']) {
+          const box = await visibleBox(page, `#screen-about [data-action="${action}"]`);
+          expect(box?.w, `${action} ancho táctil`).toBeGreaterThanOrEqual(44);
+          expect(box?.h, `${action} alto táctil`).toBeGreaterThanOrEqual(44);
+        }
+      }
+      await shot(page, viewport, '11-how-to-play');
+      await page.locator('#screen-about [data-action="tutorial-replay"]').click();
       await screenIs(page, 'playing');
       const hud = page.locator('#hud');
       await expect(hud).toBeVisible();

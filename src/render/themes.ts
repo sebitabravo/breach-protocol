@@ -5,10 +5,19 @@
  * solo cambian luces, niebla, color de tiras emisivas y tinte de paredes; el
  * albedo de cada material queda igual en los tres sectores.
  */
+import { rgbOf, STATE_COLORS } from './palette';
 import type { Material } from '../world/layout';
 import type { ThemeName } from '../world/map';
 
-/** Material albedos; evaluate the rendered ladder after ACES (art-direction.md). */
+/** Hex del dueño (src/render/palette.ts, espejo de tokens.css) → valor numérico
+ * para THREE. Misma conversión que hacía el literal; sin cambio de color. */
+const asRgb = (hex: string): number => {
+  const [r, g, b] = rgbOf(hex);
+  return (r << 16) | (g << 8) | b;
+};
+
+/** Material albedos; evaluate the rendered ladder after ACES (art-direction.md).
+ * Los colores compartidos con la interfaz/canvas derivan de STATE_COLORS. */
 export const PALETTE = {
   bg: 0x070d12, // sky / background above the walls
   floor: 0x28363e,
@@ -19,14 +28,14 @@ export const PALETTE = {
   trim: 0x657682,
   beam: 0x27333b,
   ceiling: 0x394249,
-  glow: 0x5ce08b, // mint accent (unlit basic material)
+  glow: asRgb(STATE_COLORS.ok), // mint accent (unlit basic material)
   sun: 0xe6ecf2,
   fill: 0x9fb0bd,
   hemiSky: 0xdfe4e8,
   hemiGround: 0x2a3036,
   impactWall: 0x96aaba,
-  impactEnemy: 0xff5b6b,
-  death: 0x5ce08b,
+  impactEnemy: asRgb(STATE_COLORS.danger),
+  death: asRgb(STATE_COLORS.ok),
 } as const;
 
 export const MATERIAL_COLORS: Record<Material, number> = {

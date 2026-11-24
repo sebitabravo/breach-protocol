@@ -20,9 +20,9 @@ test('the game boots, plays and reports real numbers', async ({ page }: { page: 
 
   await page.goto('/');
 
-  // 1. Boot completes into the calibration (first visit) or menu screen.
+  // 1. Boot completes into the menu screen (P4: calibration is not a gate).
   const app = page.locator('#app');
-  await expect(app).toHaveAttribute('data-screen', /calibrate|menu/, { timeout: 30_000 });
+  await expect(app).toHaveAttribute('data-screen', 'menu', { timeout: 30_000 });
 
   // 2. The HUD is hidden before playing.
   await expect(page.locator('#hud')).not.toBeVisible();

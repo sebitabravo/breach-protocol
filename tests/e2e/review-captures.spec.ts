@@ -10,13 +10,8 @@ test.describe('390×844 progression and objective', () => {
     await seedStorage(page, { tutorialSeen: true });
     await page.goto('/');
     await screenIs(page, 'menu');
-    await page.locator('#screen-menu [data-action="mission"]').tap();
-    await screenIs(page, 'sectors');
-    await expect(page.locator('[data-sector-card] .sector__icon')).toHaveCount(3);
-    await expect(page.locator('[data-sector-card="0"] .sector__icon')).toBeVisible();
-    await page.screenshot({ path: `${SHOT_DIR}/review-390x844-sectors.png` });
-    await page.locator('[data-sector-card="0"] [data-action="brief"]').tap();
-    await page.locator('[data-action="start-mission"]').tap();
+    // P4: Jugar entra directo a la arena del sector recomendado (aquí el 01).
+    await page.locator('#screen-menu [data-action="play"]').tap();
     await screenIs(page, 'playing');
     const distance = page.locator('#hud-objective-distance');
     await expect(distance).toHaveText('18 m');
@@ -55,7 +50,9 @@ test.describe('1280×720 arena evidence', () => {
     await seedStorage(page, { tutorialSeen: true });
     await page.goto('/');
     await screenIs(page, 'menu');
-    await page.locator('#screen-menu [data-action="practice"]').tap();
+    await page.locator('#screen-menu [data-goto="about"]').tap();
+    await screenIs(page, 'about');
+    await page.locator('#screen-about [data-action="practice"]').tap();
     await screenIs(page, 'playing');
     const position = await page.evaluate(({ I, INPUT_LEN }) => {
       const { engine } = window.__BREACH__ as unknown as { engine: Engine };

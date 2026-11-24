@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { Engine, WorldEvent } from '../../src/wasm/bridge';
+import type { Engine, Snapshot, WorldEvent } from '../../src/wasm/bridge';
 import type { Renderer } from '../../src/render/renderer';
 import { EVT, I, INPUT_LEN } from '../../src/wasm/protocol';
 import { screenIs } from './support';
@@ -21,7 +21,10 @@ async function setup(page: Page) {
     const { renderer } = window.__BREACH__ as unknown as { renderer: Renderer };
     return Reflect.get(renderer, 'scene').environment && Reflect.get(renderer, 'surfaces').materials.slice(0, 3).every((m: { map: unknown }) => m.map);
   });
-  await page.locator('#screen-menu [data-action="practice"]').tap();
+  // P4: la práctica vive en "Cómo jugar" desde el menú.
+  await page.locator('#screen-menu [data-goto="about"]').tap();
+  await screenIs(page, 'about');
+  await page.locator('#screen-about [data-action="practice"]').tap();
   await screenIs(page, 'playing');
   return errors;
 }
@@ -83,7 +86,8 @@ async function frame(page: Page, shot: '20m' | '8m' | 'close' | 'channel' | 'act
     renderer.renderGame(view, 1, 0, [], track);
     const { calls, triangles } = renderer;
     Reflect.get(app, 'hud').update(state, true);
-    Reflect.get(app, 'updateChannelRing')?.call(app, state);
+    // P5: el anillo de canal se extrajo a core/channel-ring (antes updateChannelRing).
+    (Reflect.get(app, 'channelRing') as { update(s: Snapshot): void }).update(state);
     Reflect.get(app, 'objectiveMarker')?.hide();
     const hardware = Reflect.get(Reflect.get(renderer, 'sector'), 'terminals');
     const live = hardware?.batch.geometry.getAttribute('aLive');

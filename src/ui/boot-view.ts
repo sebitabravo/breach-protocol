@@ -1,4 +1,5 @@
 /** Pantalla de arranque: checklist, barra de progreso y mensaje de fallback. */
+import { t } from '../i18n/runtime';
 import { byId } from './dom';
 
 export type CheckState = 'ok' | 'fail';
@@ -32,7 +33,5 @@ export function webgl2Supported(): boolean {
 }
 
 export function fallbackMessage(detail: string): string {
-  return detail === 'webgl2'
-    ? 'Este navegador no expone WebGL2. Probá Chrome, Edge, Firefox o Safari actualizados.'
-    : `No pudimos inicializar el sistema: ${detail}`;
+  return detail === 'webgl2' ? t('fallback.webgl2') : t('fallback.generic', { detail });
 }

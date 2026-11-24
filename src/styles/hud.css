@@ -155,7 +155,7 @@
   }
 
   .hud__obj-icon {
-    grid-row: 1 / span 3;
+    grid-row: 1 / span 2;
     width: 24px;
     height: 24px;
   }
@@ -812,9 +812,11 @@
 
 /* ------------------------------------------------------------------ responsive */
 @media (max-width: 1100px) {
-  /* Variante compacta: bajo la fila de terminales, sin etiqueta, para que puntuación y objetivo sigan visibles. */
+  /* Variante compacta: bajo la fila de terminales, sin etiqueta, para que la frase
+     de objetivo siga visible. La fila de terminales mide 24 px (kicker), así que
+     el objetivo arranca 8 px después de su borde: sin tocar ni pisar. */
   .hud__block--objective {
-    top: calc(124px + var(--safe-t));
+    top: calc(136px + var(--safe-t));
     width: min(340px, 56vw);
     gap: 2px;
   }
@@ -825,10 +827,6 @@
 
   .hud__block--objective .hud__sub {
     font-size: 12px;
-  }
-
-  .hud__block--objective .hud__score {
-    font-size: 14px;
   }
 
   .hud__objective-track {
@@ -843,7 +841,7 @@
   }
 
   .hud__block--objective {
-    top: calc(160px + var(--safe-t));
+    top: calc(170px + var(--safe-t));
   }
 
   .tutorial {
@@ -938,7 +936,7 @@
   }
 
   .hud__block--objective {
-    top: calc(236px + var(--safe-t));
+    top: calc(248px + var(--safe-t));
     left: calc(var(--dist-2) + var(--safe-l));
     right: calc(var(--dist-2) + var(--safe-r));
     width: auto;
@@ -946,7 +944,7 @@
   }
 
   .hud__feed {
-    top: calc(292px + var(--safe-t));
+    top: calc(296px + var(--safe-t));
     left: calc(var(--dist-2) + var(--safe-l));
     right: auto;
     max-width: 130px;
@@ -954,10 +952,19 @@
   }
 }
 
+/* Durante la extracción la fila de terminales no aporta (ya están todas
+   aseguradas, lo que la línea de objetivo ya dice) y su borde pisaría al panel
+   de cuenta atrás en las verticales pequeñas: se retira del HUD ese frame. */
+#hud:has(.hud__extraction:not([hidden])) .hud__objective-track {
+  display: none;
+}
+
 /* El tutorial usa la franja entre los terminales y la mira. Compactá su HUD
    superior y reservá esa franja para las instrucciones, no para el feed. */
-/* Con el tutorial visible, el objetivo compacto repite la instrucción y la puntuación no importa en práctica. */
+/* Con el tutorial visible, el objetivo compacto repite la instrucción y la
+   puntuación no importa en práctica, igual que el feed. */
 #hud:has(.tutorial:not([hidden])) .hud__block--objective,
+#hud:has(.tutorial:not([hidden])) .hud__score,
 #hud:has(.tutorial:not([hidden])) .hud__feed {
   display: none;
 }
@@ -1113,7 +1120,23 @@
   }
 
   #app.is-touch .vitals {
-    --vitals-bottom: 176px;
+    /* La puntuación (obrada del flujo, ver abajo en el mismo rango) vive en la
+       columna del sector a 134 px: la fila de salud baja de 176 a 140 para
+       conservar canal con ella (17 px) y con el panel de extracción (6 px);
+       con el stick quedan 16 px (no es objetivo táctil, y el despeje del
+       stick sigue regido por touch.css). */
+    --vitals-bottom: 140px;
+  }
+
+  /* Apaisado: la fila de estadísticas solo cabe con reloj y enemigos (los
+     anclajes del objetivo de 667 px fijan su borde izquierdo), así que la
+     puntuación obre el flujo y toma la columna del sector, bajo la oleada:
+     mismo grupo de contadores, sin sumar ancho al bloque derecho. */
+  .hud__block--right .hud__score {
+    position: absolute;
+    left: 0;
+    top: 118px;
+    width: 136px;
   }
 
   #app.is-touch .hud__feed {
@@ -1134,8 +1157,23 @@
     left: calc(104px + var(--safe-l));
   }
 
+  /* Geist Mono es ~24% más ancho que el sans anterior: el objetivo (11 px) necesita
+     ~178 px entre el sector y el reloj a 667 px. Se reserva ese ancho sin recortar
+     el nombre de sector (13 px lo muestra entero) ni apretar el tracking global. */
   .hud__block--sector {
-    width: 150px;
+    width: 136px;
+  }
+
+  .hud__sector-name {
+    font-size: 13px;
+  }
+
+  .hud__kicker {
+    letter-spacing: 0.12em;
+  }
+
+  #app.is-touch .hud__block--right {
+    gap: 8px;
   }
 
   .hud__wave {
@@ -1153,8 +1191,12 @@
   }
 
   .hud__block--objective {
-    top: calc(34px + var(--safe-t));
+    top: calc(38px + var(--safe-t));
     width: min(300px, 44vw);
+  }
+
+  .hud__block--objective .hud__sub {
+    font-size: 11px;
   }
 
   .hud__feed {
@@ -1164,5 +1206,73 @@
   .vitals .bar,
   .ammo .bar {
     width: 110px;
+  }
+}
+
+/* La línea de objetivo vive del canal libre entre el bloque de sector y el de
+   estadísticas (la fila superior es space-between): la banda compacta deja de
+   centrarse con un ancho mágico ajustado a una frase y se ancla a los bordes de
+   ese canal. Izquierda: borde derecho del sector (240 px = 104 px de minimapa +
+   136 px de bloque) + 8 px de canal. Derecha: borde izquierdo de
+   .hud__block--right — 230 px de contenido (kicker «transcurrido» 95 px +
+   «enemigos» 63 px + huecos de 16 px + botón de pausa 40 px) + 16 px del borde
+   de .hud__top en no táctil + 8 px de canal; en táctil el botón de pausa
+   desaparece con #btn-pause-hud y el bloque mide 166 px (95+63+8) con 68 px de
+   margen. Regla documentada: la cadena más larga del catálogo («sostené la
+   posición hasta la extracción», 40 caracteres Geist Mono a 11 px ≈ 258 px) va
+   partida en dos líneas desde 667 px y entera desde ~915 px; la variante
+   compacta envuelve en 1–2 líneas (piso de 11 px intacto) y nunca recorta ni
+   elipsa. Lo fija «the extraction objective…» en tests/e2e/mobile-layout.spec.ts. */
+/* El piso de la suite HUD apaisada es 667 px (docs/GAME_AUDIT.md A-03/A-04);
+   debajo ni sector ni estadísticas dejan canal: es límite conocido, no arreglo. */
+@media (max-height: 460px) and (min-width: 667px) {
+  .hud__block--objective {
+    top: calc(38px + var(--safe-t));
+    left: calc(240px + var(--dist) + var(--safe-l));
+    right: calc(230px + var(--dist-2) + var(--dist) + var(--safe-r));
+    width: auto;
+    transform: none;
+  }
+
+  #app.is-touch .hud__block--objective {
+    right: calc(166px + 68px + var(--dist) + var(--safe-r));
+  }
+
+  .hud__block--objective .hud__sub {
+    /* Dos líneas necesitan caja de línea apretada: sin ella la segunda línea
+       baja hasta la fila del feed. No cambia el tamaño de letra. */
+    line-height: 1.25;
+  }
+}
+
+/* Vertical: el panel de extracción entra como una sola línea entre las
+   estadísticas (la segunda fila del HUD llega hasta ~173 px) y la fila de
+   terminales (214 px). El rótulo «mantené la posición» desaparece solo en este
+   ancho: durante la extracción la línea de objetivo repite la misma instrucción
+   y el panel compacto conserva el kicker y la cuenta atrás. */
+@media (max-width: 480px) and (min-height: 501px) {
+  .hud__extraction {
+    top: calc(178px + var(--safe-t));
+    padding: 4px 10px;
+  }
+
+  .hud__extraction strong {
+    display: inline;
+    margin-left: 6px;
+    font-size: 16px;
+  }
+
+  .hud__extraction p {
+    display: none;
+  }
+
+  /* Vertical pequeño: la segunda fila de estadísticas ocupa todo el ancho libre
+     (la fila superior es flex-wrap), así que la puntuación obre el flujo y va
+     bajo el minimapa, en la misma columna de 96 px y a 8 px de su borde. */
+  .hud__block--right .hud__score {
+    position: absolute;
+    left: -116px;
+    top: 104px;
+    width: 96px;
   }
 }

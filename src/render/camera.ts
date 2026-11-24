@@ -4,15 +4,18 @@
  * simulation directly, so it can be driven from plain numbers in tests.
  */
 import * as THREE from 'three';
+/** Dueño único: src/core/constants.ts replica core/src/player.rs (drift test).
+ * La snapshot trae el y de los PIES del jugador (core/src/sim.rs escribe
+ * `player.pos.y`); la cámara en primera persona necesita el ojo, así que el
+ * renderer lo levanta por PLAYER.eyeHeight. */
+import { PLAYER } from '../core/constants';
 import type { Pose } from './interp';
 
 const ORBIT_RADIUS = 13.4;
 const ORBIT_HEIGHT = 3.6;
 const ORBIT_SPEED = 0.085;
-/** The snapshot carries the player's FEET y (core/src/sim.rs writes
- * `player.pos.y`); the first-person camera needs the eye, so the renderer
- * lifts it by the sim's EYE_HEIGHT (core/src/player.rs). */
-export const EYE_HEIGHT = 1.62;
+/** Derivada del dueño único (src/core/constants.ts). */
+export const EYE_HEIGHT = PLAYER.eyeHeight;
 const BOB_AMPLITUDE = 0.035;
 
 /** Subset of the snapshot the first-person pose needs. */

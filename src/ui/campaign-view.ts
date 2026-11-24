@@ -5,16 +5,15 @@ import {
   type ProgressState,
 } from '../core/progress';
 import { SECTOR_IDS, sectorInfo, type SectorId } from '../core/sectors';
+import { t, formatNumber, formatDurationMs } from '../i18n/runtime';
 import { byId } from './dom';
 
-export function clock(ms: number | null): string {
-  if (ms === null) return '—';
-  const seconds = Math.floor(ms / 1000);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+function clock(ms: number | null): string {
+  return ms === null ? '—' : formatDurationMs(ms);
 }
 
 function points(value: number): string {
-  return value > 0 ? value.toLocaleString('es-CL') : '—';
+  return value > 0 ? formatNumber(value) : '—';
 }
 
 function sectorLabel(id: SectorId): string {
@@ -26,16 +25,14 @@ export function recommendedSector(state: ProgressState): SectorId {
   return SECTOR_IDS.find((id) => isSectorUnlocked(state, id) && !isSectorCleared(state, id)) ?? 2;
 }
 
-export function renderMenu(state: ProgressState, todayKey: string): void {
+/** Pinta el menú a partir del progreso. Daily y Overflow están ocultos para el
+ *  jugador (P4): sus rutas de código quedan intactas, pero el menú no las nombra. */
+export function renderMenu(state: ProgressState): void {
   const sector = sectorInfo(recommendedSector(state));
   const code = sector.code.toLowerCase().replace('_', ' ');
   byId('menu-sector-code').textContent = `${code} · ${sector.title.toLowerCase()}`;
   byId('menu-play-meta').textContent = code;
-  byId('menu-practice-meta').textContent = state.tutorialSeen ? 'práctica libre' : 'tutorial en 3 pasos';
   byId('menu-cleared').textContent = `${SECTOR_IDS.filter((id) => isSectorCleared(state, id)).length}/3`;
-  byId('menu-streak').textContent = `${state.daily.streak} ${state.daily.streak === 1 ? 'día' : 'días'}`;
-  byId('menu-overflow').textContent = points(state.overflow.bestScore);
-  byId('menu-daily-meta').textContent = `hoy ${todayKey}`;
 }
 
 export function renderSectorCards(state: ProgressState): void {
@@ -47,7 +44,10 @@ export function renderSectorCards(state: ProgressState): void {
     const cleared = isSectorCleared(state, id);
     card.dataset.state = !unlocked ? 'locked' : cleared ? 'cleared' : 'open';
     const label = document.querySelector<HTMLElement>(`[data-state-label="${id}"]`);
-    if (label) label.textContent = !unlocked ? 'bloqueado' : cleared ? 'completado' : 'disponible';
+    if (label) label.textContent = !unlocked ? t('sectors.stateLocked') : cleared ? t('sectors.stateCleared') : t('sectors.stateOpen');
+    const title = card.querySelector<HTMLElement>('.sector__title');
+    // El dueño del nombre del sector es sectors.ts; la tarjeta lo refleja.
+    if (title) title.textContent = sectorInfo(id).title;
     const score = document.querySelector<HTMLElement>(`[data-sector-score="${id}"]`);
     if (score) score.textContent = points(record.bestScore);
     const time = document.querySelector<HTMLElement>(`[data-sector-time="${id}"]`);
@@ -55,7 +55,7 @@ export function renderSectorCards(state: ProgressState): void {
     const lock = document.querySelector<HTMLElement>(`[data-sector-lock="${id}"]`);
     if (lock) {
       lock.hidden = unlocked;
-      lock.textContent = unlocked ? '' : `Completá ${sectorLabel((id - 1) as SectorId)} para desbloquear.`;
+      lock.textContent = unlocked ? '' : t('sectors.lockFmt', { sector: sectorLabel((id - 1) as SectorId) });
     }
     const button = card.querySelector<HTMLButtonElement>('button[data-action="brief"]');
     if (button) button.disabled = !unlocked;
@@ -64,8 +64,11 @@ export function renderSectorCards(state: ProgressState): void {
 
 export function renderBriefing(id: SectorId): void {
   const sector = sectorInfo(id);
-  byId('brief-eyebrow').textContent = `misión 0${id + 1}`;
-  byId('brief-title').textContent = `Reactivación del ${sector.code.toLowerCase().replace('_', ' ')} · ${sector.title}`;
+  byId('brief-eyebrow').textContent = t('brief.eyebrowFmt', { n: `0${id + 1}` });
+  byId('brief-title').textContent = t('brief.titleFmt', {
+    sector: sector.code.toLowerCase().replace('_', ' '),
+    title: sector.title,
+  });
   byId('brief-narrative').textContent = sector.narrative;
   fillList(byId('brief-objectives'), sector.objectives);
   fillList(byId('brief-rewards'), sector.rewards);

@@ -10,7 +10,15 @@ import type { Mode } from '../core/screens';
 import type { FeedKind } from '../core/events';
 import { damageBearing } from '../core/bearing';
 import { FIXED_DT } from '../core/loop';
+import { rgbOf, STATE_COLORS } from '../render/palette';
+import { t, formatClock, formatNumber } from '../i18n/runtime';
 import { byId } from './dom';
+
+/** Colores de estado derivados del dueño único (src/render/palette.ts, espejo de
+ * tokens.css). El RGB desglosado compone los `rgba()` del minimapa sin repetir
+ * el hex; los literales se calculan una vez, fuera del camino caliente. */
+const [OK_R, OK_G, OK_B] = rgbOf(STATE_COLORS.ok);
+const MINT_FADE = `rgba(${OK_R},${OK_G},${OK_B},0.16)`;
 
 /** Siluetas de arma para el bloque de munición (viewBox 64×24), leídas de las mismas proporciones del viewmodel. */
 export const WEAPON_ICON: Record<number, string> = {
@@ -40,26 +48,15 @@ export interface MatchView {
   unlockedWeapons: readonly number[];
 }
 
-function thousands(value: number): string {
-  const rounded = Math.max(0, Math.round(value));
-  return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-}
-
-function clock(seconds: number): string {
-  const clamped = Math.max(0, seconds);
-  const m = Math.floor(clamped / 60);
-  const s = Math.floor(clamped % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
+/** Rótulo del modo para el kicker del HUD; el catálogo arma la frase. */
 function modeLabel(view: MatchView): string {
   switch (view.mode) {
     case 'run':
-      return 'misión';
+      return t('hud.modeRun');
     case 'overflow':
-      return 'overflow · ARGOS inunda el sector';
+      return t('hud.modeOverflow');
     case 'daily':
-      return `protocolo diario · ${view.dateKey} · ${MUTATOR_LABEL[view.mutator]}`;
+      return t('hud.modeDailyFmt', { date: view.dateKey, mutator: MUTATOR_LABEL[view.mutator] });
     case 'practice':
       return ''; // The sector kicker already identifies the simulator.
   }
@@ -104,6 +101,7 @@ export class Hud {
   private sectorName = byId('hud-sector-name');
   private mode = byId('hud-mode');
   private score = byId('hud-score');
+  private nodesTrack = byId('hud-nodes');
   private objectiveLine = byId('hud-objective-line');
   private timeLabel = byId('hud-time-label');
   private time = byId('hud-time');
@@ -163,7 +161,7 @@ export class Hud {
     const mode = modeLabel(view);
     this.mode.textContent = mode;
     this.mode.hidden = mode === '';
-    this.timeLabel.textContent = view.mode === 'run' || view.mode === 'daily' ? 'restante' : 'transcurrido';
+    this.timeLabel.textContent = view.mode === 'run' || view.mode === 'daily' ? t('hud.timeLeft') : t('hud.timeElapsed');
     for (const slot of this.slots) {
       const weapon = Number(slot.dataset.weapon);
       slot.classList.toggle('is-locked', !view.unlockedWeapons.includes(weapon));
@@ -172,6 +170,13 @@ export class Hud {
 
   setMap(map: MapData): void {
     this.map = map;
+  }
+
+  /** Re-aplica los rótulos del idioma activo a la partida en curso; el resto
+   *  de valores dinámicos se reescribe en el primer frame siguiente. */
+  relocalize(): void {
+    if (!this.view) return;
+    this.setMatch(this.view);
   }
 
   setReduceFlashes(reduced: boolean): void {
@@ -207,11 +212,11 @@ export class Hud {
       this.waveBar.style.width = `${Math.round(ratio * 100)}%`;
     });
     this.set('score', Math.round(state.score), () => {
-      this.score.textContent = thousands(state.score);
+      this.score.textContent = formatNumber(state.score);
     });
     const shownTime = timed ? state.timeLeft : state.timeElapsed;
-    this.set('time', clock(shownTime), () => {
-      this.time.textContent = clock(shownTime);
+    this.set('time', formatClock(shownTime), () => {
+      this.time.textContent = formatClock(shownTime);
     });
     this.set('remaining', state.enemiesRemaining, () => {
       this.remaining.textContent = String(state.enemiesRemaining);
@@ -219,13 +224,22 @@ export class Hud {
 
     const objectiveText =
       state.phase === PHASE.extraction
-        ? 'sostené la posición hasta la extracción'
+        ? t('hud.objectiveExtract')
         : this.view?.mode === 'overflow' && state.nodesActive >= MAX_NODES
-          ? 'terminales aseguradas · resistí'
-          : `reactivá una terminal (${state.nodesActive}/${MAX_NODES})`;
+          ? t('hud.objectiveOverflow')
+          : t('hud.objectiveNodes');
     this.set('objLine', objectiveText, () => {
       this.objectiveLine.textContent = objectiveText;
     });
+    // Una sola representación visual del progreso (la fila de barras); el conteo
+    // exacto vive en el nombre accesible de esa fila, no repetido en pantalla.
+    this.set(
+      'nodesLabel',
+      `${state.nodesActive}/${MAX_NODES}`,
+      () => {
+        this.nodesTrack.setAttribute('aria-label', t('hud.nodesAriaFmt', { active: state.nodesActive, total: MAX_NODES }));
+      },
+    );
 
     for (let i = 0; i < this.nodes.length; i += 1) {
       const node = state.node(i);
@@ -276,11 +290,11 @@ export class Hud {
       this.reloadBar.style.width = `${Math.round(state.reloadProgress * 100)}%`;
     });
     const hint = state.reloading
-      ? 'recargando'
+      ? t('hud.reloading')
       : ammo === 0
         ? usingTouch
-          ? 'tocá recargar'
-          : 'R para recargar'
+          ? t('hud.reloadTouch')
+          : t('hud.reloadKey')
         : '';
     this.set('hint', hint, () => {
       this.reloadHint.textContent = hint;
@@ -403,7 +417,7 @@ export class Hud {
       const live = state.node(i);
       // Forma además de color: activo = cuadrado lleno, pendiente = cuadrado hueco.
       if (live.active) {
-        ctx.fillStyle = '#5ce08b';
+        ctx.fillStyle = STATE_COLORS.ok;
         ctx.fillRect(node.x * scale - 2, node.z * scale - 2, 4, 4);
       } else {
         ctx.strokeStyle = 'rgba(150,170,186,0.9)';
@@ -415,7 +429,7 @@ export class Hud {
     for (let i = 0; i < 32; i += 1) {
       const enemy = state.enemy(i);
       if (enemy.state === ENEMY_STATE.dead) continue;
-      ctx.fillStyle = enemy.kind === 1 ? '#ffce6b' : '#ff5b6b';
+      ctx.fillStyle = enemy.kind === 1 ? STATE_COLORS.warning : STATE_COLORS.danger;
       ctx.beginPath();
       traceEnemyMarker(ctx, enemy.kind, enemy.x * scale, enemy.z * scale);
       ctx.fill();
@@ -424,13 +438,13 @@ export class Hud {
 
     ctx.save();
     ctx.translate(size / 2, size / 2);
-    ctx.fillStyle = 'rgba(92,224,139,0.16)';
+    ctx.fillStyle = MINT_FADE;
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.arc(0, 0, size * 0.42, -Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = '#5ce08b';
+    ctx.fillStyle = STATE_COLORS.ok;
     ctx.beginPath();
     ctx.moveTo(0, -5);
     ctx.lineTo(3.4, 4);

@@ -67,9 +67,9 @@ export interface FlowState extends ScreenState {
 }
 
 export type FlowEvent =
-  | { type: 'boot-complete'; tutorialSeen: boolean }
+  | { type: 'boot-complete' }
   | { type: 'boot-failed' }
-  | { type: 'open'; screen: 'menu' | 'calibrate' | 'about' | 'sectors' | 'leaderboard' }
+  | { type: 'open'; screen: 'menu' | 'calibrate' | 'about' | 'sectors' | 'leaderboard' | 'pause' }
   | { type: 'brief'; mapId: number }
   | { type: 'start'; mode: Mode; mapId: number }
   | { type: 'pause'; origin: PauseOrigin }
@@ -78,13 +78,11 @@ export type FlowEvent =
   | { type: 'finish' };
 
 /**
- * Solo un "Jugar" explícito de un jugador nuevo entra por calibración. Sin intención (la
- * precarga en reposo terminó sola) la pantalla visible no cambia: el menú sigue siendo el menú.
+ * La calibración es una superficie de ajustes, no un gate: un jugador nuevo llega
+ * a la arena sin pasar por ella (queda alcanzable desde Ajustes/pausa). Sin
+ * intención (la precarga en reposo terminó sola) la pantalla visible no cambia:
+ * el menú sigue siendo el menú.
  */
-export function routesToCalibration(tutorialSeen: boolean, intentAction: string | undefined, hasIntent: boolean): boolean {
-  return !tutorialSeen && hasIntent && intentAction === 'play';
-}
-
 export const INITIAL_FLOW: FlowState = { screen: 'boot', mode: 'run', pauseOrigin: 'game', mapId: 0 };
 
 const PAGE_SCREENS: readonly Screen[] = ['menu', 'calibrate', 'about', 'sectors', 'briefing', 'leaderboard', 'result'];
@@ -97,14 +95,27 @@ const PAGE_SCREENS: readonly Screen[] = ['menu', 'calibrate', 'about', 'sectors'
 export function transition(state: FlowState, event: FlowEvent): FlowState {
   switch (event.type) {
     case 'boot-complete':
-      return state.screen === 'boot'
-        ? { ...state, screen: event.tutorialSeen ? 'menu' : 'calibrate' }
-        : state;
+      // P4: sin gate de calibración; todo boot completo cae en el menú.
+      return state.screen === 'boot' ? { ...state, screen: 'menu' } : state;
     case 'boot-failed':
       return state.screen === 'boot' ? { ...state, screen: 'fallback' } : state;
-    case 'open':
-      if (state.screen === 'pause' && event.screen === 'menu') return { ...state, screen: 'menu' };
-      return PAGE_SCREENS.includes(state.screen) ? { ...state, screen: event.screen } : state;
+    case 'open': {
+      if (state.screen === 'pause') {
+        // Salir al menú limpia el origen: ya no hay pausa en curso detrás.
+        if (event.screen === 'menu') return { ...state, screen: 'menu', pauseOrigin: 'menu' };
+        // La calibración es parte de Ajustes: se abre desde la pausa (cualquier origen)
+        // y regresa a ella si había una partida viva (GameApp decide el regreso).
+        if (event.screen === 'calibrate') return { ...state, screen: 'calibrate' };
+        return state;
+      }
+      if (!PAGE_SCREENS.includes(state.screen)) return state;
+      if (event.screen === 'menu') return { ...state, screen: 'menu', pauseOrigin: 'menu' };
+      // Volver desde la calibración a la pausa de una partida viva.
+      if (state.screen === 'calibrate' && event.screen === 'pause' && state.pauseOrigin === 'game') {
+        return { ...state, screen: 'pause' };
+      }
+      return { ...state, screen: event.screen };
+    }
     case 'brief':
       return state.screen === 'sectors' ? { ...state, screen: 'briefing', mapId: event.mapId } : state;
     case 'start':

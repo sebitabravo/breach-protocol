@@ -1,5 +1,6 @@
 /** Panel de envío al tablero en Resultados y filas de la pantalla de Clasificación. */
 import type { BoardEntry, BoardKey, BoardResult } from '../net/leaderboard';
+import { t, formatNumber, formatDate } from '../i18n/runtime';
 import { byId } from './dom';
 
 export type BoardPanel =
@@ -11,16 +12,10 @@ export type BoardPanel =
   | { kind: 'rejected'; code: string }
   | { kind: 'offline' };
 
-const REJECT_TEXT: Record<string, string> = {
-  empty_name: 'Escribí un nombre de 1 a 16 caracteres.',
-  verify_failed: 'El servidor no pudo verificar este registro.',
-  encode_failed: 'No pudimos preparar el registro de esta partida.',
-};
-
 export function boardLabel(board: BoardKey): string {
-  if (board === 'overflow') return 'overflow';
-  if (board.startsWith('daily:')) return `diario ${board.slice('daily:'.length)}`;
-  return `${board.replace('mission:s0', 'sector 0')} · misión`;
+  if (board === 'overflow') return t('board.overflowLabel');
+  if (board.startsWith('daily:')) return t('board.dailyFmt', { date: board.slice('daily:'.length) });
+  return t('board.sectorFmt', { code: board.replace('mission:s0', 'sector 0') });
 }
 
 export function renderBoardPanel(view: BoardPanel): void {
@@ -42,39 +37,38 @@ export function renderBoardPanel(view: BoardPanel): void {
   switch (view.kind) {
     case 'idle':
       byId('board-where').textContent = view.where;
-      text.textContent = 'Enviá la partida para verificarla en el servidor.';
-      send.textContent = 'Enviar al tablero';
+      text.textContent = t('results.idleText');
+      send.textContent = t('results.send');
       break;
     case 'ineligible':
-      byId('board-where').textContent = 'sin tablero';
+      byId('board-where').textContent = t('board.whereNone');
       text.textContent = view.reason;
       break;
     case 'sending':
-      text.textContent = 'Enviando y verificando la partida…';
-      send.textContent = 'Enviando…';
+      text.textContent = t('board.sendingText');
+      send.textContent = t('board.sending');
       break;
     case 'ranked':
       byId('board-where').textContent = view.where;
       rank.textContent = `#${view.rank}`;
-      text.textContent = `Verificada por el servidor · ${view.rank} de ${view.total} en el tablero.`;
+      text.textContent = t('board.rankedFmt', { rank: view.rank, total: view.total });
       break;
     case 'rate-limited':
-      text.textContent = 'Demasiados envíos seguidos. Esperá un minuto y reintentá.';
-      send.textContent = 'Reintentar';
+      text.textContent = t('board.rateLimited');
+      send.textContent = t('board.retry');
       break;
     case 'rejected':
-      text.textContent = REJECT_TEXT[view.code] ?? `El servidor rechazó el registro (${view.code}).`;
-      send.textContent = 'Enviar de nuevo';
+      text.textContent = view.code === 'empty_name' ? t('board.rejectEmptyName')
+        : view.code === 'verify_failed' ? t('board.rejectVerify')
+        : view.code === 'encode_failed' ? t('board.rejectEncode')
+        : t('board.rejectedFmt', { code: view.code });
+      send.textContent = t('board.sendAgain');
       break;
     case 'offline':
-      text.textContent = 'Sin conexión con el tablero. La partida queda guardada en este equipo; reintentá cuando vuelva la red.';
-      send.textContent = 'Reintentar';
+      text.textContent = t('board.offline');
+      send.textContent = t('board.retry');
       break;
   }
-}
-
-function formatDate(epochSeconds: number): string {
-  return new Date(epochSeconds * 1000).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' });
 }
 
 function row(entry: BoardEntry): HTMLLIElement {
@@ -83,7 +77,7 @@ function row(entry: BoardEntry): HTMLLIElement {
   const cells: [string, string][] = [
     ['rank', String(entry.rank)],
     ['name', entry.name],
-    ['score', entry.score.toLocaleString('es-CL')],
+    ['score', formatNumber(entry.score)],
     ['date', formatDate(entry.at)],
   ];
   for (const [kind, value] of cells) {
@@ -97,7 +91,7 @@ function row(entry: BoardEntry): HTMLLIElement {
 
 export function renderBoardLoading(): void {
   byId('board-rows').replaceChildren();
-  byId('board-state').textContent = 'Cargando…';
+  byId('board-state').textContent = t('leaderboard.loading');
 }
 
 export function renderBoardRows(result: BoardResult): void {
@@ -105,15 +99,11 @@ export function renderBoardRows(result: BoardResult): void {
   const state = byId('board-state');
   if (result.status === 'error') {
     rows.replaceChildren();
-    state.textContent =
-      result.reason === 'offline'
-        ? 'Sin conexión con el tablero. Probá de nuevo más tarde.'
-        : 'El tablero no respondió como se esperaba.';
+    state.textContent = result.reason === 'offline' ? t('leaderboard.errOffline') : t('leaderboard.errUnexpected');
     return;
   }
   rows.replaceChildren(...result.entries.map(row));
-  state.textContent =
-    result.entries.length === 0
-      ? 'Todavía no hay registros verificados en este tablero.'
-      : `${result.total} registros verificados`;
+  state.textContent = result.entries.length === 0
+    ? t('leaderboard.empty')
+    : t('leaderboard.totalFmt', { total: result.total });
 }

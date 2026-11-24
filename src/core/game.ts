@@ -12,7 +12,6 @@ import { InputManager, type InputHooks } from '../input/input';
 import type { AudioManager } from '../audio/audio';
 import { Hud, type MatchView } from '../ui/hud';
 import { ObjectiveMarker } from '../ui/objective-marker';
-import { Engineering } from '../ui/engineering';
 import { BootView, webgl2Supported } from '../ui/boot-view';
 import { renderResult } from '../ui/results';
 import { SettingsForm, type SettingsView } from '../ui/settings-form';
@@ -21,11 +20,24 @@ import { recommendedSector, renderBriefing, renderMenu, renderSectorCards } from
 import { renderBoardLoading, renderBoardPanel, renderBoardRows, boardLabel, type BoardPanel } from '../ui/board-view';
 import { renderTutorial, renderTutorialHandoff } from '../ui/tutorial-view';
 import { QualityController } from './quality';
+import { EngineeringMonitor, type EngineeringSources } from './engineering-monitor';
+import { applySettings as applySettingsToRuntime, applyMotionPreference as applyMotionPreferenceToRuntime, type SettingsApplyContext } from './settings-apply';
+import { ChannelRing } from './channel-ring';
+import { presentEvents } from './event-feedback';
+import {
+  BOOT_MINIMUM_BROWSERS,
+  bootSlowState,
+  devEngineeringRequested,
+  forcedBootState,
+  missingCapabilities,
+  probeBootRuntime,
+  type BootCapability,
+  type BootProbes,
+} from './boot';
 import { FIXED_DT, FixedStepLoop } from './loop';
-import { loadSettings, resetSettings, saveSettings, gfxOverridesOf, type Locale, type Quality, type Settings } from './settings';
+import { loadSettings, resetSettings, saveSettings, type Settings } from './settings';
 import { bestScore, saveScore, type RunResult } from './scores';
 import { buildRunResult, buildStartOptions } from './match';
-import { effectsOf } from './events';
 import { dailySeed, utcDateKey } from './daily';
 import {
   ProgressStore,
@@ -53,13 +65,14 @@ import {
 } from './tutorial';
 import { boardFor, fetchBoard, sanitizeName, submitRun, type BoardKey, type RunMode } from '../net/leaderboard';
 import { MUTATORS, type MapData, type Mutator } from '../world/map';
+import { t, initI18n, onLocaleChange, formatNumber } from '../i18n/runtime';
+import { type CatalogKey } from '../i18n/catalog';
 import {
   INITIAL_FLOW,
   escapeAction,
   pauseSubtitle,
   pointerLockErrorAction,
   pointerLockLostAction,
-  routesToCalibration,
   transition,
   type FlowEvent,
   type FlowState,
@@ -68,6 +81,23 @@ import {
 } from './screens';
 
 const ENGINE_URL = `${import.meta.env.BASE_URL}bp_core.wasm`;
+
+// Re-exports (P5): el gate y la resiliencia de boot viven en ./boot; la ruta
+// pública `core/game` sigue siendo válida para sus consumidores (tests de boot,
+// bandera de desarrollo).
+export {
+  BOOT_SLOW_MS,
+  BOOT_STALLED_MS,
+  BOOT_REQUIRED_RUNTIME_APIS,
+  BOOT_MINIMUM_BROWSERS,
+  probeBootRuntime,
+  missingCapabilities,
+  bootSlowState,
+  forcedBootState,
+  devEngineeringRequested,
+  bootCopy,
+} from './boot';
+export type { BootCapability, BootProbes, BootSlowState, BootCopy } from './boot';
 const LEADERBOARD_LIMIT = 20;
 const DEFAULT_BOARD = 'mission:s01';
 
@@ -105,147 +135,16 @@ function clampSector(id: number): SectorId {
 }
 
 function ineligibleReason(mode: Mode, won: boolean, shotgunEnabled: boolean): string {
-  if (mode === 'practice') return 'El simulador no cuenta para ningún tablero.';
-  if (shotgunEnabled) return 'Las partidas con SG-08 no entran al tablero: el desbloqueo no se puede verificar.';
-  if (mode === 'run' && !won) return 'Las derrotas de misión no entran al tablero. Reintentá el sector.';
-  return 'Esta partida no entra a ningún tablero.';
-}
-
-/**
- * Resiliencia de arranque (T5c, estudio REA): gate de capacidades y recuperación
- * de un boot que no termina. Sin user-agent: cada requisito se verifica por
- * capability; la lista sale de lo que el bundle construido llama de verdad en
- * el camino de arranque (ver el comentario de cada API).
- */
-export type BootCapability = 'wasm' | 'webgl2' | 'runtime';
-export type BootProbes = Record<BootCapability, boolean>;
-
-/** Primer umbral, generoso: un dispositivo lento pero funcional termina debajo
- *  (payload hasta boot ≈ 267 KiB gzip; el arranque medido entero es de segundos:
- *  docs/performance-budget.md). Solo superficie un aviso, nunca corta nada. */
-export const BOOT_SLOW_MS = 24_000;
-/** Segundo umbral: recién aquí se ofrece Reintentar. Nunca para una carga que
- *  sigue avanzando: triplica el margen del peor network que funcione. */
-export const BOOT_STALLED_MS = 60_000;
-
-/** APIs modernas que los chunks construidos invocan en el arranque:
- *  - AbortController: GameApp (controlador del shell) y three (carga de recursos).
- *  - AbortSignal.timeout: wasm/bridge.ts (fetch del núcleo con corte temporal).
- *  - ResizeObserver: ui/objective-marker.ts, instanciado dentro de boot().
- *  - replaceChildren: ui/campaign-view.ts y ui/board-view.ts, via refreshMenu() en boot().
- *  La sintaxis es2022 (vite.config.ts build.target; campos privados #x en el
- *  output) no es detectable en runtime: la cubre el piso declarado abajo. */
-export const BOOT_REQUIRED_RUNTIME_APIS = [
-  'AbortController',
-  'AbortSignal.timeout',
-  'ResizeObserver',
-  'replaceChildren',
-] as const;
-
-/** Piso de compatibilidad declarado: el API más exigente del arranque es
- *  AbortSignal.timeout (Chrome 103, Firefox 100, Safari 16); todo lo demás
- *  (ResizeObserver, replaceChildren, sintaxis es2022 con campos privados) es
- *  más viejo. Solo es texto declarado: la decisión real es la capability. */
-export const BOOT_MINIMUM_BROWSERS = [
-  { name: 'Chrome', version: 103 },
-  { name: 'Firefox', version: 100 },
-  { name: 'Safari', version: 16 },
-] as const;
-
-/** Verifica por presencia, no por UA. Cada check es detectable sin navegador
- *  completo: `typeof` y un prototype. */
-export function probeBootRuntime(): boolean {
-  try {
-    return (
-      typeof AbortController === 'function' &&
-      typeof AbortSignal === 'function' &&
-      typeof AbortSignal.timeout === 'function' &&
-      typeof ResizeObserver === 'function' &&
-      typeof Element.prototype.replaceChildren === 'function'
-    );
-  } catch {
-    return false;
-  }
-}
-
-export function missingCapabilities(probes: BootProbes): BootCapability[] {
-  const missing: BootCapability[] = [];
-  for (const capability of ['wasm', 'webgl2', 'runtime'] as const) {
-    if (!probes[capability]) missing.push(capability);
-  }
-  return missing;
-}
-
-export type BootSlowState = 'in-time' | 'slow' | 'stalled';
-
-/** Estado puro del gate de estancamiento: `slow` superficie el aviso;
- *  recién `stalled` (segundo umbral) ofrece la acción de recuperación. */
-export function bootSlowState(
-  elapsedMs: number,
-  slowMs = BOOT_SLOW_MS,
-  stalledMs = BOOT_STALLED_MS,
-): BootSlowState {
-  if (elapsedMs >= stalledMs) return 'stalled';
-  if (elapsedMs >= slowMs) return 'slow';
-  return 'in-time';
-}
-
-/** Forzar los estados a demanda para verificación, espejo del `?viewmodel` del
- *  renderer: `?boot=slow` y `?boot=unsupported`. Cualquier otro valor es `auto`. */
-export function forcedBootState(search: string): 'auto' | 'slow' | 'unsupported' {
-  const value = new URLSearchParams(search).get('boot');
-  return value === 'slow' || value === 'unsupported' ? value : 'auto';
-}
-
-/** Rótulos de la resiliencia de arranque. La página base va en español (lang="es")
- *  y el único mecanismo de idioma del proyecto es `settings.locale` (es/en),
- *  igual que los rótulos gráficos de SettingsForm: se resuelven desde el idioma
- *  cargado, sin una segunda vía de traducción en el marcado. */
-export interface BootCopy {
-  slow: string;
-  unsupportedTitle: string;
-  unsupportedBody: string;
-  floor: string;
-  retry: string;
-  items: Record<BootCapability, string>;
-}
-
-const BOOT_COPY: Record<Locale, BootCopy> = {
-  es: {
-    slow: 'el arranque está tardando más de lo usual…',
-    unsupportedTitle: 'Este navegador no puede iniciar el protocolo',
-    unsupportedBody: 'Faltan capacidades obligatorias para ejecutar el juego. Probá una versión actualizada de:',
-    floor: 'versiones mínimas',
-    retry: 'Reintentar',
-    items: {
-      wasm: 'WebAssembly (núcleo de simulación)',
-      webgl2: 'WebGL2 (render del juego)',
-      runtime: `APIs del arranque: ${BOOT_REQUIRED_RUNTIME_APIS.join(', ')}`,
-    },
-  },
-  en: {
-    slow: 'Boot is taking longer than usual…',
-    unsupportedTitle: 'This browser cannot start the protocol',
-    unsupportedBody: 'Required capabilities to run the game are missing. Try an updated version of:',
-    floor: 'minimum versions',
-    retry: 'Retry',
-    items: {
-      wasm: 'WebAssembly (simulation core)',
-      webgl2: 'WebGL2 (game renderer)',
-      runtime: `Boot APIs: ${BOOT_REQUIRED_RUNTIME_APIS.join(', ')}`,
-    },
-  },
-};
-
-export function bootCopy(locale: Locale): BootCopy {
-  return BOOT_COPY[locale];
+  if (mode === 'practice') return t('board.ineligiblePractice');
+  if (shotgunEnabled) return t('board.ineligibleShotgun');
+  if (mode === 'run' && !won) return t('board.ineligibleLoss');
+  return t('board.ineligibleOther');
 }
 
 export class GameApp {
   private readonly canvas = byId<HTMLCanvasElement>('gl');
   private readonly app = byId('app');
-  private readonly crosshair = byId('crosshair');
-  private channelPercent = 0;
+  private readonly channelRing = new ChannelRing(byId('crosshair'));
   /** Un solo controlador: `dispose()` corta todos los listeners del shell de una vez. */
   private readonly abort = new AbortController();
   private readonly settingsForm = new SettingsForm(this.app, {
@@ -264,7 +163,7 @@ export class GameApp {
   private readonly motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
   private map: MapData | null = null;
   private mutator: Mutator = 'none';
-  private eng: Engineering | null = null;
+  private eng: EngineeringMonitor | null = null;
 
   private settings: Settings = loadSettings();
   private progress = ProgressStore.open({ legacyTutorialSeen: this.settings.tutorialSeen });
@@ -285,19 +184,18 @@ export class GameApp {
   private tutorialOrigin = { x: 0, z: 0 };
   private pending: PendingRun | null = null;
   private submitting = false;
-  private calibrationOffered = false;
   private readonly skipConfirm = new SkipConfirm();
   private readonly destructiveConfirm = new Map<string, SkipConfirm>();
   private boardToken = 0;
   private lastSeq = 0;
+  private lastRendered: { run: RunResult; isRecord: boolean; truncated: boolean } | null = null;
+  private offLocaleChange: (() => void) | null = null;
   private events: WorldEvent[] = [];
-  private frameSamples: number[] = [];
   private lastNow = 0;
   private rafId = 0;
   private finished = false;
   private wasmKib = 0;
   private loadMs = 0;
-  private lastEngineeringAt = 0;
   private bootAt = performance.now();
 
   constructor(private readonly audio: AudioManager) {}
@@ -307,7 +205,9 @@ export class GameApp {
   async boot(takeIntent: () => HTMLElement | undefined): Promise<void> {
     const view = new BootView();
     const forced = forcedBootState(window.location.search);
-    const copy = bootCopy(this.settings.locale);
+    // Un solo mecanismo de idioma: el runtime aplica el catálogo y repinta el
+    // marcado estático antes de que el flujo pinte nada dinámico.
+    initI18n(this.settings.locale);
     // La acción de recuperación vive en la pantalla de boot y recarga la página:
     // se ata acá porque bindGlobalUI solo corre si el arranque completa.
     byId('boot-retry').addEventListener('click', () => window.location.reload(), { signal: this.abort.signal });
@@ -317,7 +217,7 @@ export class GameApp {
     const bootStartedAt = performance.now();
     const surfaceBootSlow = (kind: 'slow' | 'stalled'): void => {
       const note = byId('boot-slow');
-      note.textContent = copy.slow;
+      note.textContent = t('boot.slow');
       note.hidden = false;
       if (kind === 'stalled') byId('boot-retry').hidden = false;
     };
@@ -356,7 +256,7 @@ export class GameApp {
           if (capability !== 'runtime') view.setCheck(capability, 'fail');
         }
         stopBootWatch();
-        this.renderBootUnsupported(missing, copy);
+        this.renderBootUnsupported(missing);
         this.dispatch({ type: 'boot-failed' });
         return;
       }
@@ -396,7 +296,7 @@ export class GameApp {
       this.hud = new Hud();
       this.hud.setMap(this.map);
       this.objectiveMarker = new ObjectiveMarker();
-      this.eng = new Engineering();
+      this.eng = new EngineeringMonitor();
 
       this.applySettings();
       this.settingsForm.attach(this.abort.signal);
@@ -407,16 +307,20 @@ export class GameApp {
       // ni dejar su intervalo vivo.
       stopBootWatch();
       view.setProgress(100);
-      view.setMeta(`núcleo listo · ${this.wasmKib.toFixed(1)} KiB · ${this.loadMs.toFixed(0)} ms`);
+      view.setMeta(t('boot.metaReadyFmt', { kib: this.wasmKib.toFixed(1), ms: this.loadMs.toFixed(0) }));
 
       this.bindGlobalUI();
+      this.offLocaleChange = onLocaleChange(() => this.relocalize());
       const intent = takeIntent();
-      // A cold Jugar preserves the first-visit route into the simulator. Other
-      // choices come from the menu and keep their usual navigation or game mode.
-      const toCalibration = routesToCalibration(
-        this.progress.state.tutorialSeen, intent?.dataset.action, intent !== undefined);
-      this.dispatch({ type: 'boot-complete', tutorialSeen: !toCalibration });
+      // P4: ningún boot completo pasa por calibración; el menú es la pantalla de aterrizaje.
+      this.dispatch({ type: 'boot-complete' });
       if (intent) this.activateControl(intent);
+
+      // Engineering Mode solo desarrollo: bandera de query o F3 en partida.
+      if (devEngineeringRequested(window.location.search) && this.eng.toggle(true)) {
+        this.eng.update(performance.now(), this.engine.state, this.engineeringSources(), true);
+        this.syncSettingsUI();
+      }
 
       this.lastNow = performance.now();
       this.rafId = requestAnimationFrame(this.frame);
@@ -431,11 +335,11 @@ export class GameApp {
   /** Pantalla dedicada de navegador sin soporte: nombra lo que falta, el piso de
    *  versiones y la única acción útil (ir a un navegador actualizado; Reintentar
    *  no puede crear una capability). */
-  private renderBootUnsupported(missing: readonly BootCapability[], copy: BootCopy): void {
+  private renderBootUnsupported(missing: readonly BootCapability[]): void {
     const section = byId('screen-fallback');
     section.dataset.boot = 'unsupported';
-    byId('fallback-title').textContent = copy.unsupportedTitle;
-    byId('fallback-detail').textContent = copy.unsupportedBody;
+    byId('fallback-title').textContent = t('boot.unsupportedTitle');
+    byId('fallback-detail').textContent = t('boot.unsupportedBody');
     const list = byId('fallback-missing');
     list.replaceChildren(...missing.map((id) => {
       const item = document.createElement('li');
@@ -443,12 +347,12 @@ export class GameApp {
       item.setAttribute('data-state', 'fail');
       const dot = document.createElement('span');
       dot.className = 'check__dot';
-      item.append(dot, copy.items[id]);
+      item.append(dot, t(`boot.items${id[0].toUpperCase()}${id.slice(1)}` as CatalogKey));
       return item;
     }));
     list.hidden = false;
     byId('fallback-floor').textContent =
-      `${copy.floor}: ${BOOT_MINIMUM_BROWSERS.map((browser) => `${browser.name} ${browser.version}+`).join(' · ')}`;
+      `${t('boot.floor')}: ${BOOT_MINIMUM_BROWSERS.map((browser) => `${browser.name} ${browser.version}+`).join(' · ')}`;
     byId('fallback-floor').hidden = false;
     byId('fallback-retry').hidden = true;
   }
@@ -488,7 +392,6 @@ export class GameApp {
     if (screen === 'tutorial-handoff') renderTutorialHandoff(flow.outcome, flow.elapsedSeconds);
     this.app.dataset.screen = screen;
     this.objectiveMarker?.invalidate();
-    if (screen === 'calibrate') this.calibrationOffered = true;
     if (screen === 'playing') {
       this.input?.reset();
       this.canvas.focus({ preventScroll: true });
@@ -599,9 +502,9 @@ export class GameApp {
     const sector = sectorInfo(clampSector(this.map?.id ?? 0));
     const labels: Record<Mode, { code: string; name: string }> = {
       run: { code: sector.code.replace('_', ' '), name: sector.title },
-      overflow: { code: 'OVERFLOW', name: sector.title },
-      daily: { code: 'DIARIO', name: sector.title },
-      practice: { code: 'SIMULADOR', name: 'Campo de práctica' },
+      overflow: { code: t('hud.overflowCode'), name: sector.title },
+      daily: { code: t('hud.dailyCode'), name: sector.title },
+      practice: { code: t('hud.practiceCode'), name: t('hud.practiceName') },
     };
     return {
       mode,
@@ -619,16 +522,20 @@ export class GameApp {
       : [WEAPON.sidearm, WEAPON.carbine];
   }
 
+  private pauseSubtitleFor(): string {
+    return this.flow.pauseOrigin === 'menu' ? t('pause.settingsSub') : pauseSubtitle(this.flow.mode, this.flow.mapId);
+  }
+
   private pause(origin: PauseOrigin = this.flow.pauseOrigin): void {
     if (!this.dispatch({ type: 'pause', origin })) return;
-    byId('pause-sub').textContent = pauseSubtitle(this.flow.mode, this.flow.mapId);
+    byId('pause-sub').textContent = this.pauseSubtitleFor();
     this.syncPauseLabels();
     this.audio.suspend();
   }
 
   private syncPauseLabels(): void {
     const resume = this.app.querySelector<HTMLElement>('#screen-pause [data-action="resume"]');
-    if (resume) resume.textContent = this.flow.pauseOrigin === 'menu' ? 'Volver ▸' : 'Continuar ▸';
+    if (resume) resume.textContent = this.flow.pauseOrigin === 'menu' ? t('pause.resumeBack') : t('pause.resume');
   }
 
   private resume(): void {
@@ -642,11 +549,20 @@ export class GameApp {
 
   private openSettingsFromMenu(): void {
     if (!this.dispatch({ type: 'settings' })) return;
-    byId('pause-sub').textContent = 'Ajustes del protocolo';
+    byId('pause-sub').textContent = t('pause.settingsSub');
     this.syncPauseLabels();
   }
 
   private goToMenu(): void {
+    // Volver desde la calibración de una pausa en curso regresa a la pausa: no hay
+    // partida que abandonar. El menú es el destino solo sin partida viva detrás.
+    if (this.flow.screen === 'calibrate' && this.flow.pauseOrigin === 'game') {
+      if (this.dispatch({ type: 'open', screen: 'pause' })) {
+        byId('pause-sub').textContent = this.pauseSubtitleFor();
+        this.syncPauseLabels();
+      }
+      return;
+    }
     if (!this.dispatch({ type: 'open', screen: 'menu' })) return;
     this.audio.suspend();
     this.refreshMenu();
@@ -682,6 +598,7 @@ export class GameApp {
     const truncated = this.engine.logTruncated;
     this.pending = this.capturePending(mode, won, truncated);
     renderResult(run, run.score > 0 && run.score > (previousBest ?? 0), truncated);
+    this.lastRendered = { run, isRecord: run.score > 0 && run.score > (previousBest ?? 0), truncated };
     this.renderUnlocks(before, after, won);
     byId<HTMLInputElement>('board-name').value = this.progress.state.playerName;
     renderBoardPanel(this.boardPanel());
@@ -725,7 +642,7 @@ export class GameApp {
 
   private boardPanel(): BoardPanel {
     const pending = this.pending;
-    if (!pending) return { kind: 'ineligible', reason: 'Sin partida para enviar.' };
+    if (!pending) return { kind: 'ineligible', reason: t('board.noPending') };
     if (pending.board === null) return { kind: 'ineligible', reason: pending.reason };
     return { kind: 'idle', where: boardLabel(pending.board) };
   }
@@ -736,15 +653,15 @@ export class GameApp {
     const runWon = this.flow.mode === 'run' && won;
     const lines: string[] = [];
     if (runWon && nextSector !== null && isSectorUnlocked(after, nextSector) && !isSectorUnlocked(before, nextSector)) {
-      lines.push(`${SECTORS[nextSector].code} desbloqueado`);
+      lines.push(t('unlock.sectorFmt', { code: SECTORS[nextSector].code }));
     }
     if (runWon && sector === 1 && isShotgunUnlocked(after) && !isShotgunUnlocked(before)) {
-      lines.push('SG-08 desbloqueada');
+      lines.push(t('unlock.shotgun'));
     }
     if (runWon && sector === 2 && isSectorCleared(after, sector) && !isSectorCleared(before, sector)) {
-      lines.push('Red recuperada');
+      lines.push(t('unlock.network'));
     }
-    byId('result-unlock').textContent = lines.length ? `Recompensa: ${lines.join(' · ')}` : '';
+    byId('result-unlock').textContent = lines.length ? t('unlock.fmt', { items: lines.join(' · ') }) : '';
     byId('result-unlock').hidden = lines.length === 0;
     byId('result-next').hidden = !(runWon && nextSector !== null);
   }
@@ -776,8 +693,8 @@ export class GameApp {
 
   private refreshMenu(): void {
     const best = bestScore('run');
-    byId('menu-record').textContent = best === null ? 'récord: —' : `récord: ${best.toLocaleString('es-CL')}`;
-    renderMenu(this.progress.state, utcDateKey(new Date()));
+    byId('menu-record').textContent = t('menu.recordFmt', { score: best === null ? '—' : formatNumber(best) });
+    renderMenu(this.progress.state);
   }
 
   // ----------------------------------------------------------- leaderboard
@@ -880,15 +797,7 @@ export class GameApp {
     return this.tutorial.step === TUTORIAL_TERMINAL_STEP ? this.tutorialTerminal : -1;
   }
 
-  /** Mirror the existing node bar at the reticle while the switch is in reach. */
-  private updateChannelRing(state: Snapshot): void {
-    const node = state.interacting >= 0 ? state.node(state.interacting) : null;
-    const percent = node && !node.active ? Math.round(node.progress * 100) : 0;
-    if (percent === this.channelPercent) return;
-    this.channelPercent = percent;
-    this.crosshair.classList.toggle('is-channeling', percent > 0);
-    this.crosshair.style.setProperty('--channel', `${percent}%`);
-  }
+  /** Mirror the existing node bar at the reticle while the switch is in reach: vive en core/channel-ring. */
 
   // ------------------------------------------------------------------ loop
 
@@ -897,8 +806,6 @@ export class GameApp {
     const rawDt = this.lastNow === 0 ? 1 / 60 : (now - this.lastNow) / 1000;
     this.lastNow = now;
     const frameMs = rawDt * 1000;
-    this.frameSamples.push(frameMs);
-    if (this.frameSamples.length > 120) this.frameSamples.shift();
     this.eng?.pushFrame(frameMs);
 
     if (!this.renderer) return;
@@ -928,7 +835,7 @@ export class GameApp {
       const renderCpuMs = performance.now() - renderStart;
       this.consumeEvents(this.events, state.tick);
       this.hud?.update(state, this.input.usingTouch);
-      this.updateChannelRing(state);
+      this.channelRing.update(state);
       const node = this.map?.nodes[tracked];
       if (node) {
         const metres = Math.hypot(node.x - state.px, node.y - state.py, node.z - state.pz);
@@ -936,13 +843,13 @@ export class GameApp {
           state.interacting === tracked, this.settings.hudScale);
       } else this.objectiveMarker?.hide();
       this.maybeAdaptQuality(frameMs, now, renderCpuMs);
-      this.updateEngineering(now, state);
+      this.eng?.update(now, state, this.engineeringSources());
       this.observeTutorialFrame(state);
       if (state.phase === PHASE.win) this.finish(true);
       if (state.phase === PHASE.lose) this.finish(false);
     } else {
       this.renderer.renderOrbit(rawDt);
-      this.updateEngineering(now, this.engine?.state ?? null);
+      this.eng?.update(now, this.engine?.state ?? null, this.engineeringSources());
     }
   };
 
@@ -955,44 +862,12 @@ export class GameApp {
   }
 
   private consumeEvents(events: readonly WorldEvent[], tick: number): void {
-    for (const event of events) {
-      const effects = effectsOf(event);
-      for (const sound of effects.sounds) this.audio.play(sound);
-      for (const line of effects.feed) this.hud?.pushFeed(line.text, line.kind);
-
-      if (event.type === EVT.enemyHit) this.hud?.flashHit(false);
-      if (event.type === EVT.enemyDied) this.hud?.flashHit(true);
-      if (event.type === EVT.playerDamaged && event.a > 0) this.hud?.showDamageFrom(event.b, event.d, tick);
-    }
+    presentEvents(events, tick, this.audio, this.hud);
   }
 
-  private updateEngineering(now: number, state: Snapshot | null, immediate = false): void {
-    if (!this.eng?.visible || (!immediate && now - this.lastEngineeringAt < 240)) return;
-    this.lastEngineeringAt = now;
-    const sorted = [...this.frameSamples].sort((a, b) => a - b);
-    const pick = (q: number): number =>
-      sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
-    const mean = sorted.reduce((a, b) => a + b, 0) / Math.max(1, sorted.length);
-    const memory =
-      'memory' in performance
-        ? `${(((performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0) / 1048576).toFixed(0)} MB`
-        : 'no disponible';
-    this.eng.update({
-      fps: mean > 0 ? 1000 / mean : 0,
-      p50: pick(0.5),
-      p95: pick(0.95),
-      calls: this.renderer?.calls ?? 0,
-      triangles: this.renderer?.triangles ?? 0,
-      ticks: state?.tick ?? 0,
-      dropped: Math.round(state?.at(H.droppedTicks) ?? 0),
-      quality: this.renderer?.preset.name ?? '—',
-      dpr: this.renderer?.dpr ?? 1,
-      enemies: state?.enemiesAlive ?? 0,
-      memory,
-      wasmKib: this.wasmKib,
-      loadMs: this.loadMs,
-      note: `arranque: ${new Date(this.bootAt).toLocaleTimeString('es-CL')} · eventos perdidos: ${state?.lostEvents ?? 0}`,
-    });
+  /** Fuentes de solo lectura que el monitor de engineering necesita por refresco. */
+  private engineeringSources(): EngineeringSources {
+    return { renderer: this.renderer, wasmKib: this.wasmKib, loadMs: this.loadMs, bootAt: this.bootAt };
   }
 
   // ------------------------------------------------------------- UI wiring
@@ -1012,7 +887,7 @@ export class GameApp {
         if (repeat) return true;
         if (action === 'continue') this.setTutorialStep(continueTutorial(this.tutorial));
         else if (this.skipConfirm.press(performance.now()) === 'skip') this.setTutorialStep(skipTutorial(this.tutorial));
-        else this.toast('Retroceso otra vez para omitir el tutorial');
+        else this.toast(t('toast.tutorialSkip'));
         return true;
       },
       onPointerLockLost: () => {
@@ -1021,7 +896,7 @@ export class GameApp {
         }
       },
       onPointerLockError: () => {
-        if (this.flow.screen !== 'tutorial-handoff' && pointerLockErrorAction(this.flow) === 'hint') this.toast('clic para capturar el mouse');
+        if (this.flow.screen !== 'tutorial-handoff' && pointerLockErrorAction(this.flow) === 'hint') this.toast(t('toast.pointerLock'));
       },
       isPlaying: () => this.flow.screen === 'playing',
       onTouchDetected: () => {
@@ -1043,7 +918,7 @@ export class GameApp {
     if (!this.eng) return;
     const visible = this.eng.toggle();
     // Opening the panel must not depend on the next render or simulation tick.
-    if (visible) this.updateEngineering(performance.now(), this.engine?.state ?? null, true);
+    if (visible) this.eng.update(performance.now(), this.engine?.state ?? null, this.engineeringSources(), true);
     this.settings = { ...this.settings, telemetry: visible };
     saveSettings(this.settings);
     this.syncSettingsUI();
@@ -1130,7 +1005,7 @@ export class GameApp {
       element.textContent = label;
       return true;
     }
-    element.textContent = '¿Seguro? Tocá de nuevo';
+    element.textContent = t('pause.confirm');
     window.setTimeout(() => { element.textContent = label; }, 3000);
     return false;
   }
@@ -1150,11 +1025,9 @@ export class GameApp {
         await this.startMatch('practice', 0);
         break;
       case 'play':
-        // El menú sin pasar por calibración (precarga en reposo) conserva la ruta de primera visita.
-        if (this.flow.screen === 'menu' && !this.progress.state.tutorialSeen && !this.calibrationOffered) {
-          this.dispatch({ type: 'open', screen: 'calibrate' });
-        } else if (this.flow.screen === 'menu') await this.startMatch('run', recommendedSector(this.progress.state));
-        else await this.startMatch('practice', 0, { tutorial: true });
+        // P4: Jugar entra directo a la arena del sector recomendado; el sector es
+        // una línea no bloqueante del menú y la cadena de campaña queda para resultados.
+        await this.startMatch('run', recommendedSector(this.progress.state));
         break;
       case 'tutorial-replay':
         await this.startMatch('practice', 0, { tutorial: true });
@@ -1191,11 +1064,11 @@ export class GameApp {
         else this.resume();
         break;
       case 'restart':
-        if (!this.confirmInPause(action, element, 'Reiniciar')) break;
+        if (!this.confirmInPause(action, element, t('pause.restart'))) break;
         await this.startMatch(this.flow.mode, this.flow.mapId);
         break;
       case 'menu':
-        if (!this.confirmInPause(action, element, 'Salir al menú')) break;
+        if (!this.confirmInPause(action, element, t('pause.quit'))) break;
         this.goToMenu();
         break;
       case 'engineering':
@@ -1205,7 +1078,7 @@ export class GameApp {
         this.settings = resetSettings();
         this.applySettings();
         this.syncSettingsUI();
-        this.toast('ajustes restablecidos');
+        this.toast(t('toast.reset'));
         break;
       case 'retry':
         window.location.reload();
@@ -1284,31 +1157,27 @@ export class GameApp {
   }
 
   private applySettings(): void {
-    this.settings = { ...this.settings };
-    document.documentElement.style.setProperty('--hud-scale', String(this.settings.hudScale));
-    document.documentElement.dataset.theme = 'dark';
-    this.app.dataset.hand = this.settings.handedness;
-    if (this.input?.usingTouch) this.app.classList.add('is-touch');
-    this.objectiveMarker?.invalidate();
-    this.applyMotionPreference();
-    this.audio.setEnabled(this.settings.audioEnabled);
-    this.audio.setVolume(this.settings.volume);
-    this.audio.setChannelVolumes(this.settings.sfxVolume, this.settings.uiVolume);
-    this.input?.updateSettings(this.settings);
-
-    if (this.renderer) {
-      this.quality.setManual(this.settings.quality as Quality);
-      this.renderer.setGfx(gfxOverridesOf(this.settings));
-      this.renderer.setQuality(this.quality.preset, this.dprCap());
-      this.renderer.resize();
-    }
-    saveSettings(this.settings);
+    applySettingsToRuntime(this.settingsContext(), this.settings);
   }
 
   private applyMotionPreference(): void {
-    this.hooks.reducedMotion = this.settings.reduceMotion || this.motionPreference.matches;
-    this.app.dataset.motion = this.hooks.reducedMotion ? 'reduce' : 'full';
-    this.hud?.setReduceFlashes(this.settings.reduceFlashes || this.hooks.reducedMotion);
+    applyMotionPreferenceToRuntime(this.settingsContext(), this.settings);
+  }
+
+  /** Superficies que la aplicación de ajustes necesita; se arman por llamada. */
+  private settingsContext(): SettingsApplyContext {
+    return {
+      app: this.app,
+      motionPreference: this.motionPreference,
+      hooks: this.hooks,
+      audio: this.audio,
+      input: this.input,
+      quality: this.quality,
+      renderer: this.renderer,
+      hud: this.hud,
+      objectiveMarker: this.objectiveMarker,
+      dprCap: this.dprCap(),
+    };
   }
 
   private syncSettingsUI(): void {
@@ -1316,12 +1185,36 @@ export class GameApp {
       settings: this.settings,
       telemetry: this.eng?.visible ?? this.settings.telemetry,
       usingTouch: this.input?.usingTouch ?? false,
-      gfxDetail: `preset ${this.renderer?.preset.name ?? '—'} · dpr ${(this.renderer?.dpr ?? 1).toFixed(2)} · aim assist ${this.settings.aimAssistTouch ? 'on' : 'off'}`,
+      gfxDetail: t('pause.gfxDetailFmt', {
+        preset: this.renderer?.preset.name ?? '—',
+        dpr: (this.renderer?.dpr ?? 1).toFixed(2),
+        assist: this.settings.aimAssistTouch ? t('pause.assistOn') : t('pause.assistOff'),
+      }),
     };
     this.settingsForm.sync(view);
   }
 
+  /** Re-render en vivo de lo que ya está en pantalla: el cambio de locale no recarga. */
+  private relocalize(): void {
+    this.refreshMenu();
+    if (this.flow.screen === 'pause') {
+      byId('pause-sub').textContent = this.pauseSubtitleFor();
+      this.syncPauseLabels();
+    }
+    if (this.flow.screen === 'sectors') renderSectorCards(this.progress.state);
+    if (this.flow.screen === 'briefing') renderBriefing(clampSector(this.flow.mapId));
+    if (this.flow.screen === 'result') {
+      if (this.lastRendered) renderResult(this.lastRendered.run, this.lastRendered.isRecord, this.lastRendered.truncated);
+      renderBoardPanel(this.boardPanel());
+    }
+    if (this.flow.screen === 'tutorial-handoff') renderTutorialHandoff(this.flow.outcome, this.flow.elapsedSeconds);
+    this.hud?.relocalize();
+    this.eng?.relocalize();
+    this.syncSettingsUI();
+  }
+
   dispose(): void {
+    this.offLocaleChange?.();
     this.abort.abort();
     cancelAnimationFrame(this.rafId);
     this.input?.detach();

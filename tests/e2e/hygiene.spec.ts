@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { Engine } from '../../src/wasm/bridge';
-import { screenIs, seedStorage } from './support';
+import { screenIs, seedStorage, startPractice } from './support';
 
 const tick = (page: Page) => page.evaluate(() => (window.__BREACH__ as unknown as { engine: Engine }).engine.state.tick);
 const pz = (page: Page) => page.evaluate(() => (window.__BREACH__ as unknown as { engine: Engine }).engine.state.pz);
@@ -25,8 +25,7 @@ test('keys pressed on a menu do not move the player on the first tick', async ({
   await screenIs(page, 'menu');
   await page.keyboard.down('KeyW');
   await page.keyboard.down('Space');
-  await page.locator('#screen-menu [data-action="practice"]').click();
-  await screenIs(page, 'playing');
+  await startPractice(page);
   const start = await pz(page);
   await page.waitForTimeout(600);
   await page.keyboard.up('KeyW');
@@ -39,8 +38,7 @@ test('pausing stops the simulation and restarting begins from a clean tick', asy
   await seedStorage(page, { tutorialSeen: true });
   await page.goto('/');
   await screenIs(page, 'menu');
-  await page.locator('#screen-menu [data-action="practice"]').click();
-  await screenIs(page, 'playing');
+  await startPractice(page);
   await expect.poll(() => tick(page)).toBeGreaterThan(60);
 
   await page.keyboard.press('Escape');
@@ -62,8 +60,7 @@ test('holding the right mouse button aims down sights and releasing it stops', a
   await seedStorage(page, { tutorialSeen: true });
   await page.goto('/');
   await screenIs(page, 'menu');
-  await page.locator('#screen-menu [data-action="practice"]').click();
-  await screenIs(page, 'playing');
+  await startPractice(page);
   const ads = () => page.evaluate(() => (window.__BREACH__ as unknown as { engine: Engine }).engine.state.ads);
   await page.mouse.move(640, 400);
   await page.mouse.down({ button: 'right' });

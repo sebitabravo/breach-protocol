@@ -18,6 +18,11 @@ export type GfxOverride = 'auto' | 'on' | 'off';
 
 export const GFX_KEYS = ['gfxBloom', 'gfxShadows', 'gfxEnvironment', 'gfxLights', 'gfxMist'] as const;
 export type GfxKey = (typeof GFX_KEYS)[number];
+
+/** Forma corta derivada de GFX_KEYS (p. ej. `gfxBloom` → `bloom`): ids de DOM en
+ * settings-form y claves de GfxPlan en presets se derivan de acá, nunca al revés. */
+export const GFX_EFFECTS: readonly string[] = GFX_KEYS.map((key) => key.slice(3).toLowerCase());
+
 export type GfxOverrides = Record<GfxKey, GfxOverride>;
 
 /** Los cinco overrides de un Settings, listos para `renderer.setGfx`. */

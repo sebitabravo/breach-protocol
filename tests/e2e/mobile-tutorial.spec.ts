@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { openCalibration, screenIs, seedStorage } from './support';
+import { openHowToPlay, screenIs, seedStorage } from './support';
 
 test('the touch tutorial speaks touch, can be continued and skipped without a keyboard', async ({ page }) => {
   await seedStorage(page, { tutorialSeen: false });
   await page.goto('/');
-  await openCalibration(page);
-  await page.locator('#screen-calibrate [data-action="play"]').tap();
+  await openHowToPlay(page);
+  await page.locator('#screen-about [data-action="tutorial-replay"]').tap();
   await screenIs(page, 'playing');
 
   const tutorial = page.locator('#tutorial');

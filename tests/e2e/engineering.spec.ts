@@ -23,7 +23,7 @@ for (const screen of ['playing', 'pause'] as const) {
     await seedStorage(page, { tutorialSeen: true });
     await page.goto('/');
     await screenIs(page, 'menu');
-    await page.locator('#screen-menu [data-action="practice"]').tap();
+    await page.locator('#screen-menu [data-action="play"]').tap();
     await screenIs(page, 'playing');
     if (screen === 'pause') {
       await page.keyboard.press('Escape');
