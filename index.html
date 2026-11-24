@@ -353,6 +353,7 @@
           <div class="hud__block hud__block--right">
             <div class="hud__stat"><span class="hud__kicker"><svg class="hud__ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 9v4l3 2M9 2h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span id="hud-time-label" data-i18n="hud.timeLeft">restante</span></span><span class="hud__mid" id="hud-time">3:00</span></div>
             <div class="hud__stat"><span class="hud__kicker"><svg class="hud__ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a8 8 0 0 0-8 8c0 2.6 1.2 4.4 3 5.5V20h10v-3.5c1.8-1.1 3-2.9 3-5.5a8 8 0 0 0-8-8z" fill="currentColor"/><circle cx="9" cy="11" r="2" fill="#080f14"/><circle cx="15" cy="11" r="2" fill="#080f14"/><path d="M10 17h1v2h-1zM13 17h1v2h-1z" fill="#080f14"/></svg><span data-i18n="hud.enemies">enemigos</span></span><span class="hud__mid" id="hud-remaining">0</span></div>
+            <p class="hud__score"><span class="hud__kicker" data-i18n="hud.score">puntuación</span> <b id="hud-score">0</b></p>
             <button class="iconbtn" id="btn-pause-hud" aria-label="Pausa" data-i18n-aria="hud.pauseAria">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="4" height="14" fill="currentColor"/><rect x="13" y="5" width="4" height="14" fill="currentColor"/></svg>
             </button>
@@ -363,12 +364,11 @@
           <svg class="hud__obj-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 22 12 12 22 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 8 16 12 12 16 8 12z" fill="currentColor"/></svg>
           <span class="hud__kicker" data-i18n="hud.objective">objetivo</span>
           <p class="hud__sub" id="hud-objective-line"></p>
-          <p class="hud__score"><span class="hud__kicker" data-i18n="hud.score">puntuación</span> <b id="hud-score">0</b></p>
         </div>
 
         <div class="hud__objective-track">
           <span class="hud__kicker" data-i18n="hud.nodes">terminales</span>
-          <div class="nodes" id="hud-nodes">
+          <div class="nodes" id="hud-nodes" role="img">
             <i class="node"></i><i class="node"></i><i class="node"></i>
           </div>
         </div>

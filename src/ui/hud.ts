@@ -101,6 +101,7 @@ export class Hud {
   private sectorName = byId('hud-sector-name');
   private mode = byId('hud-mode');
   private score = byId('hud-score');
+  private nodesTrack = byId('hud-nodes');
   private objectiveLine = byId('hud-objective-line');
   private timeLabel = byId('hud-time-label');
   private time = byId('hud-time');
@@ -226,10 +227,19 @@ export class Hud {
         ? t('hud.objectiveExtract')
         : this.view?.mode === 'overflow' && state.nodesActive >= MAX_NODES
           ? t('hud.objectiveOverflow')
-          : t('hud.objectiveNodesFmt', { active: state.nodesActive, total: MAX_NODES });
+          : t('hud.objectiveNodes');
     this.set('objLine', objectiveText, () => {
       this.objectiveLine.textContent = objectiveText;
     });
+    // Una sola representación visual del progreso (la fila de barras); el conteo
+    // exacto vive en el nombre accesible de esa fila, no repetido en pantalla.
+    this.set(
+      'nodesLabel',
+      `${state.nodesActive}/${MAX_NODES}`,
+      () => {
+        this.nodesTrack.setAttribute('aria-label', t('hud.nodesAriaFmt', { active: state.nodesActive, total: MAX_NODES }));
+      },
+    );
 
     for (let i = 0; i < this.nodes.length; i += 1) {
       const node = state.node(i);
