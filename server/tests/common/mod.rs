@@ -22,9 +22,31 @@ const PHASE_EXTRACTION: f32 = bp_core::EXTRACTION;
 /// Techo de ticks de un registro verificable (`bp_core` lo rechaza por encima).
 const MAX_TICKS: u32 = bp_core::MAX_TICKS;
 
+/// El resultado que la propia partida produjo al grabarse: la verdad contra la
+/// que se compara lo que el servidor calcula al re-simular el registro.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LiveOutcome {
+    pub score: u32,
+    pub won: bool,
+    pub score_version: u8,
+}
+
 /// Graba una partida hasta que termina o se alcanza `cap` ticks. `fire` aprieta el gatillo
 /// en un patrón fijo para que haya disparos y, con suerte, puntaje distinto de cero.
 pub fn record(mode: u8, map: u8, seed: u32, flags: u8, fire: bool, cap: u32) -> Vec<u8> {
+    record_with_outcome(mode, map, seed, flags, fire, cap).0
+}
+
+/// Igual que `record`, y además devuelve el resultado real de la partida grabada
+/// (puntaje, victoria y versión de puntaje leídos del `Game` vivo, nunca de un replay).
+pub fn record_with_outcome(
+    mode: u8,
+    map: u8,
+    seed: u32,
+    flags: u8,
+    fire: bool,
+    cap: u32,
+) -> (Vec<u8>, LiveOutcome) {
     let cap = cap.min(MAX_TICKS);
     let mut g = Game::new(seed);
     g.enable_recording();
@@ -68,7 +90,12 @@ pub fn record(mode: u8, map: u8, seed: u32, flags: u8, fire: bool, cap: u32) -> 
         t += 1;
     }
     g.encode_log();
-    g.log_out.clone()
+    let live = LiveOutcome {
+        score: g.final_score(),
+        won: g.phase == bp_core::WIN,
+        score_version: g.score_version(),
+    };
+    (g.log_out.clone(), live)
 }
 
 /// Cuerpo JSON de `POST /api/runs`.
